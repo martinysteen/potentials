@@ -1,0 +1,4 @@
+{
+    "python.defaultInterpreterPath": "/home/sm/miniconda3/envs/potsystem_env/bin/python",
+    "python.terminal.activateEnvironment": true
+}

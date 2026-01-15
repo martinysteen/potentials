@@ -1,0 +1,26 @@
+# --- Security (NEVER UPLOAD THESE) ---
+.env
+config.env
+*_creds.json
+
+# --- Data (Handled by Rclone) ---
+*.csv
+*.xlsx
+*.db
+*.sqlite
+
+# --- Logs (Handled by Rclone Move) ---
+*.log
+logs/
+
+# --- Python Junk (Compiled files) ---
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+venv/
+env/
+
+# --- System Junk ---
+.DS_Store
+shared/app/creds/token.json

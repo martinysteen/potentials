@@ -1,0 +1,15 @@
+{
+  "_comment": "Google Drive folder IDs for PotSystem data sources",
+  "folders": {
+    "repositoryRTBI": {
+      "id": "1V9RIu1r2DM9k1wStl8HA4qOQm4vUnbHM",
+      "description": "Main repository for real-time business intelligence data",
+      "contains": ["PotDat.csv", "cal.csv"]
+    },
+    "repositoryRTBI/Longi": {
+      "id": "1XkGlWZjuj1Ic1PlQfvQMgJk42nDt7fBt",
+      "description": "Longi-derived indicators and calculations",
+      "contains": ["longi_rank.csv", "longi_per1m.csv", "longi_rsi.csv", "longi_uptrend.csv"]
+    }
+  }
+}

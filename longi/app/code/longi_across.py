@@ -1,0 +1,419 @@
+"""
+Cross-Sectional Data Extraction Module - Extract Data for Specific Daynum
+
+This module creates a cross-sectional view of all derived tables for a specific daynum.
+
+AUTOMATIC UPDATE FEATURE:
+Before creating the new cross-sectional file, this module automatically updates
+all existing historical cross-sectional files to ensure they stay in sync with
+the current ticker population. This ensures consistency when tickers are added
+or removed from PotDat.csv.
+
+Output structure:
+- Rows: Stock tickers
+- Columns: ticker_<daynum> (first column with daynum), then metrics extracted
+  from longi_*.csv files (taken after-the-underscore)
+  - e.g., ticker_2009, rsi, macd_line, macd_signal, macd_histogram, uptrend,
+    per1d, per1w, per1m, per3m, per6m, per1y, rank, median_10d, median_20d,
+    median_50d, median_100d, stepup
+
+Parameters:
+- daynum: Optional daynum to extract. If not provided, uses the maximum (newest)
+  daynum from PotDat.csv
+
+Output: longi_across_<daynum>.csv
+
+Output goes to stdout - start_longi.sh handles logging redirection.
+"""
+
+import csv
+import sys
+from pathlib import Path
+from typing import List, Optional, Dict, Tuple
+
+# Configuration
+INPUT_DIR = Path(__file__).parent.parent / "input"
+SOURCE_DIR = Path(__file__).parent.parent / "output"
+OUTPUT_DIR_ACROSS = Path(__file__).parent.parent / "across"
+POTDAT_FILE = INPUT_DIR / "PotDat.csv"
+
+
+def parse_european_decimal(value: str) -> Optional[str]:
+    """
+    Parse European decimal format value, preserving as-is for output.
+
+    Args:
+        value: String value (may be empty, European decimal, or plain text)
+
+    Returns:
+        Original value stripped, or None if empty
+    """
+    value = value.strip()
+    if not value:
+        return None
+    return value
+
+
+def get_max_daynum_from_potdat() -> Optional[int]:
+    """
+    Extract the maximum (leftmost/newest) daynum from PotDat.csv header.
+
+    Returns:
+        Maximum daynum value, or None if error
+    """
+    try:
+        with open(POTDAT_FILE, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f, delimiter=';')
+            header = next(reader)
+
+            # Skip first column (timestamp/label), extract numeric daynums
+            daynums = []
+            for col in header[1:]:
+                try:
+                    daynum = int(col.strip())
+                    daynums.append(daynum)
+                except ValueError:
+                    continue  # Skip non-numeric columns
+
+            if not daynums:
+                return None
+
+            return max(daynums)
+
+    except Exception as e:
+        print(f"ERROR: Failed to read {POTDAT_FILE.name}: {e}")
+        return None
+
+
+def get_available_output_files() -> List[Tuple[str, str]]:
+    """
+    Scan output directory for longi_*.csv files and extract metric names.
+
+    Returns:
+        List of tuples: (metric_name, filepath)
+        Example: [("rsi", "longi_rsi.csv"), ("macd_line", "longi_macd_line.csv")]
+    """
+    source_files = []
+
+    # Find all longi_*.csv files
+    for filepath in sorted(SOURCE_DIR.glob("longi_*.csv")):
+        filename = filepath.name
+
+        # Skip the longi_across_*.csv files
+        if filename.startswith("longi_across_"):
+            continue
+
+        # Extract metric name: remove "longi_" prefix and ".csv" suffix
+        if filename.startswith("longi_") and filename.endswith(".csv"):
+            metric_name = filename[6:-4]  # Remove "longi_" and ".csv"
+            source_files.append((metric_name, str(filepath)))
+
+    return source_files
+
+
+def load_column_for_daynum(filepath: str, daynum: int) -> Tuple[List[str], List[Optional[str]]]:
+    """
+    Load a specific daynum column from a CSV file.
+
+    Args:
+        filepath: Path to CSV file
+        daynum: Daynum to extract
+
+    Returns:
+        Tuple of (tickers, values) where values[i] corresponds to tickers[i]
+        Returns ([], []) if daynum not found
+    """
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f, delimiter=';')
+            header = next(reader)
+
+            # Find column index for this daynum
+            daynum_str = str(daynum)
+            col_idx = None
+            for idx, col in enumerate(header[1:], start=1):  # Skip first column (ticker)
+                if col.strip() == daynum_str:
+                    col_idx = idx
+                    break
+
+            if col_idx is None:
+                # Daynum not found in this file
+                return [], []
+
+            # Extract tickers and values for this column
+            tickers = []
+            values = []
+
+            for row in reader:
+                ticker = row[0]
+                tickers.append(ticker)
+
+                # Get value for this daynum column
+                if col_idx < len(row):
+                    value = parse_european_decimal(row[col_idx])
+                else:
+                    value = None
+
+                values.append(value)
+
+            return tickers, values
+
+    except Exception as e:
+        print(f"WARNING: Failed to read {filepath}: {e}")
+        return [], []
+
+
+def extract_cross_sectional_data(daynum: int) -> Tuple[List[str], Dict[str, List[Optional[str]]]]:
+    """
+    Extract cross-sectional data for all metrics at a specific daynum.
+
+    Args:
+        daynum: Daynum to extract
+
+    Returns:
+        Tuple of (tickers, metric_data)
+        - tickers: List of ticker symbols (consistent across all metrics)
+        - metric_data: Dict mapping metric_name -> list of values (one per ticker)
+    """
+    # Get all available output files
+    source_files = get_available_output_files()
+
+    if not source_files:
+        print("ERROR: No longi_*.csv output files found")
+        return [], {}
+
+    print(f"\nFound {len(source_files)} derived tables:")
+    for metric_name, _ in source_files:
+        print(f"  - {metric_name}")
+
+    # Load data from each file
+    tickers = None  # Will be set from first file
+    metric_data = {}
+
+    for metric_name, filepath in source_files:
+        file_tickers, values = load_column_for_daynum(filepath, daynum)
+
+        if not file_tickers:
+            print(f"  WARNING: Daynum {daynum} not found in {Path(filepath).name}")
+            continue
+
+        # Set tickers from first successful file
+        if tickers is None:
+            tickers = file_tickers
+        else:
+            # Verify ticker consistency
+            if file_tickers != tickers:
+                print(f"  WARNING: Ticker mismatch in {Path(filepath).name} (skipping)")
+                continue
+
+        metric_data[metric_name] = values
+
+    if tickers is None:
+        tickers = []
+
+    return tickers, metric_data
+
+
+def get_existing_daynums_to_update(current_daynum: int) -> List[int]:
+    """
+    Scan across/ folder for existing longi_across_*.csv files to update.
+
+    Returns daynums that need updating (excluding the current daynum being created).
+
+    Args:
+        current_daynum: The daynum currently being created (exclude from update list)
+
+    Returns:
+        List of daynums to update
+    """
+    daynums = []
+
+    if not OUTPUT_DIR_ACROSS.exists():
+        return []
+
+    # Find all longi_across_*.csv files
+    for filepath in OUTPUT_DIR_ACROSS.glob("longi_across_*.csv"):
+        filename = filepath.name
+
+        # Extract daynum from filename: longi_across_<daynum>.csv
+        if filename.startswith("longi_across_") and filename.endswith(".csv"):
+            daynum_str = filename[13:-4]  # Remove "longi_across_" and ".csv"
+
+            try:
+                daynum = int(daynum_str)
+                # Exclude the current daynum (it will be created fresh anyway)
+                if daynum != current_daynum:
+                    daynums.append(daynum)
+            except ValueError:
+                continue
+
+    return sorted(daynums)
+
+
+def update_existing_cross_sectional_files(current_daynum: int) -> None:
+    """
+    Update all existing cross-sectional files to sync with current ticker population.
+
+    This ensures historical files stay in sync when ticker population changes.
+
+    Args:
+        current_daynum: The daynum currently being created (will be skipped)
+    """
+    print(f"\nChecking for existing cross-sectional files to update...")
+
+    daynums_to_update = get_existing_daynums_to_update(current_daynum)
+
+    if not daynums_to_update:
+        print("  No existing files to update")
+        return
+
+    print(f"  Found {len(daynums_to_update)} existing file(s) to refresh")
+    print(f"  Daynums: {', '.join(map(str, daynums_to_update))}")
+
+    success_count = 0
+    failure_count = 0
+
+    for daynum in daynums_to_update:
+        try:
+            # Extract and write cross-sectional data for this daynum
+            tickers, metric_data = extract_cross_sectional_data(daynum)
+
+            if not tickers:
+                print(f"  WARNING: No data for daynum {daynum}, skipping")
+                failure_count += 1
+                continue
+
+            write_cross_sectional_csv(daynum, tickers, metric_data)
+            print(f"  ✓ Updated daynum {daynum}")
+            success_count += 1
+
+        except Exception as e:
+            print(f"  ✗ Failed to update daynum {daynum}: {e}")
+            failure_count += 1
+
+    print(f"\nUpdate summary: {success_count} successful, {failure_count} failed")
+
+
+def write_cross_sectional_csv(daynum: int, tickers: List[str],
+                                metric_data: Dict[str, List[Optional[str]]]) -> Path:
+    """
+    Write cross-sectional data to CSV file.
+
+    Args:
+        daynum: Daynum being extracted
+        tickers: List of ticker symbols
+        metric_data: Dict mapping metric_name -> list of values
+
+    Returns:
+        Path to output file
+    """
+    output_file = OUTPUT_DIR_ACROSS / f"longi_across_{daynum}.csv"
+
+    # Sort metric names for consistent column order
+    metric_names = sorted(metric_data.keys())
+
+    with open(output_file, 'w', encoding='utf-8', newline='') as f:
+        writer = csv.writer(f, delimiter=';')
+
+        # Write header: ticker_<daynum> + metric names
+        header = [f"ticker_{daynum}"] + metric_names
+        writer.writerow(header)
+
+        # Write data rows
+        for ticker_idx, ticker in enumerate(tickers):
+            row = [ticker]
+
+            for metric_name in metric_names:
+                value = metric_data[metric_name][ticker_idx]
+                row.append(value if value is not None else "")
+
+            writer.writerow(row)
+
+    return output_file
+
+
+def main() -> int:
+    """
+    Main execution function.
+
+    Accepts optional command-line argument:
+    - daynum (optional): Specific daynum to extract
+
+    If no daynum provided, uses maximum daynum from PotDat.csv.
+
+    Returns:
+        Exit code (0 = success, 1 = error)
+    """
+    print(f"=== longi_across.py START: Cross-sectional data extraction ===")
+
+    # Parse command-line arguments
+    daynum = None
+    if len(sys.argv) > 1:
+        try:
+            daynum = int(sys.argv[1])
+            print(f"\nUsing daynum from command-line: {daynum}")
+        except ValueError:
+            print(f"ERROR: Invalid daynum argument: {sys.argv[1]}")
+            return 1
+
+    # If no daynum specified, get max from PotDat.csv
+    if daynum is None:
+        print(f"\nNo daynum specified, reading max daynum from {POTDAT_FILE.name}...")
+        daynum = get_max_daynum_from_potdat()
+
+        if daynum is None:
+            print(f"ERROR: Failed to determine daynum from {POTDAT_FILE.name}")
+            return 1
+
+        print(f"  ✓ Using maximum daynum: {daynum}")
+
+    try:
+        # Update existing cross-sectional files first
+        update_existing_cross_sectional_files(daynum)
+
+        # Extract cross-sectional data for the new/current daynum
+        print(f"\nExtracting data for daynum {daynum}...")
+        tickers, metric_data = extract_cross_sectional_data(daynum)
+
+        if not tickers:
+            print(f"ERROR: No data extracted for daynum {daynum}")
+            return 1
+
+        num_tickers = len(tickers)
+        num_metrics = len(metric_data)
+
+        print(f"\nExtracted data:")
+        print(f"  - Tickers: {num_tickers}")
+        print(f"  - Metrics: {num_metrics}")
+
+        # Count data coverage
+        total_cells = num_tickers * num_metrics
+        filled_cells = sum(
+            1 for metric_values in metric_data.values()
+            for value in metric_values
+            if value is not None
+        )
+
+        print(f"  - Data coverage: {filled_cells}/{total_cells} cells ({100*filled_cells/total_cells:.1f}%)")
+
+        # Write output file for current daynum
+        print(f"\nWriting cross-sectional data for daynum {daynum}...")
+        output_file = write_cross_sectional_csv(daynum, tickers, metric_data)
+
+        print(f"\nSUCCESS: Cross-sectional data extracted")
+        print(f"  Daynum: {daynum}")
+        print(f"  Output: {output_file.name}")
+        print(f"  Tickers: {num_tickers}")
+        print(f"  Metrics: {num_metrics}")
+
+        return 0
+
+    except Exception as e:
+        print(f"ERROR: Error during extraction: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
