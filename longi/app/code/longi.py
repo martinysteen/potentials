@@ -70,10 +70,60 @@ MODULES: Dict[str, Module] = {
         script="longi_stepup.py",
         depends_on=["medians"],  # Depends on all 4 median files
     ),
+    "spr100d": Module(
+        name="Spread to 100-day Maximum",
+        script="longi_spr100d.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
+    "spr250d": Module(
+        name="Spread to 250-day Maximum",
+        script="longi_spr250d.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
+    "vola20d": Module(
+        name="20-day Volatility (Returns-based)",
+        script="longi_vola20d.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
+    "vola100d": Module(
+        name="100-day Volatility (Returns-based)",
+        script="longi_vola100d.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
+    "ma20": Module(
+        name="20-day Simple Moving Average",
+        script="longi_ma20.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
+    "ma50": Module(
+        name="50-day Simple Moving Average",
+        script="longi_ma50.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
+    "ma200": Module(
+        name="200-day Simple Moving Average",
+        script="longi_ma200.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
+    "PdivMA20": Module(
+        name="Price / MA20 Ratio",
+        script="longi_PdivMA20.py",
+        depends_on=["ma20"],  # Depends on longi_ma20.csv
+    ),
+    "PdivMA50": Module(
+        name="Price / MA50 Ratio",
+        script="longi_PdivMA50.py",
+        depends_on=["ma50"],  # Depends on longi_ma50.csv
+    ),
+    "PdivMA200": Module(
+        name="Price / MA200 Ratio",
+        script="longi_PdivMA200.py",
+        depends_on=["ma200"],  # Depends on longi_ma200.csv
+    ),
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="longi_across.py",
-        depends_on=["rsi", "macd", "uptrend", "performance", "rank", "medians", "stepup"],  # Depends on ALL modules - must run last
+        depends_on=["rsi", "macd", "uptrend", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200"],  # Depends on ALL modules - must run last
     ),
     # Add more modules here:
     # "module_name": Module(

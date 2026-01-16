@@ -77,7 +77,7 @@ All derived tables follow same structure as PotDat.csv:
 - Different values (derived metrics instead of prices)
 
 ### Derived Tables (Time-Series Format)
-All tables 1-15 follow PotDat.csv structure (rows=tickers, columns=daynums):
+All tables follow PotDat.csv structure (rows=tickers, columns=daynums):
 
 1. **longi_rsi.csv** - RSI14 using Wilder's method ✓ IMPLEMENTED
 2. **longi_macd.csv** - MACD(4,15,9) indicator ✓ IMPLEMENTED
@@ -96,6 +96,16 @@ All tables 1-15 follow PotDat.csv structure (rows=tickers, columns=daynums):
 15. **longi_median_50d.csv** - 50-day rolling median of rank ✓ IMPLEMENTED
 16. **longi_median_100d.csv** - 100-day rolling median of rank ✓ IMPLEMENTED
 17. **longi_stepup.csv** - Step-up count (0-3) as uptrend measure ✓ IMPLEMENTED
+18. **longi_spr100d.csv** - Spread to 100-day maximum (% growth needed) ✓ IMPLEMENTED
+19. **longi_spr250d.csv** - Spread to 250-day maximum (% growth needed) ✓ IMPLEMENTED
+20. **longi_vola20d.csv** - 20-day volatility (returns-based stdev in %) ✓ IMPLEMENTED
+21. **longi_vola100d.csv** - 100-day volatility (returns-based stdev in %) ✓ IMPLEMENTED
+22. **longi_ma20.csv** - 20-day Simple Moving Average ✓ IMPLEMENTED
+23. **longi_ma50.csv** - 50-day Simple Moving Average ✓ IMPLEMENTED
+24. **longi_ma200.csv** - 200-day Simple Moving Average ✓ IMPLEMENTED
+25. **longi_PdivMA20.csv** - Price / MA20 ratio (>100 = bullish) ✓ IMPLEMENTED
+26. **longi_PdivMA50.csv** - Price / MA50 ratio (>100 = bullish) ✓ IMPLEMENTED
+27. **longi_PdivMA200.csv** - Price / MA200 ratio (>100 = bullish) ✓ IMPLEMENTED
 
 ### Cross-Sectional Data
 18. **longi_across_<daynum>.csv** - Cross-sectional view for specific daynum ✓ IMPLEMENTED
@@ -185,7 +195,7 @@ Follow the same pattern:
 - ✓ Pipeline orchestrator (longi.py) fully implemented
   - Dependency management working
   - Parallel execution capability ready
-  - 8 modules registered: rsi, macd, uptrend, performance, rank, medians, stepup, across
+  - 18 modules registered: rsi, macd, uptrend, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, across
 - ✓ longi_rsi.py fully implemented and tested
 - ✓ longi_macd.py fully implemented and tested
 - ✓ longi_uptrend.py fully implemented and tested
@@ -195,6 +205,19 @@ Follow the same pattern:
   - Outputs: longi_median_10d.csv, longi_median_20d.csv, longi_median_30d.csv, longi_median_40d.csv, longi_median_50d.csv, longi_median_100d.csv
 - ✓ longi_stepup.py fully implemented
   - Outputs: longi_stepup.csv (step-up counts 0-3)
+- ✓ longi_spr100d.py fully implemented
+  - Formula: ((max_100d - current_price) / current_price) * 100
+- ✓ longi_spr250d.py fully implemented
+  - Formula: ((max_250d - current_price) / current_price) * 100
+- ✓ longi_vola20d.py fully implemented
+  - Returns-based volatility: stdev(daily_returns_over_20_days)
+- ✓ longi_vola100d.py fully implemented
+  - Returns-based volatility: stdev(daily_returns_over_100_days)
+- ✓ longi_ma20.py, longi_ma50.py, longi_ma200.py fully implemented
+  - Simple Moving Averages (SMA) for 20, 50, and 200 days
+- ✓ longi_PdivMA20.py, longi_PdivMA50.py, longi_PdivMA200.py fully implemented
+  - Price/MA ratios (>100 = price above MA = bullish)
+  - Dependencies: require corresponding MA module
 - ✓ longi_across.py fully implemented
   - Outputs: longi_across_<daynum>.csv (cross-sectional view with ticker_<daynum> column)
   - Runs last (depends on all other modules)
