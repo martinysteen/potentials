@@ -4,9 +4,10 @@
 ```
 /home/sm/potentials/longi/
 ├── start_longi.sh       # Main entry point (conda + full pipeline)
+├── fetch_input.sh       # Input data provider (downloads from GDrive)
 └── app/
     ├── code/            # Python modules
-    │   ├── longi.py     # Pipeline orchestrator (includes download)
+    │   ├── longi.py     # Pipeline orchestrator
     │   ├── longi_rsi.py
     │   ├── longi_macd.py
     │   ├── longi_uptrend.py
@@ -28,20 +29,26 @@
 - **Execution:** Scripts run via .sh files
 
 ## Data Flow
-1. `start_longi.sh` → Activates conda + runs `longi.py`
-2. `longi.py` orchestrator:
-   - Downloads PotDat.csv and cal.csv from Google Drive to `./input/`
-   - Uses shared gd_download module from `/home/sm/potentials/shared/app/code/`
+1. `start_longi.sh` → Activates conda, runs `fetch_input.sh`, then runs `longi.py`
+2. `fetch_input.sh` → Downloads input files from Google Drive to `./app/input/`:
+   - PotDat.csv (stock price data)
+   - Stamdata.csv (stock attributes/metadata)
+   - Cal.csv (date conversion reference)
+   - Uses rclone to sync from GoogleDrive:PotSystem/repositoryRTBI/
+3. `longi.py` orchestrator:
    - Coordinates all processing modules
    - Manages module dependencies (sequential execution)
    - Runs independent modules in parallel (when possible)
    - Handles errors and logging
-3. Results go to `./output/`
-4. `longi.py` → Uploads to Google Drive (via longi_upload.py)
+4. Results go to `./app/output/`
+5. `longi.py` → Uploads to Google Drive (via longi_upload.py)
 
 ## Key Scripts
+- **fetch_input.sh** - Input data provider ✓ IMPLEMENTED
+  - Downloads PotDat.csv, Stamdata.csv, Cal.csv from Google Drive
+  - Uses rclone with GoogleDrive:PotSystem/repositoryRTBI/
+  - Called by start_longi.sh before running longi.py
 - **longi.py** - Main orchestrator/manager script ✓ IMPLEMENTED
-  - Downloads input data using shared gd_download module
   - Manages all longi_*.py processing modules
   - Handles dependencies and parallel execution
   - See "Adding New Modules" section below
@@ -69,6 +76,12 @@
 
 - **cal.csv** - Date conversion reference
   - Maps daynum → actual dates
+
+- **Stamdata.csv** - Stock attributes/metadata
+  - Row structure: First column = ticker, subsequent columns = stock attributes
+  - Key columns: Name, Sector, Homeland, GICS, etc.
+  - European CSV format (`;` separator, `,` decimal)
+  - Used for grouping/aggregating stocks by attributes
 
 ### Output Data (Derived Tables)
 All derived tables follow same structure as PotDat.csv:
@@ -106,6 +119,13 @@ All tables follow PotDat.csv structure (rows=tickers, columns=daynums):
 25. **longi_PdivMA20.csv** - Price / MA20 ratio (>100 = bullish) ✓ IMPLEMENTED
 26. **longi_PdivMA50.csv** - Price / MA50 ratio (>100 = bullish) ✓ IMPLEMENTED
 27. **longi_PdivMA200.csv** - Price / MA200 ratio (>100 = bullish) ✓ IMPLEMENTED
+
+### Aggregated Growth Tables (Grouped by Stock Attributes)
+28. **longi_grp_GICS_1yr.csv** - GICS sector-aggregated 1-year growth ✓ IMPLEMENTED
+    - Rows: Unique GICS sector values (Basi, C-Di, C-St, Ener, Fina, Heal, Index, Indu, REIT, Tech, Tele, Util, na)
+    - Columns: All daynums from longi_per1y.csv
+    - Values: Sector-averaged growth rates using formula: `average(1 + growth_rate) - 1`
+    - Aggregates individual stock growth rates by GICS sector for trend analysis
 
 ### Cross-Sectional Data
 18. **longi_across_<daynum>.csv** - Cross-sectional view for specific daynum ✓ IMPLEMENTED
@@ -183,6 +203,21 @@ Main orchestrator that manages all processing modules with intelligent execution
 - **Dependencies**: Must run last (depends on all other modules)
 - Automatically discovers available output files (scans output/ directory)
 
+#### longi_grp_GICS_1yr.py - GICS Sector Aggregation Module ✓ IMPLEMENTED
+- Calculates sector-aggregated 1-year growth rates grouped by GICS
+- Reads Stamdata.csv (ticker→GICS mapping) and longi_per1y.csv → outputs longi_grp_GICS_1yr.csv
+- **Output structure**:
+  - Rows: Unique GICS sector values (13 sectors including Index, na)
+  - Columns: All daynums from longi_per1y.csv
+  - Values: Sector-averaged growth rates
+- **Aggregation formula**: `average(1 + growth_rate) - 1`
+  - Converts growth rates to multipliers (1 + r)
+  - Averages across all stocks in sector
+  - Converts back to growth rate (avg - 1)
+  - This gives proper compounded average return for the sector
+- **Dependencies**: Requires performance module (longi_per1y.csv)
+- **Extensible**: Can be adapted for other grouping attributes (Sector, Homeland, etc.)
+
 #### Future longi_*.py Modules
 Follow the same pattern:
 - Read from input/ or output/ (if depends on another module)
@@ -195,7 +230,7 @@ Follow the same pattern:
 - ✓ Pipeline orchestrator (longi.py) fully implemented
   - Dependency management working
   - Parallel execution capability ready
-  - 18 modules registered: rsi, macd, uptrend, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, across
+  - 19 modules registered: rsi, macd, uptrend, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, grp_GICS_1yr, across
 - ✓ longi_rsi.py fully implemented and tested
 - ✓ longi_macd.py fully implemented and tested
 - ✓ longi_uptrend.py fully implemented and tested
@@ -218,6 +253,10 @@ Follow the same pattern:
 - ✓ longi_PdivMA20.py, longi_PdivMA50.py, longi_PdivMA200.py fully implemented
   - Price/MA ratios (>100 = price above MA = bullish)
   - Dependencies: require corresponding MA module
+- ✓ longi_grp_GICS_1yr.py fully implemented
+  - Outputs: longi_grp_GICS_1yr.csv (GICS sector-aggregated 1-year growth)
+  - Aggregates individual stock growth by GICS sector
+  - Formula: average(1 + growth_rate) - 1
 - ✓ longi_across.py fully implemented
   - Outputs: longi_across_<daynum>.csv (cross-sectional view with ticker_<daynum> column)
   - Runs last (depends on all other modules)

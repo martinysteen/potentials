@@ -42,7 +42,18 @@ fi
 echo "Using Python: $(which python3)"
 echo "Python version: $(python3 --version)"
 
-# Run orchestrator (downloads data, runs all calculations, uploads results)
+# Fetch input data using external provider
+echo "Fetching input data..."
+/home/sm/potentials/longi/fetch_input.sh
+FETCH_EXIT_CODE=$?
+if [ $FETCH_EXIT_CODE -ne 0 ]; then
+    echo "ERROR: fetch_input.sh failed with exit code $FETCH_EXIT_CODE"
+    exit $FETCH_EXIT_CODE
+fi
+echo "Input data fetched successfully"
+echo ""
+
+# Run orchestrator (runs all calculations, uploads results)
 echo "Starting longi.py orchestrator..."
 python3 longi.py
 FINAL_EXIT_CODE=$?

@@ -3,7 +3,7 @@ Longi Pipeline Orchestrator
 
 Manages execution of all longi_*.py indicator calculation modules.
 Handles dependencies, parallel execution where possible, error handling, and logging.
-Downloads input data from Google Drive, then runs all processing modules.
+(Input data fetching is handled by fetch_input.sh before this runs)
 """
 
 import sys
@@ -13,10 +13,6 @@ from typing import List, Dict, Set, Optional
 from dataclasses import dataclass
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
-
-# Add shared code to path for gd_download
-sys.path.insert(0, '/home/sm/potentials/shared/app/code')
-from gd_download import download_files
 
 
 @dataclass
@@ -120,10 +116,15 @@ MODULES: Dict[str, Module] = {
         script="longi_PdivMA200.py",
         depends_on=["ma200"],  # Depends on longi_ma200.csv
     ),
+    "grp_GICS_1yr": Module(
+        name="GICS Sector-Aggregated 1-Year Growth",
+        script="longi_grp_GICS_1yr.py",
+        depends_on=["performance"],  # Depends on longi_per1y.csv
+    ),
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="longi_across.py",
-        depends_on=["rsi", "macd", "uptrend", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200"],  # Depends on ALL modules - must run last
+        depends_on=["rsi", "macd", "uptrend", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "grp_GICS_1yr"],  # Depends on ALL modules - must run last
     ),
     # Add more modules here:
     # "module_name": Module(
@@ -379,28 +380,13 @@ def run_upload() -> int:
 def main() -> int:
     """
     Main execution function.
-    Downloads input data, runs all processing modules, uploads results.
+    Runs all processing modules, uploads results.
+    (Input data fetching is handled by fetch_input.sh before this runs)
 
     Returns:
         Exit code (0 = success, 1 = failure)
     """
-    # Step 1: Download input data from Google Drive
-    print("=== Downloading input data from Google Drive ===")
-    input_path = str(Path(__file__).parent.parent / 'input')
-
-    exit_code = download_files(
-        'repositoryRTBI',
-        ['PotDat.csv', 'cal.csv'],
-        input_path
-    )
-
-    if exit_code != 0:
-        print("*** Download failed, aborting pipeline ***")
-        return 1
-
-    print()
-
-    # Step 2: Run processing modules
+    # Step 1: Run processing modules
     executor = ModuleExecutor()
     exit_code = executor.run_pipeline(max_parallel=4)
 
@@ -410,7 +396,7 @@ def main() -> int:
 
     print()
 
-    # Step 3: Upload results to Google Drive
+    # Step 2: Upload results to Google Drive
     exit_code = run_upload()
 
     if exit_code != 0:
