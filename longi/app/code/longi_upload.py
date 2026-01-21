@@ -115,6 +115,12 @@ def main() -> int:
             "required": True,  # Fail if this upload fails
         },
         {
+            "name": "output_grp",
+            "source": Path("/home/sm/potentials/longi/app/output_grp"),
+            "destination": "GoogleDrive:PotSystem/repositoryRTBI/Longi/output_grp",
+            "required": False,  # Optional - warn but continue if missing/failed
+        },
+        {
             "name": "across",
             "source": Path("/home/sm/potentials/longi/app/across"),
             "destination": "GoogleDrive:PotSystem/repositoryRTBI/Longi/across",

@@ -121,10 +121,15 @@ MODULES: Dict[str, Module] = {
         script="longi_grp_GICS_1yr.py",
         depends_on=["performance"],  # Depends on longi_per1y.csv
     ),
+    "grp_Sector2_1yr": Module(
+        name="Sector2-Aggregated 1-Year Growth",
+        script="longi_grp_Sector2_1yr.py",
+        depends_on=["performance"],  # Depends on longi_per1y.csv
+    ),
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="longi_across.py",
-        depends_on=["rsi", "macd", "uptrend", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "grp_GICS_1yr"],  # Depends on ALL modules - must run last
+        depends_on=["rsi", "macd", "uptrend", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "grp_GICS_1yr", "grp_Sector2_1yr"],  # Depends on ALL modules - must run last
     ),
     # Add more modules here:
     # "module_name": Module(

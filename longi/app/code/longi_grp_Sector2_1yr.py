@@ -1,15 +1,15 @@
 """
-Calculate GICS sector-aggregated 1-year growth rates.
+Calculate Sector2-aggregated 1-year growth rates.
 
 Reads:
-- ../input/Stamdata.csv (ticker → GICS mapping)
+- ../input/Stamdata.csv (ticker → Sector2 mapping)
 - ../output/longi_per1y.csv (individual stock 1-year growth rates)
 
 Writes:
-- ../output_grp/longi_grp_GICS_1yr.csv
+- ../output_grp/longi_grp_Sector2_1yr.csv
 
 Output structure:
-- Rows: Unique GICS sector values
+- Rows: Unique Sector2 values
 - Columns: All daynums from longi_per1y.csv
 - Values: Sector-averaged growth rates using formula: average(1 + growth_rate) - 1
 """
@@ -22,7 +22,7 @@ from pathlib import Path
 
 def main() -> int:
     """
-    Calculate GICS sector-aggregated 1-year growth rates.
+    Calculate Sector2-aggregated 1-year growth rates.
 
     Returns:
         Exit code (0 = success, 1 = failure)
@@ -33,16 +33,16 @@ def main() -> int:
         stamdata_path = base_path / 'input' / 'Stamdata.csv'
         per1y_path = base_path / 'output' / 'longi_per1y.csv'
         output_dir = base_path / 'output_grp'
-        output_path = output_dir / 'longi_grp_GICS_1yr.csv'
+        output_path = output_dir / 'longi_grp_Sector2_1yr.csv'
 
         # Create output_grp directory if it doesn't exist
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        print("=== longi_grp_GICS_1yr.py START ===")
+        print("=== longi_grp_Sector2_1yr.py START ===")
         print(f"Reading Stamdata from: {stamdata_path}")
         print(f"Reading 1-year performance from: {per1y_path}")
 
-        # Read Stamdata.csv to get ticker→GICS mapping
+        # Read Stamdata.csv to get ticker→Sector2 mapping
         # European CSV format: sep=';', decimal=','
         stamdata = pd.read_csv(
             stamdata_path,
@@ -52,19 +52,19 @@ def main() -> int:
             dtype=str  # Read as strings to preserve all values
         )
 
-        # Create ticker→GICS mapping (skip header row)
-        ticker_to_gics = {}
+        # Create ticker→Sector2 mapping (skip header row)
+        ticker_to_sector2 = {}
         for _, row in stamdata.iloc[1:].iterrows():  # Skip header row
-            ticker = row.iloc[0]  # First column is ticker
-            gics = row.iloc[5]    # GICS column (index 5, 6th column)
-            if pd.notna(ticker) and pd.notna(gics):
-                ticker_to_gics[ticker] = gics
+            ticker = row.iloc[0]   # First column is ticker
+            sector2 = row.iloc[19]  # Sector2 column (index 19, 20th column)
+            if pd.notna(ticker) and pd.notna(sector2) and sector2.strip() != '':
+                ticker_to_sector2[ticker] = sector2
 
-        print(f"Loaded {len(ticker_to_gics)} ticker→GICS mappings")
+        print(f"Loaded {len(ticker_to_sector2)} ticker→Sector2 mappings")
 
-        # Get unique GICS sectors
-        unique_gics = sorted(set(ticker_to_gics.values()))
-        print(f"Found {len(unique_gics)} unique GICS sectors: {unique_gics}")
+        # Get unique Sector2 values
+        unique_sector2 = sorted(set(ticker_to_sector2.values()))
+        print(f"Found {len(unique_sector2)} unique Sector2 values")
 
         # Read longi_per1y.csv
         per1y = pd.read_csv(
@@ -82,13 +82,13 @@ def main() -> int:
         print(f"Processing {len(per1y)-1} tickers across {len(daynums)} daynums")
 
         # Initialize result DataFrame
-        result = pd.DataFrame(index=unique_gics, columns=header)
-        result.iloc[:, 0] = unique_gics  # First column = GICS sector names
+        result = pd.DataFrame(index=unique_sector2, columns=header)
+        result.iloc[:, 0] = unique_sector2  # First column = Sector2 names
 
         # For each daynum column, calculate sector-aggregated growth
         for daynum in daynums:
-            # Group stocks by GICS sector
-            sector_growth_rates = {gics: [] for gics in unique_gics}
+            # Group stocks by Sector2
+            sector_growth_rates = {sector2: [] for sector2 in unique_sector2}
 
             # Iterate through stocks (skip header row in per1y)
             for idx in range(1, len(per1y)):
@@ -96,7 +96,7 @@ def main() -> int:
                 growth_rate_value = per1y.iloc[idx][daynum]  # Growth rate for this daynum
 
                 # Skip if ticker not in mapping or growth rate is missing
-                if ticker not in ticker_to_gics:
+                if ticker not in ticker_to_sector2:
                     continue
                 if pd.isna(growth_rate_value):
                     continue
@@ -107,23 +107,23 @@ def main() -> int:
                     # Convert from percentage to decimal (e.g., 13.87% -> 0.1387)
                     growth_rate_pct = float(growth_rate_value)
                     growth_rate_decimal = growth_rate_pct / 100.0
-                    gics = ticker_to_gics[ticker]
-                    sector_growth_rates[gics].append(growth_rate_decimal)
+                    sector2 = ticker_to_sector2[ticker]
+                    sector_growth_rates[sector2].append(growth_rate_decimal)
                 except (ValueError, TypeError):
                     # Skip invalid values
                     continue
 
             # Calculate sector-aggregated growth: average(1 + growth_rate) - 1
-            for gics in unique_gics:
-                rates = sector_growth_rates[gics]
+            for sector2 in unique_sector2:
+                rates = sector_growth_rates[sector2]
                 if len(rates) > 0:
                     # Formula: average(1 + r) - 1
                     avg_growth = np.mean([1 + r for r in rates]) - 1
                     # Convert back to percentage
-                    result.loc[gics, daynum] = avg_growth * 100.0
+                    result.loc[sector2, daynum] = avg_growth * 100.0
                 else:
                     # No data for this sector at this daynum
-                    result.loc[gics, daynum] = np.nan
+                    result.loc[sector2, daynum] = np.nan
 
         # Write output with European CSV format
         # Convert float columns to use comma as decimal separator
@@ -150,15 +150,15 @@ def main() -> int:
                         row_values.append(str(val))
                 f.write(';'.join(row_values) + '\n')
 
-        print(f"SUCCESS: Created longi_grp_GICS_1yr.csv with {len(unique_gics)} sectors")
-        print("=== longi_grp_GICS_1yr.py END ===")
+        print(f"SUCCESS: Created longi_grp_Sector2_1yr.csv with {len(unique_sector2)} sectors")
+        print("=== longi_grp_Sector2_1yr.py END ===")
         return 0
 
     except FileNotFoundError as e:
         print(f"ERROR: Required file not found: {e}")
         return 1
     except Exception as e:
-        print(f"ERROR: Failed to calculate GICS aggregated growth: {e}")
+        print(f"ERROR: Failed to calculate Sector2 aggregated growth: {e}")
         import traceback
         traceback.print_exc()
         return 1

@@ -12,10 +12,12 @@ or removed from PotDat.csv.
 Output structure:
 - Rows: Stock tickers
 - Columns: ticker_<daynum> (first column with daynum), then metrics extracted
-  from longi_*.csv files (taken after-the-underscore)
+  from longi_*.csv files (taken after-the-underscore), plus sector aggregates
   - e.g., ticker_2009, rsi, macd_line, macd_signal, macd_histogram, uptrend,
     per1d, per1w, per1m, per3m, per6m, per1y, rank, median_10d, median_20d,
-    median_50d, median_100d, stepup
+    median_50d, median_100d, stepup, GICS_1yr, Sector2_1yr
+  - GICS_1yr: Sector-aggregated 1-year performance for stock's GICS sector
+  - Sector2_1yr: Sector-aggregated 1-year performance for stock's Sector2
 
 Parameters:
 - daynum: Optional daynum to extract. If not provided, uses the maximum (newest)
@@ -34,8 +36,10 @@ from typing import List, Optional, Dict, Tuple
 # Configuration
 INPUT_DIR = Path(__file__).parent.parent / "input"
 SOURCE_DIR = Path(__file__).parent.parent / "output"
+SOURCE_DIR_GRP = Path(__file__).parent.parent / "output_grp"
 OUTPUT_DIR_ACROSS = Path(__file__).parent.parent / "across"
 POTDAT_FILE = INPUT_DIR / "PotDat.csv"
+STAMDATA_FILE = INPUT_DIR / "Stamdata.csv"
 
 
 def parse_european_decimal(value: str) -> Optional[str]:
@@ -52,6 +56,43 @@ def parse_european_decimal(value: str) -> Optional[str]:
     if not value:
         return None
     return value
+
+
+def load_stamdata_mappings() -> Tuple[Dict[str, str], Dict[str, str]]:
+    """
+    Load ticker→GICS and ticker→Sector2 mappings from Stamdata.csv.
+
+    Returns:
+        Tuple of (ticker_to_gics, ticker_to_sector2) dictionaries
+    """
+    ticker_to_gics = {}
+    ticker_to_sector2 = {}
+
+    try:
+        with open(STAMDATA_FILE, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f, delimiter=';')
+            next(reader)  # Skip header row
+
+            for row in reader:
+                if len(row) < 20:  # Need at least 20 columns for Sector2
+                    continue
+
+                ticker = row[0].strip()
+                gics = row[5].strip() if len(row) > 5 else ""  # GICS at index 5
+                sector2 = row[19].strip() if len(row) > 19 else ""  # Sector2 at index 19
+
+                if ticker:
+                    if gics:
+                        ticker_to_gics[ticker] = gics
+                    if sector2:
+                        ticker_to_sector2[ticker] = sector2
+
+        print(f"  Loaded Stamdata mappings: {len(ticker_to_gics)} GICS, {len(ticker_to_sector2)} Sector2")
+
+    except Exception as e:
+        print(f"  WARNING: Failed to load Stamdata.csv: {e}")
+
+    return ticker_to_gics, ticker_to_sector2
 
 
 def get_max_daynum_from_potdat() -> Optional[int]:
@@ -163,6 +204,81 @@ def load_column_for_daynum(filepath: str, daynum: int) -> Tuple[List[str], List[
         return [], []
 
 
+def load_sector_aggregated_data(daynum: int) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """
+    Load sector-aggregated performance data for a specific daynum.
+
+    Args:
+        daynum: Daynum to extract
+
+    Returns:
+        Tuple of (gics_to_perf, sector2_to_perf) dictionaries
+        Maps sector name → performance value for this daynum
+    """
+    gics_to_perf = {}
+    sector2_to_perf = {}
+
+    # Load GICS aggregated data
+    gics_file = SOURCE_DIR_GRP / "longi_grp_GICS_1yr.csv"
+    if gics_file.exists():
+        try:
+            with open(gics_file, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f, delimiter=';')
+                header = next(reader)
+
+                # Find column index for this daynum
+                daynum_str = str(daynum)
+                col_idx = None
+                for idx, col in enumerate(header[1:], start=1):
+                    if col.strip() == daynum_str:
+                        col_idx = idx
+                        break
+
+                if col_idx is not None:
+                    for row in reader:
+                        sector_name = row[0].strip()
+                        if col_idx < len(row):
+                            perf_value = parse_european_decimal(row[col_idx])
+                            if perf_value:
+                                gics_to_perf[sector_name] = perf_value
+
+            print(f"  Loaded GICS aggregated data: {len(gics_to_perf)} sectors")
+
+        except Exception as e:
+            print(f"  WARNING: Failed to load GICS aggregated data: {e}")
+
+    # Load Sector2 aggregated data
+    sector2_file = SOURCE_DIR_GRP / "longi_grp_Sector2_1yr.csv"
+    if sector2_file.exists():
+        try:
+            with open(sector2_file, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f, delimiter=';')
+                header = next(reader)
+
+                # Find column index for this daynum
+                daynum_str = str(daynum)
+                col_idx = None
+                for idx, col in enumerate(header[1:], start=1):
+                    if col.strip() == daynum_str:
+                        col_idx = idx
+                        break
+
+                if col_idx is not None:
+                    for row in reader:
+                        sector_name = row[0].strip()
+                        if col_idx < len(row):
+                            perf_value = parse_european_decimal(row[col_idx])
+                            if perf_value:
+                                sector2_to_perf[sector_name] = perf_value
+
+            print(f"  Loaded Sector2 aggregated data: {len(sector2_to_perf)} sectors")
+
+        except Exception as e:
+            print(f"  WARNING: Failed to load Sector2 aggregated data: {e}")
+
+    return gics_to_perf, sector2_to_perf
+
+
 def extract_cross_sectional_data(daynum: int) -> Tuple[List[str], Dict[str, List[Optional[str]]]]:
     """
     Extract cross-sectional data for all metrics at a specific daynum.
@@ -210,6 +326,43 @@ def extract_cross_sectional_data(daynum: int) -> Tuple[List[str], Dict[str, List
 
     if tickers is None:
         tickers = []
+
+    # Add sector-aggregated performance columns (GICS_1yr and Sector2_1yr)
+    print(f"\nAdding sector-aggregated performance columns...")
+
+    # Load Stamdata mappings
+    ticker_to_gics, ticker_to_sector2 = load_stamdata_mappings()
+
+    # Load sector aggregated data
+    gics_to_perf, sector2_to_perf = load_sector_aggregated_data(daynum)
+
+    # Create GICS_1yr column: for each ticker, lookup its GICS sector's performance
+    gics_1yr_values = []
+    for ticker in tickers:
+        gics = ticker_to_gics.get(ticker)
+        if gics and gics in gics_to_perf:
+            gics_1yr_values.append(gics_to_perf[gics])
+        else:
+            gics_1yr_values.append(None)
+
+    metric_data["GICS_1yr"] = gics_1yr_values
+
+    # Create Sector2_1yr column: for each ticker, lookup its Sector2's performance
+    sector2_1yr_values = []
+    for ticker in tickers:
+        sector2 = ticker_to_sector2.get(ticker)
+        if sector2 and sector2 in sector2_to_perf:
+            sector2_1yr_values.append(sector2_to_perf[sector2])
+        else:
+            sector2_1yr_values.append(None)
+
+    metric_data["Sector2_1yr"] = sector2_1yr_values
+
+    # Count how many tickers got sector data
+    gics_matched = sum(1 for v in gics_1yr_values if v is not None)
+    sector2_matched = sum(1 for v in sector2_1yr_values if v is not None)
+    print(f"  GICS_1yr: {gics_matched}/{len(tickers)} tickers matched")
+    print(f"  Sector2_1yr: {sector2_matched}/{len(tickers)} tickers matched")
 
     return tickers, metric_data
 
