@@ -1,14 +1,13 @@
 #!/bin/bash
 
 LOGFILE=~/start_longi.log
-# Delete log file if it exists
-# if [ -f "$LOGFILE" ]; then
-#    rm "$LOGFILE"
-# fi
 
-exec 3>&1
-exec >> $LOGFILE 2>&1
+# Use tee to show output in real-time AND log to file
+# All output goes to both terminal and log file
+exec > >(tee "$LOGFILE") 2>&1
+
 echo "=== start_longi.sh START: $(date) ==="
+echo "Log file: $LOGFILE"
 
 # Change to working directory
 cd /home/sm/potentials/longi/app/code || {
@@ -17,7 +16,6 @@ cd /home/sm/potentials/longi/app/code || {
 }
 
 # CRITICAL: Initialize conda first
-# Replace with your actual conda installation path if different
 CONDA_BASE="$HOME/miniconda3"
 echo "Conda base directory: $CONDA_BASE"
 
@@ -43,7 +41,8 @@ echo "Using Python: $(which python3)"
 echo "Python version: $(python3 --version)"
 
 # Fetch input data using external provider
-echo "Fetching input data..."
+echo ""
+echo "--- Fetching input data ---"
 /home/sm/potentials/longi/fetch_input.sh
 FETCH_EXIT_CODE=$?
 if [ $FETCH_EXIT_CODE -ne 0 ]; then
@@ -51,22 +50,31 @@ if [ $FETCH_EXIT_CODE -ne 0 ]; then
     exit $FETCH_EXIT_CODE
 fi
 echo "Input data fetched successfully"
-echo ""
 
-# Run orchestrator (runs all calculations, uploads results)
-echo "Starting longi.py orchestrator..."
+# Run orchestrator (runs all calculations)
+echo ""
+echo "--- Starting longi.py orchestrator ---"
 python3 longi.py
-FINAL_EXIT_CODE=$?
-echo "longi.py exit code: $FINAL_EXIT_CODE"
+LONGI_EXIT_CODE=$?
+echo "longi.py exit code: $LONGI_EXIT_CODE"
 
-echo "=== start_longi.sh END: $(date) =========================================================="
-echo ""
-
-# Display log file when on TTY
-if [ -t 3 ]; then
-    exec >&3
-    echo "** Content of log: $LOGFILE"
-    cat "$LOGFILE"
+if [ $LONGI_EXIT_CODE -ne 0 ]; then
+    echo "ERROR: longi.py failed, skipping upload"
+    echo "=== start_longi.sh END: $(date) =========================================================="
+    exit $LONGI_EXIT_CODE
 fi
+
+# Upload output data using external provider
+echo ""
+echo "--- Uploading output data ---"
+/home/sm/potentials/longi/upload_output.sh
+UPLOAD_EXIT_CODE=$?
+if [ $UPLOAD_EXIT_CODE -ne 0 ]; then
+    echo "ERROR: upload_output.sh failed with exit code $UPLOAD_EXIT_CODE"
+fi
+
+FINAL_EXIT_CODE=$UPLOAD_EXIT_CODE
+echo ""
+echo "=== start_longi.sh END: $(date) =========================================================="
 
 exit $FINAL_EXIT_CODE

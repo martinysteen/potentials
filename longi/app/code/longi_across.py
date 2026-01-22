@@ -452,6 +452,10 @@ def write_cross_sectional_csv(daynum: int, tickers: List[str],
     """
     Write cross-sectional data to CSV file.
 
+    Column ordering:
+    - Regular columns: alphabetically sorted, placed first (left)
+    - Group columns (from longi_grp_*): alphabetically sorted, placed last (right)
+
     Args:
         daynum: Daynum being extracted
         tickers: List of ticker symbols
@@ -462,8 +466,21 @@ def write_cross_sectional_csv(daynum: int, tickers: List[str],
     """
     output_file = OUTPUT_DIR_ACROSS / f"longi_across_{daynum}.csv"
 
-    # Sort metric names for consistent column order
-    metric_names = sorted(metric_data.keys())
+    # Separate regular columns from group columns (GICS_*, Sector2_*, etc.)
+    # Group columns are those ending with _1yr, _3m, _6m patterns (from longi_grp_* files)
+    regular_cols = []
+    group_cols = []
+
+    for col_name in metric_data.keys():
+        # Check if this is a group column (contains underscore followed by time period)
+        # Pattern: GICS_1yr, Sector2_1yr, etc.
+        if '_1yr' in col_name or '_3m' in col_name or '_6m' in col_name or '_1m' in col_name:
+            group_cols.append(col_name)
+        else:
+            regular_cols.append(col_name)
+
+    # Sort each group alphabetically, then combine: regular first, group last
+    metric_names = sorted(regular_cols) + sorted(group_cols)
 
     with open(output_file, 'w', encoding='utf-8', newline='') as f:
         writer = csv.writer(f, delimiter=';')

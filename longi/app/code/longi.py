@@ -346,66 +346,21 @@ class ModuleExecutor:
         return True
 
 
-def run_upload() -> int:
-    """
-    Run longi_upload.py to upload results to Google Drive.
-
-    Returns:
-        Exit code (0 = success, 1 = failure)
-    """
-    print("=== Uploading results to Google Drive ===")
-
-    upload_script = Path(__file__).parent / 'longi_upload.py'
-
-    try:
-        result = subprocess.run(
-            [sys.executable, str(upload_script)],
-            cwd=upload_script.parent,
-            capture_output=True,
-            text=True,
-            timeout=600,  # 10 minute timeout
-        )
-
-        # Print output
-        if result.stdout:
-            print(result.stdout)
-        if result.stderr:
-            print(result.stderr)
-
-        return result.returncode
-
-    except subprocess.TimeoutExpired:
-        print("*** Upload timed out after 600 seconds ***")
-        return 1
-    except Exception as e:
-        print(f"*** Upload failed with exception: {e} ***")
-        return 1
-
-
 def main() -> int:
     """
     Main execution function.
-    Runs all processing modules, uploads results.
+    Runs all processing modules.
     (Input data fetching is handled by fetch_input.sh before this runs)
+    (Upload is handled by upload_output.sh after this runs)
 
     Returns:
         Exit code (0 = success, 1 = failure)
     """
-    # Step 1: Run processing modules
     executor = ModuleExecutor()
     exit_code = executor.run_pipeline(max_parallel=4)
 
     if exit_code != 0:
-        print("*** Processing failed, skipping upload ***")
-        return 1
-
-    print()
-
-    # Step 2: Upload results to Google Drive
-    exit_code = run_upload()
-
-    if exit_code != 0:
-        print("*** Upload failed ***")
+        print("*** Processing failed ***")
         return 1
 
     print("\n=== Pipeline completed successfully ===")
