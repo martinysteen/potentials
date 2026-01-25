@@ -38,7 +38,7 @@ def main() -> int:
         # Create output_grp directory if it doesn't exist
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        print("=== longi_grp_GICS_1yr.py START ===")
+        print("GICS sector aggregation (1-year growth)")
         print(f"Reading Stamdata from: {stamdata_path}")
         print(f"Reading 1-year performance from: {per1y_path}")
 
@@ -151,7 +151,7 @@ def main() -> int:
                 f.write(';'.join(row_values) + '\n')
 
         print(f"SUCCESS: Created longi_grp_GICS_1yr.csv with {len(unique_gics)} sectors")
-        print("=== longi_grp_GICS_1yr.py END ===")
+        print("Done")
         return 0
 
     except FileNotFoundError as e:

@@ -287,7 +287,7 @@ def main() -> int:
     Returns:
         Exit code (0 = success, 1 = error)
     """
-    print(f"=== longi_rank.py START: Ranking across all performance periods ===")
+    print(f"Ranking across all performance periods")
 
     # Check input files exist
     for filename in PERFORMANCE_FILES:

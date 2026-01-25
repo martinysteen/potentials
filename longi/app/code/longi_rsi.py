@@ -169,7 +169,7 @@ def main() -> int:
     Returns:
         Exit code (0 = success, 1 = error)
     """
-    print(f"=== longi_rsi.py START: RSI14 calculation (Wilder's method) ===")
+    print(f"RSI14 calculation (Wilder's method)")
 
     # Check input file exists
     if not INPUT_FILE.exists():

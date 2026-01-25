@@ -58,9 +58,12 @@ def parse_european_decimal(value: str) -> Optional[str]:
     return value
 
 
-def load_stamdata_mappings() -> Tuple[Dict[str, str], Dict[str, str]]:
+def load_stamdata_mappings(quiet: bool = False) -> Tuple[Dict[str, str], Dict[str, str]]:
     """
     Load ticker→GICS and ticker→Sector2 mappings from Stamdata.csv.
+
+    Args:
+        quiet: If True, suppress verbose output (used for batch updates)
 
     Returns:
         Tuple of (ticker_to_gics, ticker_to_sector2) dictionaries
@@ -87,7 +90,8 @@ def load_stamdata_mappings() -> Tuple[Dict[str, str], Dict[str, str]]:
                     if sector2:
                         ticker_to_sector2[ticker] = sector2
 
-        print(f"  Loaded Stamdata mappings: {len(ticker_to_gics)} GICS, {len(ticker_to_sector2)} Sector2")
+        if not quiet:
+            print(f"  Loaded Stamdata mappings: {len(ticker_to_gics)} GICS, {len(ticker_to_sector2)} Sector2")
 
     except Exception as e:
         print(f"  WARNING: Failed to load Stamdata.csv: {e}")
@@ -204,12 +208,13 @@ def load_column_for_daynum(filepath: str, daynum: int) -> Tuple[List[str], List[
         return [], []
 
 
-def load_sector_aggregated_data(daynum: int) -> Tuple[Dict[str, str], Dict[str, str]]:
+def load_sector_aggregated_data(daynum: int, quiet: bool = False) -> Tuple[Dict[str, str], Dict[str, str]]:
     """
     Load sector-aggregated performance data for a specific daynum.
 
     Args:
         daynum: Daynum to extract
+        quiet: If True, suppress verbose output (used for batch updates)
 
     Returns:
         Tuple of (gics_to_perf, sector2_to_perf) dictionaries
@@ -242,7 +247,8 @@ def load_sector_aggregated_data(daynum: int) -> Tuple[Dict[str, str], Dict[str, 
                             if perf_value:
                                 gics_to_perf[sector_name] = perf_value
 
-            print(f"  Loaded GICS aggregated data: {len(gics_to_perf)} sectors")
+            if not quiet:
+                print(f"  Loaded GICS aggregated data: {len(gics_to_perf)} sectors")
 
         except Exception as e:
             print(f"  WARNING: Failed to load GICS aggregated data: {e}")
@@ -271,7 +277,8 @@ def load_sector_aggregated_data(daynum: int) -> Tuple[Dict[str, str], Dict[str, 
                             if perf_value:
                                 sector2_to_perf[sector_name] = perf_value
 
-            print(f"  Loaded Sector2 aggregated data: {len(sector2_to_perf)} sectors")
+            if not quiet:
+                print(f"  Loaded Sector2 aggregated data: {len(sector2_to_perf)} sectors")
 
         except Exception as e:
             print(f"  WARNING: Failed to load Sector2 aggregated data: {e}")
@@ -279,12 +286,13 @@ def load_sector_aggregated_data(daynum: int) -> Tuple[Dict[str, str], Dict[str, 
     return gics_to_perf, sector2_to_perf
 
 
-def extract_cross_sectional_data(daynum: int) -> Tuple[List[str], Dict[str, List[Optional[str]]]]:
+def extract_cross_sectional_data(daynum: int, quiet: bool = False) -> Tuple[List[str], Dict[str, List[Optional[str]]]]:
     """
     Extract cross-sectional data for all metrics at a specific daynum.
 
     Args:
         daynum: Daynum to extract
+        quiet: If True, suppress verbose output (used for batch updates)
 
     Returns:
         Tuple of (tickers, metric_data)
@@ -298,9 +306,10 @@ def extract_cross_sectional_data(daynum: int) -> Tuple[List[str], Dict[str, List
         print("ERROR: No longi_*.csv output files found")
         return [], {}
 
-    print(f"\nFound {len(source_files)} derived tables:")
-    for metric_name, _ in source_files:
-        print(f"  - {metric_name}")
+    if not quiet:
+        print(f"\nFound {len(source_files)} derived tables:")
+        for metric_name, _ in source_files:
+            print(f"  - {metric_name}")
 
     # Load data from each file
     tickers = None  # Will be set from first file
@@ -328,13 +337,10 @@ def extract_cross_sectional_data(daynum: int) -> Tuple[List[str], Dict[str, List
         tickers = []
 
     # Add sector-aggregated performance columns (GICS_1yr and Sector2_1yr)
-    print(f"\nAdding sector-aggregated performance columns...")
-
-    # Load Stamdata mappings
-    ticker_to_gics, ticker_to_sector2 = load_stamdata_mappings()
-
-    # Load sector aggregated data
-    gics_to_perf, sector2_to_perf = load_sector_aggregated_data(daynum)
+    if not quiet:
+        print(f"\nAdding sector-aggregated performance columns...")
+    ticker_to_gics, ticker_to_sector2 = load_stamdata_mappings(quiet=quiet)
+    gics_to_perf, sector2_to_perf = load_sector_aggregated_data(daynum, quiet=quiet)
 
     # Create GICS_1yr column: for each ticker, lookup its GICS sector's performance
     gics_1yr_values = []
@@ -357,12 +363,6 @@ def extract_cross_sectional_data(daynum: int) -> Tuple[List[str], Dict[str, List
             sector2_1yr_values.append(None)
 
     metric_data["Sector2_1yr"] = sector2_1yr_values
-
-    # Count how many tickers got sector data
-    gics_matched = sum(1 for v in gics_1yr_values if v is not None)
-    sector2_matched = sum(1 for v in sector2_1yr_values if v is not None)
-    print(f"  GICS_1yr: {gics_matched}/{len(tickers)} tickers matched")
-    print(f"  Sector2_1yr: {sector2_matched}/{len(tickers)} tickers matched")
 
     return tickers, metric_data
 
@@ -428,8 +428,8 @@ def update_existing_cross_sectional_files(current_daynum: int) -> None:
 
     for daynum in daynums_to_update:
         try:
-            # Extract and write cross-sectional data for this daynum
-            tickers, metric_data = extract_cross_sectional_data(daynum)
+            # Extract and write cross-sectional data for this daynum (quietly)
+            tickers, metric_data = extract_cross_sectional_data(daynum, quiet=True)
 
             if not tickers:
                 print(f"  WARNING: No data for daynum {daynum}, skipping")
@@ -437,14 +437,13 @@ def update_existing_cross_sectional_files(current_daynum: int) -> None:
                 continue
 
             write_cross_sectional_csv(daynum, tickers, metric_data)
-            print(f"  ✓ Updated daynum {daynum}")
             success_count += 1
 
         except Exception as e:
             print(f"  ✗ Failed to update daynum {daynum}: {e}")
             failure_count += 1
 
-    print(f"\nUpdate summary: {success_count} successful, {failure_count} failed")
+    print(f"  Updated {success_count} files successfully" + (f", {failure_count} failed" if failure_count else ""))
 
 
 def write_cross_sectional_csv(daynum: int, tickers: List[str],
@@ -514,7 +513,7 @@ def main() -> int:
     Returns:
         Exit code (0 = success, 1 = error)
     """
-    print(f"=== longi_across.py START: Cross-sectional data extraction ===")
+    print(f"longi_across.py: Cross-sectional data extraction")
 
     # Parse command-line arguments
     daynum = None

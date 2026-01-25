@@ -128,7 +128,7 @@ def main() -> int:
         },
     ]
 
-    print(f"=== longi_upload.py START: {datetime.now()} ===")
+    print(f"Upload to Google Drive started")
 
     # Track overall success
     all_succeeded = True
@@ -146,7 +146,7 @@ def main() -> int:
         if not validate_source(source):
             if required:
                 print(f"ERROR: Required upload task '{name}' failed validation")
-                print(f"=== longi_upload.py END: {datetime.now()} ===")
+                print(f"Upload completed")
                 return 1
             else:
                 print(f"WARNING: Optional upload task '{name}' source missing, skipping...")
@@ -158,7 +158,7 @@ def main() -> int:
         if exit_code != 0:
             if required:
                 print(f"ERROR: Required upload task '{name}' failed with exit code: {exit_code}")
-                print(f"=== longi_upload.py END: {datetime.now()} ===")
+                print(f"Upload completed")
                 return exit_code
             else:
                 print(f"WARNING: Optional upload task '{name}' failed with exit code: {exit_code}")
@@ -167,7 +167,7 @@ def main() -> int:
     # Final status
     final_exit_code = 0 if all_succeeded else 1
 
-    print(f"\n=== longi_upload.py END: {datetime.now()} ===")
+    print(f"\nUpload completed")
 
     return final_exit_code
 

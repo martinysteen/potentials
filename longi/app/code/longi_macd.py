@@ -267,8 +267,7 @@ def main() -> int:
     Returns:
         Exit code (0 = success, 1 = error)
     """
-    print(f"=== longi_macd.py START: MACD calculation (EMA-based) ===")
-    print(f"Parameters: Fast={MACD_FAST}, Slow={MACD_SLOW}, Signal={MACD_SIGNAL}")
+    print(f"MACD calculation (EMA-based), parameters: Fast={MACD_FAST}, Slow={MACD_SLOW}, Signal={MACD_SIGNAL}")
 
     # Check input file exists
     if not INPUT_FILE.exists():

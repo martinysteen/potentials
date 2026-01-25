@@ -162,7 +162,7 @@ def main() -> int:
     Returns:
         Exit code (0 = success, 1 = error)
     """
-    print(f"=== longi_vola100d.py START: 100-day volatility calculation (returns-based) ===")
+    print(f"100-day volatility calculation (returns-based)")
 
     # Check input file exists
     if not INPUT_FILE.exists():

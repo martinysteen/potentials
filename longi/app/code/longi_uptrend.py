@@ -163,7 +163,7 @@ def main() -> int:
     Returns:
         Exit code (0 = success, 1 = error)
     """
-    print(f"=== longi_uptrend.py START: Uptrend grading based on RSI + MACD Histogram ===")
+    print(f"Uptrend grading based on RSI + MACD Histogram")
 
     # Check input files exist
     if not INPUT_RSI_FILE.exists():

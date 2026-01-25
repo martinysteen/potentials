@@ -134,7 +134,7 @@ def main() -> int:
     Returns:
         Exit code (0 = success, 1 = error)
     """
-    print(f"=== longi_ma50.py START: 50-day simple moving average calculation ===")
+    print(f"50-day simple moving average calculation")
 
     # Check input file exists
     if not INPUT_FILE.exists():

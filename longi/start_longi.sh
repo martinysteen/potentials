@@ -4,6 +4,7 @@ LOGFILE=~/start_longi.log
 
 # Use tee to show output in real-time AND log to file
 # All output goes to both terminal and log file
+# Note: tee without -a overwrites the log file each run (use -a to append instead)
 exec > >(tee "$LOGFILE") 2>&1
 
 echo "=== start_longi.sh START: $(date) ==="

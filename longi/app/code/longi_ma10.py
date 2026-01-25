@@ -1,11 +1,11 @@
 """
-20-day Simple Moving Average Module
+10-day Simple Moving Average Module
 
-Calculates 20-day SMA (Simple Moving Average) of stock prices.
+Calculates 10-day SMA (Simple Moving Average) of stock prices.
 
-Formula: SMA = sum(prices_over_20_days) / 20
+Formula: SMA = sum(prices_over_10_days) / 10
 
-Reads PotDat.csv and outputs longi_ma20.csv with identical structure.
+Reads PotDat.csv and outputs longi_ma10.csv with identical structure.
 Output goes to stdout - start_longi.sh handles logging redirection.
 """
 
@@ -16,8 +16,8 @@ from typing import List, Optional
 
 # Configuration
 INPUT_FILE = Path(__file__).parent.parent / "input" / "PotDat.csv"
-OUTPUT_FILE = Path(__file__).parent.parent / "output" / "longi_ma20.csv"
-WINDOW_SIZE = 20
+OUTPUT_FILE = Path(__file__).parent.parent / "output" / "longi_ma10.csv"
+WINDOW_SIZE = 10
 
 
 def parse_european_decimal(value: str) -> Optional[float]:
@@ -57,18 +57,18 @@ def format_european_decimal(value: Optional[float], decimals: int = 2) -> str:
     return f"{value:.{decimals}f}".replace('.', ',')
 
 
-def calculate_ma20(prices: List[float]) -> List[Optional[float]]:
+def calculate_ma10(prices: List[float]) -> List[Optional[float]]:
     """
-    Calculate 20-day simple moving average.
+    Calculate 10-day simple moving average.
 
     Array layout: [0]=newest (2009), [n-1]=oldest (1543)
-    For day at index i, the 20-day window includes [i:i+20] (current day + 19 preceding days)
+    For day at index i, the 10-day window includes [i:i+10] (current day + 9 preceding days)
 
     Args:
         prices: List of prices from newest to oldest (left to right in CSV)
 
     Returns:
-        List of MA20 values (same length as prices, None where calculation not possible)
+        List of MA10 values (same length as prices, None where calculation not possible)
     """
     n = len(prices)
     if n < WINDOW_SIZE:
@@ -77,7 +77,7 @@ def calculate_ma20(prices: List[float]) -> List[Optional[float]]:
     ma_values = []
 
     for i in range(n):
-        # Get 20-day window: current day + 19 preceding days
+        # Get 10-day window: current day + 9 preceding days
         window_end = min(i + WINDOW_SIZE, n)
         window = prices[i:window_end]
 
@@ -95,14 +95,14 @@ def calculate_ma20(prices: List[float]) -> List[Optional[float]]:
 
 def process_ticker_row(ticker: str, price_strings: List[str]) -> List[Optional[float]]:
     """
-    Process a single ticker row: parse prices and calculate 20-day MA.
+    Process a single ticker row: parse prices and calculate 10-day MA.
 
     Args:
         ticker: Ticker symbol
         price_strings: List of price strings from CSV
 
     Returns:
-        List of MA20 values (None where calculation not possible)
+        List of MA10 values (None where calculation not possible)
     """
     # Parse prices, stopping at first empty value
     prices = []
@@ -118,7 +118,7 @@ def process_ticker_row(ticker: str, price_strings: List[str]) -> List[Optional[f
         return [None] * len(price_strings)
 
     # Calculate MA for valid prices
-    ma_values = calculate_ma20(prices)
+    ma_values = calculate_ma10(prices)
 
     # Pad with None for the empty values we didn't process
     remaining = len(price_strings) - len(prices)
@@ -134,7 +134,7 @@ def main() -> int:
     Returns:
         Exit code (0 = success, 1 = error)
     """
-    print(f"20-day simple moving average calculation")
+    print(f"10-day simple moving average calculation")
 
     # Check input file exists
     if not INPUT_FILE.exists():
@@ -159,7 +159,7 @@ def main() -> int:
         tickers_processed = 0
         tickers_skipped = 0
 
-        print(f"3. Calculating 20-day MA for {len(rows)} tickers...")
+        print(f"3. Calculating 10-day MA for {len(rows)} tickers...")
         for row in rows:
             ticker = row[0]
             price_strings = row[1:]

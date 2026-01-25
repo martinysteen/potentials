@@ -126,6 +126,11 @@ MODULES: Dict[str, Module] = {
         script="longi_grp_Sector2_1yr.py",
         depends_on=["performance"],  # Depends on longi_per1y.csv
     ),
+    "macd_Z": Module(
+        name="MACD Zero-Crossing Detection",
+        script="longi_macd_Z.py",
+        depends_on=["macd"],  # Depends on longi_macd_histogram.csv
+    ),
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="longi_across.py",
@@ -237,9 +242,8 @@ class ModuleExecutor:
         Returns:
             Exit code (0 = success, 1 = any module failed)
         """
-        print(f"=== longi.py START: Pipeline orchestrator ===")
-        print(f"Total modules registered: {len(MODULES)}")
-        print(f"Maximum parallel execution: {max_parallel}")
+        print(f"longi.py: Pipeline orchestrator started")
+        print(f"  Modules registered: {len(MODULES)}, max parallel: {max_parallel}")
         print()
 
         # Validate dependencies
@@ -265,7 +269,7 @@ class ModuleExecutor:
                     overall_success = False
                     break
 
-            print(f"Wave {wave_num}: {len(ready)} module(s) ready to execute")
+            print(f"=== Wave {wave_num}: {len(ready)} module(s) ready to execute ===")
 
             # Execute ready modules in parallel
             with ProcessPoolExecutor(max_workers=min(max_parallel, len(ready))) as executor:
@@ -282,9 +286,8 @@ class ModuleExecutor:
 
                     # Print module output
                     print()
-                    print(f"--- Output from {module.name} ---")
-                    print(output)
-                    print(f"--- End of {module.name} output ---")
+                    print(f"--- {module.name} ({module.script}) ---")
+                    print(output.rstrip())
                     print()
 
                     # Update status
@@ -300,8 +303,8 @@ class ModuleExecutor:
             wave_num += 1
 
         # Summary
-        print(f"=== longi.py END: Pipeline orchestrator ===")
-        print(f"Modules completed successfully: {len(self.completed)}/{len(MODULES)}")
+        print(f"longi.py: Pipeline orchestrator finished")
+        print(f"  Modules completed: {len(self.completed)}/{len(MODULES)}")
         if self.failed:
             print(f"Modules failed: {len(self.failed)} - {', '.join(MODULES[mid].name for mid in self.failed)}")
 
@@ -360,10 +363,10 @@ def main() -> int:
     exit_code = executor.run_pipeline(max_parallel=4)
 
     if exit_code != 0:
-        print("*** Processing failed ***")
+        print("** Pipeline FAILED **")
         return 1
 
-    print("\n=== Pipeline completed successfully ===")
+    print("\n** Pipeline completed successfully **")
     return 0
 
 

@@ -348,6 +348,21 @@ Simply run `python3 code/longi.py` - the orchestrator handles everything:
 - Handle European CSV format correctly (sep=';', decimal=',')
 - Preserve table structure across transformations (same rows/columns, different values)
 
+## Logging Format
+Hierarchical log markers for readable output in start_longi.log:
+
+- **`===`** - Top level: Wave starts in pipeline orchestrator
+  - Example: `=== Wave 1: 10 module(s) ready to execute ===`
+- **`---`** - Second level: Python module starts (added by orchestrator)
+  - Example: `--- RSI14 (longi_rsi.py) ---`
+- **`**`** - Notable status: Final pipeline status
+  - Example: `** Pipeline completed successfully **`
+- **`*`** - Shell script markers
+  - Example: `* Fetch input data START: ...`
+- Plain text for all other output (progress, success messages, data counts, etc.)
+
+**Important**: Individual longi_*.py modules should NOT use `===` or `---` markers in their output - the orchestrator wraps their output with `---` automatically.
+
 ## Unit testing
 - Individual modules can be testet for syntax errors by running from CLI: python3 longi_XX.py
 - Production-correct testing requires dependency order which is only obtained by running longi.py

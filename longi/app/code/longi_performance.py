@@ -207,7 +207,7 @@ def main() -> int:
     Returns:
         Exit code (0 = success, 1 = error)
     """
-    print(f"=== longi_performance.py START: Performance calculation for multiple periods ===")
+    print(f"Performance calculation for multiple periods")
 
     # Check input file exists
     if not INPUT_FILE.exists():

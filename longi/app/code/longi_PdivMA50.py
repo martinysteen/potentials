@@ -93,7 +93,7 @@ def main() -> int:
     Returns:
         Exit code (0 = success, 1 = error)
     """
-    print(f"=== longi_PdivMA50.py START: Price / MA50 ratio calculation ===")
+    print(f"Price / MA50 ratio calculation")
 
     # Check input files exist
     if not INPUT_PRICE_FILE.exists():
