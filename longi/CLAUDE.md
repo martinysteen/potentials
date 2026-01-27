@@ -98,7 +98,8 @@ All tables follow PotDat.csv structure (rows=tickers, columns=daynums):
 
 1. **longi_rsi.csv** - RSI14 using Wilder's method ✓ IMPLEMENTED
 2. **longi_macd.csv** - MACD(4,15,9) indicator ✓ IMPLEMENTED
-3. **longi_uptrend.csv** - Uptrend grades (VeryGood/Good/Maybe) ✓ IMPLEMENTED
+3. **longi_macd_Z.csv** - MACD histogram zero-crossings (ZOP/ZNED) ✓ IMPLEMENTED
+4. **longi_uptrend.csv** - Uptrend grades (VeryGood/Good/Maybe) ✓ IMPLEMENTED
 4. **longi_per1d.csv** - 1-day performance ✓ IMPLEMENTED
 5. **longi_per1w.csv** - 1-week performance ✓ IMPLEMENTED
 6. **longi_per1m.csv** - 1-month performance ✓ IMPLEMENTED
@@ -123,6 +124,9 @@ All tables follow PotDat.csv structure (rows=tickers, columns=daynums):
 25. **longi_PdivMA20.csv** - Price / MA20 ratio (>100 = bullish) ✓ IMPLEMENTED
 26. **longi_PdivMA50.csv** - Price / MA50 ratio (>100 = bullish) ✓ IMPLEMENTED
 27. **longi_PdivMA200.csv** - Price / MA200 ratio (>100 = bullish) ✓ IMPLEMENTED
+28. **longi_sh3m.csv** - 3-month Sharpe ratio (return/volatility over 67 days) ✓ IMPLEMENTED
+29. **longi_sh6m.csv** - 6-month Sharpe ratio (return/volatility over 133 days) ✓ IMPLEMENTED
+30. **longi_sh1yr.csv** - 1-year Sharpe ratio (return/volatility over 265 days) ✓ IMPLEMENTED
 
 ### Aggregated Tables (Grouped by Stock Attributes)
 Output directory: `app/output_grp/`
@@ -182,6 +186,16 @@ Main orchestrator that manages all processing modules with intelligent execution
   4. Empty: None of the above
 - **Easily extensible**: Add grades by modifying GRADE_RULES list (line 27-32)
 - Properly handles time scale: for day at index i, preceding = indices [i+1...i+5]
+
+#### longi_macd_Z.py - MACD Zero-Crossing Detection Module ✓ IMPLEMENTED
+- Detects transitions in MACD histogram values across time
+- Reads longi_macd_histogram.csv → outputs longi_macd_Z.csv
+- **Zero-crossing detection**:
+  - **ZOP**: Negative → Positive transition (zero crossing to positive)
+  - **ZNED**: Positive → Negative transition (zero crossing negative)
+  - All other values remain empty
+- **Output structure**: Same as input (rows=tickers, columns=daynums)
+- **Dependencies**: Requires longi_macd.csv (MACD histogram output)
 
 #### longi_medians.py - Rolling Median Calculation Module ✓ IMPLEMENTED
 - Calculates rolling medians over 10d, 20d, 30d, 40d, 50d, and 100d windows
@@ -248,9 +262,12 @@ Follow the same pattern:
 - ✓ Pipeline orchestrator (longi.py) fully implemented
   - Dependency management working
   - Parallel execution capability ready
-  - 20 modules registered: rsi, macd, uptrend, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, grp_GICS_1yr, grp_Sector2_1yr, across
+  - 24 modules registered: rsi, macd, macd_Z, uptrend, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, sh3m, sh6m, sh1yr, grp_GICS_1yr, grp_Sector2_1yr, across
 - ✓ longi_rsi.py fully implemented and tested
 - ✓ longi_macd.py fully implemented and tested
+- ✓ longi_macd_Z.py fully implemented and tested
+  - Outputs: longi_macd_Z.csv (MACD histogram zero-crossings)
+  - Detects ZOP (negative→positive) and ZNED (positive→negative) transitions
 - ✓ longi_uptrend.py fully implemented and tested
 - ✓ longi_performance.py fully implemented and tested
 - ✓ longi_rank.py fully implemented and tested
@@ -271,6 +288,10 @@ Follow the same pattern:
 - ✓ longi_PdivMA20.py, longi_PdivMA50.py, longi_PdivMA200.py fully implemented
   - Price/MA ratios (>100 = price above MA = bullish)
   - Dependencies: require corresponding MA module
+- ✓ longi_sh3m.py, longi_sh6m.py, longi_sh1yr.py fully implemented
+  - Sharpe ratio = Period Return / Period Volatility
+  - Periods: 67 days (3m), 133 days (6m), 265 days (1yr)
+  - Independent modules (read only PotDat.csv)
 - ✓ longi_grp_GICS_1yr.py fully implemented
   - Outputs: output_grp/longi_grp_GICS_1yr.csv (GICS sector-aggregated 1-year growth)
   - Aggregates individual stock growth by GICS sector (13 sectors)

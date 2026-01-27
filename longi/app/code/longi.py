@@ -86,6 +86,11 @@ MODULES: Dict[str, Module] = {
         script="longi_vola100d.py",
         depends_on=[],  # Independent - reads only PotDat.csv
     ),
+    "ma10": Module(
+        name="10-day Simple Moving Average",
+        script="longi_ma10.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
     "ma20": Module(
         name="20-day Simple Moving Average",
         script="longi_ma20.py",
@@ -131,10 +136,25 @@ MODULES: Dict[str, Module] = {
         script="longi_macd_Z.py",
         depends_on=["macd"],  # Depends on longi_macd_histogram.csv
     ),
+    "sh3m": Module(
+        name="3-Month Sharpe Ratio",
+        script="longi_sh3m.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
+    "sh6m": Module(
+        name="6-Month Sharpe Ratio",
+        script="longi_sh6m.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
+    "sh1yr": Module(
+        name="1-Year Sharpe Ratio",
+        script="longi_sh1yr.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="longi_across.py",
-        depends_on=["rsi", "macd", "uptrend", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "grp_GICS_1yr", "grp_Sector2_1yr"],  # Depends on ALL modules - must run last
+        depends_on=["rsi", "macd", "macd_Z", "uptrend", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "sh3m", "sh6m", "sh1yr", "grp_GICS_1yr", "grp_Sector2_1yr"],  # Depends on ALL modules - must run last
     ),
     # Add more modules here:
     # "module_name": Module(
