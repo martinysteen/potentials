@@ -24,3 +24,22 @@ env/
 # --- System Junk ---
 .DS_Store
 shared/app/creds/token.json
+
+# Generated outputs
+**/output/
+
+# Local backup copies
+*.bak
+
+# IDE / workspace
+*.code-workspace
+.vscode/
+
+# Jupyter noise
+.ipynb_checkpoints/
+
+# Local PostgreSQL DB backups
+DB/backups/
+
+
+
