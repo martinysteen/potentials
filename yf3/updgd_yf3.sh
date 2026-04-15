@@ -17,17 +17,24 @@ echo "=== updgd_yf3.sh START: $(date) ==="
 SOURCE=/home/sm/potentials/yf3/app/output
 RECEIVER=GoogleDrive:PotSystem/PotApps/Yfinance/output
 
-# Verify source directory exists
+SOURCE_STACKED=/home/sm/potentials/yf3/app/output_stacked
+RECEIVER_STACKED=GoogleDrive:/PotSystem/repositoryRTBI/Yfinance
+
+# Verify source directories exist
 if [ ! -d "$SOURCE" ]; then
     echo "ERROR: Source directory does not exist: $SOURCE"
     exit 1
 fi
 
-# Echo the copy operation
+if [ ! -d "$SOURCE_STACKED" ]; then
+    echo "ERROR: Source directory does not exist: $SOURCE_STACKED"
+    exit 1
+fi
+
+# --- Copy output ---
 echo "Copying from: $SOURCE"
 echo "Copying to: $RECEIVER"
 
-# Run the rclone command
 rclone copy "$SOURCE" "$RECEIVER" --update --verbose --drive-skip-gdocs
 
 RCLONE_EXIT_CODE=$?
@@ -39,6 +46,21 @@ else
     echo "ERROR: rclone failed with exit code: $RCLONE_EXIT_CODE"
 fi
 
+# --- Copy output_stacked ---
+echo "Copying from: $SOURCE_STACKED"
+echo "Copying to: $RECEIVER_STACKED"
+
+rclone copy "$SOURCE_STACKED" "$RECEIVER_STACKED" --update --verbose --drive-skip-gdocs
+
+RCLONE_EXIT_CODE_STACKED=$?
+echo "rclone exit code (stacked): $RCLONE_EXIT_CODE_STACKED"
+
+if [ $RCLONE_EXIT_CODE_STACKED -eq 0 ]; then
+    echo "SUCCESS: Stacked files copied successfully"
+else
+    echo "ERROR: rclone (stacked) failed with exit code: $RCLONE_EXIT_CODE_STACKED"
+fi
+
 echo "=== updgd_yf3.sh END: $(date) ==="
 
 # Display log file when on TTY
@@ -48,4 +70,8 @@ if [ -t 3 ]; then
     cat "$LOGFILE"
 fi
 
-exit $RCLONE_EXIT_CODE
+# Exit non-zero if either transfer failed
+if [ $RCLONE_EXIT_CODE -ne 0 ]; then
+    exit $RCLONE_EXIT_CODE
+fi
+exit $RCLONE_EXIT_CODE_STACKED

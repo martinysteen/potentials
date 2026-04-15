@@ -46,6 +46,12 @@ echo "Python version: $(python3 --version)"
 python3 yf3.py
 PYTHON_EXIT_CODE=$?
 
+# Stack daily output files into combined long-form table
+echo "Running stackYfinanceData.py..."
+python3 stackYfinanceData.py
+STACK_EXIT_CODE=$?
+echo "Stack script exit code: $STACK_EXIT_CODE"
+
 echo "Python script exit code: $PYTHON_EXIT_CODE"
 echo "=== start_yf3.sh END: $(date) ==="
 

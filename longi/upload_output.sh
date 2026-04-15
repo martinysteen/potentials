@@ -28,13 +28,13 @@ if [ $? -ne 0 ]; then
 fi
 
 # Run upload script
-python3 longi_upload.py
+python3 aux_upload.py
 UPLOAD_EXIT_CODE=$?
 
 if [ $UPLOAD_EXIT_CODE -eq 0 ]; then
     echo "SUCCESS: Output uploaded successfully"
 else
-    echo "ERROR: longi_upload.py failed with exit code: $UPLOAD_EXIT_CODE"
+    echo "ERROR: aux_upload.py failed with exit code: $UPLOAD_EXIT_CODE"
 fi
 
 echo "=== upload_output.sh END: $(date) ==="

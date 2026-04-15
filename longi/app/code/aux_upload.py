@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-longi_upload.py - Upload output files to Google Drive using rclone
+aux_upload.py - Upload output files to Google Drive using rclone
 
 This module uploads processed results from ./output/ and ./across/ to Google Drive.
 Output goes to stdout - start_longi.sh handles logging redirection.
