@@ -8,7 +8,7 @@
 import pandas as pd
 from pot_import_utils import get_conn, log, upsert
 
-CSV = "/home/sm/potentials/DB_old_corr/repositoryRTBI/Yfinance/StockData2_stacked.csv"
+CSV = "/home/sm/potentials/DB/RTBI_corr/Yfinance/StockData2_stacked.csv"
 
 # Map CSV column names → DB column names
 COL_MAP = {

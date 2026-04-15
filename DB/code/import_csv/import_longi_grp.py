@@ -13,7 +13,7 @@ import glob
 import pandas as pd
 from pot_import_utils import get_conn, read_eu_csv, log, upsert
 
-GRP_DIR = "/home/sm/potentials/DB_old_corr/repositoryRTBI/Longi/output_grp"
+GRP_DIR = "/home/sm/potentials/DB/RTBI_corr/Longi/output_grp"
 
 def process_file(path):
     stem = os.path.splitext(os.path.basename(path))[0]

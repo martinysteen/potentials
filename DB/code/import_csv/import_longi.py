@@ -14,7 +14,7 @@ import glob
 import pandas as pd
 from pot_import_utils import get_conn, read_eu_csv, log, upsert
 
-LONGI_DIR = "/home/sm/potentials/DB_old_corr/repositoryRTBI/Longi"
+LONGI_DIR = "/home/sm/potentials/DB/RTBI_corr/Longi"
 
 def process_file(path):
     """Unpivot one longi file, return long-format dataframe."""

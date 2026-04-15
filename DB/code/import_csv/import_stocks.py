@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 from pot_import_utils import get_conn, read_eu_csv, log, upsert
 
-CSV = "/home/sm/potentials/DB_old_corr/repositoryRTBI/Stamdata.csv"
+CSV = "/home/sm/potentials/DB/RTBI_corr/Stamdata.csv"
 
 # Map CSV column names to DB column names
 COL_MAP = {

@@ -7,7 +7,7 @@
 import pandas as pd
 from pot_import_utils import get_conn, log, upsert
 
-CSV = "/home/sm/potentials/DB_old_corr/repositoryRTBI/Cal.csv"
+CSV = "/home/sm/potentials/DB/RTBI_corr/Cal.csv"
 
 def run():
     log("import_cal START")

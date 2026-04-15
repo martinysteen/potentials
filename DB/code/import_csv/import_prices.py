@@ -9,7 +9,7 @@
 import pandas as pd
 from pot_import_utils import get_conn, read_eu_csv, log, upsert
 
-CSV = "/home/sm/potentials/DB_old_corr/repositoryRTBI/PotDat.csv"
+CSV = "/home/sm/potentials/DB/RTBI_corr/PotDat.csv"
 
 def run():
     log("import_prices START")

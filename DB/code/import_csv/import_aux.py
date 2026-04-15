@@ -5,8 +5,8 @@
 import pandas as pd
 from pot_import_utils import get_conn, log, upsert
 
-AUX_DECILES  = "/home/sm/potentials/DB_old_corr/repositoryRTBI/Longi/aux_deciles.csv"
-AUX_WIN_LOSS = "/home/sm/potentials/DB_old_corr/repositoryRTBI/Longi/aux_win-loss.csv"
+AUX_DECILES  = "/home/sm/potentials/DB/RTBI_corr/Longi/aux_deciles.csv"
+AUX_WIN_LOSS = "/home/sm/potentials/DB/RTBI_corr/Longi/aux_win-loss.csv"
 
 def run_deciles(conn):
     log("import_aux_deciles START")
