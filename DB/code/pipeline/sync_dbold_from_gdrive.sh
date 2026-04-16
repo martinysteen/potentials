@@ -15,8 +15,8 @@
 # To add more source folders later, add entries to the SOURCES array below.
 # =============================================================================
 
-LOGFILE=/home/sm/potentials/DB_old/sync_dbold.log
-DB_OLD=/home/sm/potentials/DB_old
+LOGFILE=/home/sm/potentials/DB/logs/sync_gdrive.log
+DB_OLD=/home/sm/potentials/DB/RTBI_import
 
 # --- Route output: screen when interactive, log when cron -------------------
 if [ -t 1 ]; then
@@ -24,7 +24,7 @@ if [ -t 1 ]; then
     echo "Running interactively — output to screen"
 else
     # Running under cron — redirect all output to log
-    exec >> "$LOGFILE" 2>&1
+    exec > >(tee -a "$LOGFILE") 2>&1
 fi
 
 echo "=== sync_dbold_from_gdrive.sh START: $(date) ==="
