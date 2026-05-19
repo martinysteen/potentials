@@ -14,7 +14,7 @@ Output structure:
 - Columns: ticker (col 0), daynum (col 1, repeated value for stacking),
   then metrics extracted from longi_*.csv files (taken after-the-underscore),
   plus sector aggregates
-  - e.g., ticker, daynum, rsi, macd_line, macd_signal, macd_histogram, uptrend,
+  - e.g., ticker, daynum, rsi, macd_line, macd_signal, macd_histogram,
     per1d, per1w, per1m, per3m, per6m, per1y, rank, median_10d, median_20d,
     median_50d, median_100d, stepup, GICS1yr, Sector2_1yr,
     coreindex, coreindexRSI

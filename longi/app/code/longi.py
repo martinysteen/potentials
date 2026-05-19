@@ -47,11 +47,6 @@ MODULES: Dict[str, Module] = {
         script="longi_macd.py",
         depends_on=[],  # Independent - can run in parallel with RSI
     ),
-    "uptrend": Module(
-        name="Uptrend Grading",
-        script="longi_uptrend.py",
-        depends_on=["rsi", "macd"],  # Depends on BOTH RSI and MACD outputs
-    ),
     "performance": Module(
         name="Performance (1d/1w/1m/3m/6m/1y)",
         script="longi_performance.py",
@@ -212,6 +207,16 @@ MODULES: Dict[str, Module] = {
         script="longi_Sector2_3m.py",
         depends_on=["grp_Sector2_3m"],  # Depends on longi_grp_Sector2_3m.csv
     ),
+    "trump": Module(
+        name="Trump Tariff Index (origin daynum 1863)",
+        script="longi_trump.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
+    "iran": Module(
+        name="Iran War Index (origin daynum 2094)",
+        script="longi_iran.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
     "coreindex": Module(
         name="CoreIndex Price per Ticker",
         script="longi_coreindex.py",
@@ -256,7 +261,7 @@ MODULES: Dict[str, Module] = {
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="aux_across.py",
-        depends_on=["rsi", "macd", "macd_Z", "uptrend", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "sh3m", "sh6m", "sh1yr", "beta3m", "beta6m", "beta1yr", "future_gain20d", "future_gain50d", "grp_GICS_1yr", "grp_Sector2_1yr", "grp_GICS_3m", "grp_Sector2_3m", "GICS_1yr", "Sector2_1yr", "GICS_3m", "Sector2_3m", "coreindex", "coreindexRSI", "winloss_probs"],  # Depends on ALL modules - must run last
+        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "sh3m", "sh6m", "sh1yr", "beta3m", "beta6m", "beta1yr", "future_gain20d", "future_gain50d", "grp_GICS_1yr", "grp_Sector2_1yr", "grp_GICS_3m", "grp_Sector2_3m", "GICS_1yr", "Sector2_1yr", "GICS_3m", "Sector2_3m", "coreindex", "coreindexRSI", "winloss_probs"],  # Depends on ALL modules - must run last
     ),
     "deciles": Module(
         name="Decile Boundaries",
@@ -267,7 +272,7 @@ MODULES: Dict[str, Module] = {
     # "module_name": Module(
     #     name="Display Name",
     #     script="longi_xxx.py",
-    #     depends_on=["rsi"],  # or [] for independent, or ["rsi", "uptrend"] for multiple deps
+    #     depends_on=["rsi"],  # or [] for independent, or ["rsi", "macd"] for multiple deps
     # ),
 }
 

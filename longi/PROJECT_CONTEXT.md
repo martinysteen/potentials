@@ -11,7 +11,6 @@
     │   ├── longi.py     # Pipeline orchestrator
     │   ├── longi_rsi.py
     │   ├── longi_macd.py
-    │   ├── longi_uptrend.py
     │   ├── longi_performance.py
     │   ├── longi_rank.py
     │   ├── longi_medians.py
@@ -65,7 +64,6 @@
   - Handles dependencies and parallel execution
   - See "Adding New Modules" section below
 - **longi_rsi.py** - RSI14 calculation module (implemented)
-- **longi_uptrend.py** - Uptrend grading module (implemented)
 - **aux_upload.py** - Upload results to Google Drive (implemented)
   - Syncs output/, output_grp/, and across/ directories
   - Uses rclone sync to GoogleDrive:PotSystem/repositoryRTBI/Longi/
@@ -119,34 +117,35 @@ All tables follow PotDat.csv structure (rows=tickers, columns=daynums):
 1. **longi_rsi.csv** - RSI14 using Wilder's method (implemented)
 2. **longi_macd.csv** - MACD(4,15,9) indicator (implemented)
 3. **longi_macd_Z.csv** - MACD histogram zero-crossings (ZOP/ZNED) (implemented)
-4. **longi_uptrend.csv** - Uptrend grades (VeryGood/Good/Maybe) (implemented)
-5. **longi_per1d.csv** - 1-day performance (implemented)
-6. **longi_per1w.csv** - 1-week performance (implemented)
-7. **longi_per1m.csv** - 1-month performance (implemented)
-8. **longi_per3m.csv** - 3-month performance (implemented)
-9. **longi_per6m.csv** - 6-month performance (implemented)
-10. **longi_per1y.csv** - 1-year performance (implemented)
-11. **longi_rank.csv** - Average rank across all performance periods (implemented)
-12. **longi_median_10d.csv** - 10-day rolling median of rank (implemented)
-13. **longi_median_20d.csv** - 20-day rolling median of rank (implemented)
-14. **longi_median_30d.csv** - 30-day rolling median of rank (implemented)
-15. **longi_median_40d.csv** - 40-day rolling median of rank (implemented)
-16. **longi_median_50d.csv** - 50-day rolling median of rank (implemented)
-17. **longi_median_100d.csv** - 100-day rolling median of rank (implemented)
-18. **longi_stepup.csv** - Step-up count (0-3) as uptrend measure (implemented)
-19. **longi_spr100d.csv** - Spread to 100-day maximum (% growth needed) (implemented)
-20. **longi_spr250d.csv** - Spread to 250-day maximum (% growth needed) (implemented)
-21. **longi_vola20d.csv** - 20-day volatility (returns-based stdev in %) (implemented)
-22. **longi_vola100d.csv** - 100-day volatility (returns-based stdev in %) (implemented)
-23. **longi_ma20.csv** - 20-day Simple Moving Average (implemented)
-24. **longi_ma50.csv** - 50-day Simple Moving Average (implemented)
-25. **longi_ma200.csv** - 200-day Simple Moving Average (implemented)
-26. **longi_PdivMA20.csv** - Price / MA20 ratio (>100 = bullish) (implemented)
-27. **longi_PdivMA50.csv** - Price / MA50 ratio (>100 = bullish) (implemented)
-28. **longi_PdivMA200.csv** - Price / MA200 ratio (>100 = bullish) (implemented)
-29. **longi_sh3m.csv** - 3-month Sharpe ratio (return/volatility over 67 days) (implemented)
-30. **longi_sh6m.csv** - 6-month Sharpe ratio (return/volatility over 133 days) (implemented)
-31. **longi_sh1yr.csv** - 1-year Sharpe ratio (return/volatility over 265 days) (implemented)
+4. **longi_per1d.csv** - 1-day performance (implemented)
+5. **longi_per1w.csv** - 1-week performance (implemented)
+6. **longi_per1m.csv** - 1-month performance (implemented)
+7. **longi_per3m.csv** - 3-month performance (implemented)
+8. **longi_per6m.csv** - 6-month performance (implemented)
+9. **longi_per1y.csv** - 1-year performance (implemented)
+10. **longi_rank.csv** - Average rank across all performance periods (implemented)
+11. **longi_median_10d.csv** - 10-day rolling median of rank (implemented)
+12. **longi_median_20d.csv** - 20-day rolling median of rank (implemented)
+13. **longi_median_30d.csv** - 30-day rolling median of rank (implemented)
+14. **longi_median_40d.csv** - 40-day rolling median of rank (implemented)
+15. **longi_median_50d.csv** - 50-day rolling median of rank (implemented)
+16. **longi_median_100d.csv** - 100-day rolling median of rank (implemented)
+17. **longi_stepup.csv** - Step-up count (0-3) as uptrend measure (implemented)
+18. **longi_spr100d.csv** - Spread to 100-day maximum (% growth needed) (implemented)
+19. **longi_spr250d.csv** - Spread to 250-day maximum (% growth needed) (implemented)
+20. **longi_vola20d.csv** - 20-day volatility (returns-based stdev in %) (implemented)
+21. **longi_vola100d.csv** - 100-day volatility (returns-based stdev in %) (implemented)
+22. **longi_ma20.csv** - 20-day Simple Moving Average (implemented)
+23. **longi_ma50.csv** - 50-day Simple Moving Average (implemented)
+24. **longi_ma200.csv** - 200-day Simple Moving Average (implemented)
+25. **longi_PdivMA20.csv** - Price / MA20 ratio (>100 = bullish) (implemented)
+26. **longi_PdivMA50.csv** - Price / MA50 ratio (>100 = bullish) (implemented)
+27. **longi_PdivMA200.csv** - Price / MA200 ratio (>100 = bullish) (implemented)
+28. **longi_sh3m.csv** - 3-month Sharpe ratio (return/volatility over 67 days) (implemented)
+29. **longi_sh6m.csv** - 6-month Sharpe ratio (return/volatility over 133 days) (implemented)
+30. **longi_sh1yr.csv** - 1-year Sharpe ratio (return/volatility over 265 days) (implemented)
+31. **longi_trump.csv** - Price index relative to daynum 1863 (2 Apr 2025, Trump tariff day); 1,0 at origin, empty for older daynums (implemented)
+32. **longi_iran.csv** - Price index relative to daynum 2094 (27 Feb 2026, last day before Iran War); 1,0 at origin, empty for older daynums (implemented)
 
 ### Aggregated Tables (Grouped by Stock Attributes)
 Output directory: `app/output_grp/`
@@ -168,7 +167,7 @@ Output directory: `app/across/`
 **longi_across_<daynum>.csv** - Cross-sectional view for specific daynum (implemented)
 - Rows: Stock tickers
 - Columns: ticker_<daynum> (first column includes daynum), then metrics from all longi_*.csv files, plus sector aggregates
-- Example columns: ticker_2009, rsi, macd_line, uptrend, per1d, rank, median_10d, stepup, **GICS_1yr, Sector2_1yr**
+- Example columns: ticker_2009, rsi, macd_line, per1d, rank, median_10d, stepup, **GICS_1yr, Sector2_1yr**
 - **GICS_1yr**: Sector-aggregated 1-year performance for the stock's GICS sector
 - **Sector2_1yr**: Sector-aggregated 1-year performance for the stock's Sector2
 - Generated by aux_across.py (runs last, depends on all other modules)
@@ -212,17 +211,6 @@ Main orchestrator that manages all processing modules with intelligent execution
 - Important: Wilder's smoothing requires sequential calculation from oldest->newest
   - Implementation reverses array, calculates oldest->newest, then reverses back
   - Output RSI values start at leftmost column (newest daynum, e.g., 2009)
-
-### longi_uptrend.py - Uptrend Grading Module (implemented)
-- Grades uptrend strength based on 5 preceding RSI values
-- Reads longi_rsi.csv -> outputs longi_uptrend.csv
-- **Grading rules** (evaluated in order, first match wins):
-  1. VeryGood: average(5 RSI) >= 70
-  2. Good: minimum(5 RSI) > 50
-  3. Maybe: average(5 RSI) > 50
-  4. Empty: None of the above
-- Easily extensible: Add grades by modifying GRADE_RULES list
-- Properly handles time scale: for day at index i, preceding = indices [i+1...i+5]
 
 ### longi_macd_Z.py - MACD Zero-Crossing Detection Module (implemented)
 - Detects transitions in MACD histogram values across time
@@ -274,7 +262,7 @@ Main orchestrator that manages all processing modules with intelligent execution
   - Columns: Indicator, Decile (1-10), UpperLimit, LowerLimit
   - One row per indicator-decile pair
   - Decile 1 = lowest values, Decile 10 = highest values
-- Skips non-numeric files (uptrend, macd_Z) automatically
+- Skips non-numeric files (macd_Z) automatically
 - Dependencies: Runs after "across"
 
 ### aux_win-loss.py - Daily Win/Loss Production Module (implemented)
@@ -306,6 +294,18 @@ Main orchestrator that manages all processing modules with intelligent execution
 - Dependencies: Requires performance module (longi_per1y.csv)
 - Extensible: Can be adapted for other grouping attributes (Sector, Homeland, etc.)
 
+### longi_trump.py - Trump Tariff Index Module (implemented)
+- Price index relative to daynum 1863 (2 April 2025, Trump tariff announcement)
+- Reads PotDat.csv -> outputs longi_trump.csv
+- Index = price[daynum X] / price[daynum 1863]; value is 1,0 at origin
+- Daynums older than 1863: empty. Tickers with no price at origin: entire row empty
+
+### longi_iran.py - Iran War Index Module (implemented)
+- Price index relative to daynum 2094 (27 February 2026, last ordinary trading day before Iran War)
+- Reads PotDat.csv -> outputs longi_iran.csv
+- Index = price[daynum X] / price[daynum 2094]; value is 1,0 at origin
+- Daynums older than 2094: empty. Tickers with no price at origin: entire row empty
+
 ### Future longi_*.py Modules
 Follow the same pattern:
 - Read from input/ or output/ (if depends on another module)
@@ -322,7 +322,6 @@ Follow the same pattern:
 - longi_rsi.py fully implemented and tested
 - longi_macd.py fully implemented and tested
 - longi_macd_Z.py fully implemented and tested
-- longi_uptrend.py fully implemented and tested
 - longi_performance.py fully implemented and tested
 - longi_rank.py fully implemented and tested
 - longi_medians.py fully implemented
@@ -334,6 +333,8 @@ Follow the same pattern:
 - longi_ma20.py, longi_ma50.py, longi_ma200.py fully implemented
 - longi_PdivMA20.py, longi_PdivMA50.py, longi_PdivMA200.py fully implemented
 - longi_sh3m.py, longi_sh6m.py, longi_sh1yr.py fully implemented
+- longi_trump.py fully implemented (Trump tariff index, origin daynum 1863)
+- longi_iran.py fully implemented (Iran War index, origin daynum 2094)
 - longi_grp_GICS_1yr.py fully implemented
 - longi_grp_Sector2_1yr.py fully implemented
 - aux_across.py fully implemented
@@ -368,7 +369,6 @@ Edit `code/longi.py` and add to MODULES dict:
 ```python
 MODULES: Dict[str, Module] = {
     "rsi": Module(...),
-    "uptrend": Module(...),
     "xxx": Module(
         name="Your Module Name",
         script="longi_xxx.py",
@@ -380,7 +380,7 @@ MODULES: Dict[str, Module] = {
 ### 3. Dependencies
 - **Independent modules** (`depends_on=[]`): Run in parallel with other independent modules
 - **Dependent modules** (`depends_on=["rsi"]`): Run after dependencies complete
-- **Multiple dependencies** (`depends_on=["rsi", "uptrend"]`): Run after all dependencies complete
+- **Multiple dependencies** (`depends_on=["rsi", "macd"]`): Run after all dependencies complete
 
 ### 4. Execution
 Run `python3 code/longi.py`:
