@@ -38,7 +38,6 @@ PERFORMANCE_FILES = [
     "longi_per1w.csv",
     "longi_per1m.csv",
     "longi_per3m.csv",
-    "longi_per6m.csv",
     "longi_per1y.csv",
 ]
 
