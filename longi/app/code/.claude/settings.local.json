@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(ls:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(find //gandalf/sm-home/potentials/longi -name \"CLAUDE.md\" -o -name \".claude.local.md\" 2>/dev/null | head -20)",
+      "Read(///gandalf/sm-home/potentials/**)"
     ]
   }
 }

@@ -13,7 +13,7 @@ Output structure:
 - Rows: Stock tickers
 - Columns: ticker_<daynum> (first column with daynum), then metrics extracted
   from longi_*.csv files (taken after-the-underscore), plus sector aggregates
-  - e.g., ticker_2009, rsi, macd_line, macd_signal, macd_histogram, uptrend,
+  - e.g., ticker_2009, rsi, macd_line, macd_signal, macd_histogram,
     per1d, per1w, per1m, per3m, per6m, per1y, rank, median_10d, median_20d,
     median_50d, median_100d, stepup, GICS_1yr, Sector2_1yr
   - GICS_1yr: Sector-aggregated 1-year performance for stock's GICS sector

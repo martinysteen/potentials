@@ -41,11 +41,6 @@ MODULES: Dict[str, Module] = {
         script="longi_macd.py",
         depends_on=[],  # Independent - can run in parallel with RSI
     ),
-    "uptrend": Module(
-        name="Uptrend Grading",
-        script="longi_uptrend.py",
-        depends_on=["rsi", "macd"],  # Depends on BOTH RSI and MACD outputs
-    ),
     "performance": Module(
         name="Performance (1d/1w/1m/3m/6m/1y)",
         script="longi_performance.py",
@@ -131,6 +126,51 @@ MODULES: Dict[str, Module] = {
         script="longi_grp_Sector2_1yr.py",
         depends_on=["performance"],  # Depends on longi_per1y.csv
     ),
+    "grp_GICS_3m": Module(
+        name="GICS Sector-Aggregated 3-Month Growth",
+        script="longi_grp_GICS_3m.py",
+        depends_on=["performance"],  # Depends on longi_per3m.csv
+    ),
+    "grp_Sector2_3m": Module(
+        name="Sector2-Aggregated 3-Month Growth",
+        script="longi_grp_Sector2_3m.py",
+        depends_on=["performance"],  # Depends on longi_per3m.csv
+    ),
+    "GICS_3m": Module(
+        name="GICS 3-Month Performance per Ticker",
+        script="longi_GICS_3m.py",
+        depends_on=["grp_GICS_3m"],  # Depends on longi_grp_GICS_3m.csv
+    ),
+    "Sector2_3m": Module(
+        name="Sector2 3-Month Performance per Ticker",
+        script="longi_Sector2_3m.py",
+        depends_on=["grp_Sector2_3m"],  # Depends on longi_grp_Sector2_3m.csv
+    ),
+    "coreindex": Module(
+        name="CoreIndex Price per Ticker",
+        script="longi_coreindex.py",
+        depends_on=[],  # Independent - reads PotDat.csv and Stamdata.csv
+    ),
+    "coreindexRSI": Module(
+        name="CoreIndex RSI per Ticker",
+        script="longi_coreindexRSI.py",
+        depends_on=["rsi"],  # Depends on longi_rsi.csv
+    ),
+    "beta3m": Module(
+        name="3-Month Beta (Market Sensitivity)",
+        script="longi_beta3m.py",
+        depends_on=[],  # Independent - reads PotDat.csv and Stamdata.csv
+    ),
+    "trump": Module(
+        name="Trump Tariff Price Index",
+        script="longi_trump.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
+    "iran": Module(
+        name="Iran War Price Index",
+        script="longi_iran.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
     "macd_Z": Module(
         name="MACD Zero-Crossing Detection",
         script="longi_macd_Z.py",
@@ -154,13 +194,13 @@ MODULES: Dict[str, Module] = {
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="longi_across.py",
-        depends_on=["rsi", "macd", "macd_Z", "uptrend", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "sh3m", "sh6m", "sh1yr", "grp_GICS_1yr", "grp_Sector2_1yr"],  # Depends on ALL modules - must run last
+        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "sh3m", "sh6m", "sh1yr", "grp_GICS_1yr", "grp_Sector2_1yr", "grp_GICS_3m", "grp_Sector2_3m", "GICS_3m", "Sector2_3m", "coreindex", "coreindexRSI", "beta3m", "trump", "iran"],  # Depends on ALL modules - must run last
     ),
     # Add more modules here:
     # "module_name": Module(
     #     name="Display Name",
     #     script="longi_xxx.py",
-    #     depends_on=["rsi"],  # or [] for independent, or ["rsi", "uptrend"] for multiple deps
+    #     depends_on=["rsi"],  # or [] for independent, or ["rsi", "macd"] for multiple deps
     # ),
 }
 
