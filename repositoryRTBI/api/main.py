@@ -122,4 +122,4 @@ def query_data(
         selected = _select_daynums(daynum_cols, daynum_ints, daynums)
         df = df[["ticker"] + selected]
 
-    return df.to_dict(orient="records")
+    return df.astype(object).where(pd.notna(df), None).to_dict(orient="records")

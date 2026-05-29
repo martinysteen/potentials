@@ -25,5 +25,3 @@ env/
 .DS_Store
 shared/app/creds/token.json
 
-# repositoryRTBI API code lives in repositoryRTBI/api/.
-# repositoryRTBI/code/ is intentionally kept as an empty placeholder.

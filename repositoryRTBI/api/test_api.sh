@@ -24,6 +24,16 @@ check() {
 echo "=== RTBI API tests against $BASE ==="
 echo
 
+if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files rtbi-api.service >/dev/null 2>&1; then
+    echo "--- Service reload ---"
+    if sudo -n systemctl restart rtbi-api >/dev/null 2>&1; then
+        pass "rtbi-api restarted before tests"
+    else
+        echo "  SKIP  could not restart rtbi-api non-interactively"
+    fi
+    echo
+fi
+
 # 1. No key → 403
 echo "--- Auth ---"
 R=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/files")

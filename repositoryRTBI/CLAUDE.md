@@ -40,6 +40,9 @@ sudo journalctl -u caddy -f
 
 # Test API
 curl -H "X-API-Key: <key>" https://innovia.dk/rtbi-api/files
+
+# Run smoke tests
+bash ~/potentials/repositoryRTBI/api/test_api.sh <key>
 ```
 
 ## Excluded folders (not synced from Drive)
