@@ -9,7 +9,7 @@ Make Potentials CSV files (mirrored from Google Drive) accessible to external ag
 
 All endpoints tested and working:
 - [x] Caddy with valid SSL running
-- [x] All 9 API smoke tests passing
+- [x] API smoke tests passing
 - [x] Query endpoint working with ticker/daynum structure
 - [x] Download endpoint working
 - [x] Hourly cron job active
@@ -18,7 +18,7 @@ All endpoints tested and working:
 ## Setup steps completed on Ubuntu (for reference)
 1. Installed Caddy from official repo (`dl.cloudsmith.io/public/caddy/stable`)
 2. Copied `Caddyfile` to `/etc/caddy/Caddyfile`, reloaded caddy
-3. Ran `api/setup.sh` to install fastapi, uvicorn, duckdb, python-dotenv into potsystem_env
+3. Ran `api/setup.sh` to install fastapi, uvicorn, python-dotenv, and pandas into potsystem_env
 4. Created `api/.env` with `RTBI_API_KEY=<key>`
 5. Copied `rtbi-api.service` to `/etc/systemd/system/`, enabled and started it
 6. Opened ports 80+443 on router

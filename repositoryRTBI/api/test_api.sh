@@ -41,7 +41,7 @@ HTTP=$(curl -s -o /dev/null -w "%{http_code}" -H "X-API-Key: $KEY" "$BASE/files"
 [ "$HTTP" = "200" ] && pass "GET /files → 200" || fail "GET /files → expected 200, got $HTTP"
 check "GET /files returns array" "\[" "$R"
 
-# 4. Pick first CSV from file list and test download + query
+# 4. Pick first CSV from file list and test download
 FIRST_CSV=$(echo "$R" | python3 -c "
 import sys, json
 files = json.load(sys.stdin)
@@ -49,24 +49,40 @@ if files:
     print(files[0]['path'])
 " 2>/dev/null)
 
+QUERY_CSV=$(echo "$R" | python3 -c "
+import sys, json
+files = json.load(sys.stdin)
+for item in files:
+    path = item.get('path', '')
+    if path.endswith('PotDat.csv') or path.startswith('Longi/longi_'):
+        print(path)
+        break
+" 2>/dev/null)
+
 if [ -z "$FIRST_CSV" ]; then
     echo "  SKIP  no CSV files found yet (sync not run?)"
 else
-    echo "        Testing with: $FIRST_CSV"
+    echo "        Testing download with: $FIRST_CSV"
 
     # Download
     HTTP=$(curl -s -o /dev/null -w "%{http_code}" -H "X-API-Key: $KEY" "$BASE/files/$FIRST_CSV")
     [ "$HTTP" = "200" ] && pass "GET /files/$FIRST_CSV → 200" || fail "GET /files/$FIRST_CSV → expected 200, got $HTTP"
+fi
 
-    # Query (first 3 rows)
-    R=$(curl -s -H "X-API-Key: $KEY" "$BASE/data/$FIRST_CSV?limit=3")
-    HTTP=$(curl -s -o /dev/null -w "%{http_code}" -H "X-API-Key: $KEY" "$BASE/data/$FIRST_CSV?limit=3")
-    [ "$HTTP" = "200" ] && pass "GET /data/$FIRST_CSV?limit=3 → 200" || fail "GET /data/$FIRST_CSV?limit=3 → expected 200, got $HTTP"
+if [ -z "$QUERY_CSV" ]; then
+    echo "  SKIP  no known ticker/daynum matrix CSV found for query test"
+else
+    echo "        Testing query with: $QUERY_CSV"
+
+    # Query one daynum column from a ticker/daynum matrix CSV
+    R=$(curl -s -H "X-API-Key: $KEY" "$BASE/data/$QUERY_CSV?daynums=first")
+    HTTP=$(curl -s -o /dev/null -w "%{http_code}" -H "X-API-Key: $KEY" "$BASE/data/$QUERY_CSV?daynums=first")
+    [ "$HTTP" = "200" ] && pass "GET /data/$QUERY_CSV?daynums=first → 200" || fail "GET /data/$QUERY_CSV?daynums=first → expected 200, got $HTTP"
     check "query returns array" "\[" "$R"
 
-    # Unknown column → 400
-    HTTP=$(curl -s -o /dev/null -w "%{http_code}" -H "X-API-Key: $KEY" "$BASE/data/$FIRST_CSV?nonexistent_col=x")
-    [ "$HTTP" = "400" ] && pass "unknown column filter → 400" || fail "unknown column filter → expected 400, got $HTTP"
+    # Invalid daynums selector → 400
+    HTTP=$(curl -s -o /dev/null -w "%{http_code}" -H "X-API-Key: $KEY" "$BASE/data/$QUERY_CSV?daynums=not-a-selector")
+    [ "$HTTP" = "400" ] && pass "invalid daynums selector → 400" || fail "invalid daynums selector → expected 400, got $HTTP"
 fi
 
 # 5. Non-existent file → 404

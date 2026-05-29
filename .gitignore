@@ -25,7 +25,5 @@ env/
 .DS_Store
 shared/app/creds/token.json
 
-# IMPORTANT: DO NOT EXCLUDE repositoryRTBI/code/
-# These files must be tracked by git to prevent loss during rclone operations
-# !repositoryRTBI/code/*.py
-# !repositoryRTBI/code/*.sh
+# repositoryRTBI API code lives in repositoryRTBI/api/.
+# repositoryRTBI/code/ is intentionally kept as an empty placeholder.

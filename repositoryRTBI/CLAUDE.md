@@ -14,14 +14,13 @@ Mirrors `GoogleDrive:PotSystem/repositoryRTBI` to local `data/` on Ubuntu (`~/po
 repositoryRTBI/
 ├── data/               # CSV files synced from Google Drive (do not edit manually)
 ├── api/
-│   ├── main.py         # FastAPI + DuckDB application
+│   ├── main.py         # FastAPI + pandas ticker/daynum query application
 │   ├── setup.sh        # conda install commands for dependencies
 │   ├── .env            # RTBI_API_KEY (not committed)
 │   └── .env.example    # key format reference
 ├── sync_rtbi.sh        # rclone sync script (run manually or via cron)
 ├── Caddyfile           # Caddy reverse proxy config (deployed to /etc/caddy/Caddyfile)
 ├── rtbi-api.service    # systemd service definition (deployed to /etc/systemd/system/)
-└── nginx_rtbi.conf     # obsolete — replaced by Caddyfile
 ```
 
 ## Key commands (run on Ubuntu)
@@ -52,7 +51,7 @@ curl -H "X-API-Key: <key>" https://innovia.dk/rtbi-api/files
 |--------|------|-------------|
 | GET | `/rtbi-api/files` | List all CSV files with metadata |
 | GET | `/rtbi-api/files/{path}` | Download full CSV |
-| GET | `/rtbi-api/data/{path}` | Query CSV via DuckDB (params: `limit`, `offset`, plus any column=value filters) |
+| GET | `/rtbi-api/data/{path}` | Query ticker/daynum matrix CSVs as JSON (params: `tickers`, `daynums`) |
 
 All endpoints require header `X-API-Key: <key>`. Key is stored in `api/.env` on the server.
 

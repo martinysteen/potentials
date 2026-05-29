@@ -106,8 +106,12 @@ files = requests.get(f"{BASE}/files", headers=HEADERS).json()
 csv_bytes = requests.get(f"{BASE}/files/PotDat.csv", headers=HEADERS).content
 
 # Query with pandas
-import pandas as pd, io
-rows = requests.get(f"{BASE}/data/PotDat.csv", headers=HEADERS, params={"limit": 5000}).json()
+import pandas as pd
+rows = requests.get(
+    f"{BASE}/data/PotDat.csv",
+    headers=HEADERS,
+    params={"daynums": "first:10"},
+).json()
 df = pd.DataFrame(rows)
 ```
 
