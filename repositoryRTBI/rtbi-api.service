@@ -1,0 +1,14 @@
+[Unit]
+Description=RTBI Data API
+After=network.target
+
+[Service]
+User=sm
+WorkingDirectory=/home/sm/potentials/repositoryRTBI/api
+EnvironmentFile=/home/sm/potentials/repositoryRTBI/api/.env
+ExecStart=/home/sm/miniconda3/envs/potsystem_env/bin/uvicorn main:app --host 127.0.0.1 --port 8765
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

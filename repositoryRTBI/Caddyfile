@@ -1,0 +1,6 @@
+innovia.dk {
+    handle /rtbi-api/* {
+        uri strip_prefix /rtbi-api
+        reverse_proxy 127.0.0.1:8765
+    }
+}
