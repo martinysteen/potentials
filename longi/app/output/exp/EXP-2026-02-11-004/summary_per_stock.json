@@ -1,0 +1,10 @@
+{
+  "n_splits": 10,
+  "n_test_rows_total": 10910,
+  "n_pred_rows_total": 10792,
+  "n_no_pred_rows_total": 118,
+  "first_order_error_total": 696,
+  "second_order_error_total": 1236,
+  "signal_vs_nothing_error_total": 1199,
+  "accuracy_pred_rows_overall": 0.7098776871756857
+}

@@ -1,0 +1,67 @@
+{
+  "experiment_id": "EXP-2026-02-11-001",
+  "created_utc": "2026-02-11T10:32:51.856489+00:00",
+  "cwd": "\\\\gandalf\\sm-home\\potentials\\longi",
+  "git_commit": "e2adabf3e5e110acd646fc029b789b90a792443a",
+  "command": "app/code_exp/exp_phase1_multinomial_20d.py --exp-id EXP-2026-02-11-001 --n-test-days 10",
+  "feature_files": [
+    "longi_beta3m.csv",
+    "longi_coreindex.csv",
+    "longi_coreindexRSI.csv",
+    "longi_GICS_3m.csv",
+    "longi_ma10.csv",
+    "longi_ma20.csv",
+    "longi_ma50.csv",
+    "longi_macd_signal.csv",
+    "longi_median_10d.csv",
+    "longi_median_30d.csv",
+    "longi_median_50d.csv",
+    "longi_PdivMA50.csv",
+    "longi_per1m.csv",
+    "longi_per3m.csv",
+    "longi_rsi.csv",
+    "longi_Sector2_3m.csv",
+    "longi_sh3m.csv",
+    "longi_spr100d.csv",
+    "longi_stepup100.csv",
+    "longi_stepup40.csv",
+    "longi_vola100d.csv",
+    "longi_vola20d.csv"
+  ],
+  "target_file": "future_gain20d.csv",
+  "class_definition": {
+    "Win": "future_gain20d > 6.0",
+    "Loss": "future_gain20d < 0.0",
+    "Nothing": "0.0 <= future_gain20d <= 6.0"
+  },
+  "split_policy": {
+    "n_test_days": 10,
+    "test_days": [
+      2061,
+      2060,
+      2059,
+      2058,
+      2057,
+      2056,
+      2055,
+      2054,
+      2053,
+      2052
+    ],
+    "train_condition": "daynum < test_daynum",
+    "min_train_daynums": 120
+  },
+  "model": {
+    "type": "multinomial_softmax_regression",
+    "reg_lambda": 0.01,
+    "max_iter": 250,
+    "trim_percent": 0.0
+  },
+  "per_stock": {
+    "enabled": false,
+    "min_stock_samples": 150
+  },
+  "dataset_rows_after_inner_join": 453441,
+  "dataset_tickers": 1092,
+  "dataset_daynums": 420
+}
