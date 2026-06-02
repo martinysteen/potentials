@@ -25,3 +25,7 @@ env/
 .DS_Store
 shared/app/creds/token.json
 
+# --- Archived experiments (files kept on disk, not tracked) ---
+correlation/
+gainsuccess/
+
