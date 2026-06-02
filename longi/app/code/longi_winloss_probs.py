@@ -11,7 +11,18 @@ Cells are blank when a probability is not calculable (missing features, insuffic
 train rows, caret tickers, etc.).
 
 Default behavior updates only the newest daynum (cheap enough for daily pipeline).
-Use --backfill-all to build historical columns (can be slow).
+
+Flags:
+--daynum N           Only compute a specific daynum (mutually exclusive with --backfill-all)
+--backfill-all       Compute all scoreable feature daynums (can be slow)
+--max-daynums N      Limit number of daynums processed, newest-first (use with --backfill-all)
+--clear              Delete existing probability matrix files before computing
+--min-stock-samples  Min training rows required per ticker (default: 150)
+--reg-lambda         L2 regularization strength (default: 0.01)
+--max-iter           Maximum optimizer iterations (default: 1000)
+--prob-decimals      Decimal places written to probability cells (default: 3)
+--across-prune       Refresh across_*.csv files for selected daynums and delete non-target ones
+
 """
 
 from __future__ import annotations
@@ -25,7 +36,7 @@ from typing import Dict, List, Set, Tuple
 import numpy as np
 import pandas as pd
 
-from aux_win_loss_shared import (
+from aux_winloss_shared import (
     CLASS_TO_INT,
     FEATURE_FILES,
     TARGET_SPECS,
@@ -35,7 +46,6 @@ from aux_win_loss_shared import (
     fit_predict_multinomial,
     get_max_daynum_from_potdat,
     get_non_caret_tickers_from_potdat,
-    standardize_fit,
 )
 
 
@@ -68,8 +78,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--min-stock-samples", type=int, default=150, help="Min training rows per ticker.")
     parser.add_argument("--reg-lambda", type=float, default=0.01, help="L2 regularization strength.")
-    parser.add_argument("--max-iter", type=int, default=250, help="Maximum optimizer iterations.")
-    parser.add_argument("--prob-decimals", type=int, default=6, help="Decimals written to longi probability cells.")
+    parser.add_argument("--max-iter", type=int, default=1000, help="Maximum optimizer iterations.")
+    parser.add_argument("--prob-decimals", type=int, default=3, help="Decimals written to longi probability cells.")
     parser.add_argument(
         "--across-prune",
         action="store_true",
@@ -77,6 +87,11 @@ def parse_args() -> argparse.Namespace:
             "After writing probability matrices, refresh across files for the selected daynum(s) "
             "and prune app/output/across_*.csv to those daynums."
         ),
+    )
+    parser.add_argument(
+        "--clear",
+        action="store_true",
+        help="Delete existing probability matrix files before computing, ensuring no stale cells survive.",
     )
     return parser.parse_args()
 
@@ -128,14 +143,10 @@ def predict_for_target_day(
         x_train = stock_train[feature_cols].to_numpy(dtype=float)
         y_train = stock_train["y_int"].to_numpy(dtype=int)
 
-        mean, std = standardize_fit(x_train)
-        x_train_std = (x_train - mean) / std
-        x_test_std = (x_row - mean) / std
-
         _, probs = fit_predict_multinomial(
-            x_train=x_train_std,
+            x_train=x_train,
             y_train=y_train,
-            x_test=x_test_std,
+            x_test=x_row,
             reg_lambda=reg_lambda,
             max_iter=max_iter,
         )
@@ -329,6 +340,12 @@ def main() -> int:
         print(f"  Mode: single daynum ({int(args.daynum)})")
     else:
         print("  Mode: newest daynum only (daily update)")
+
+    if args.clear:
+        for path in OUTPUT_FILES.values():
+            if path.exists():
+                path.unlink()
+                print(f"  Cleared: {path.name}")
 
     header, potdat_daynums, potdat_ticker_rows = read_potdat_layout(POTDAT_FILE)
     non_caret_tickers = sorted(get_non_caret_tickers_from_potdat(POTDAT_FILE))

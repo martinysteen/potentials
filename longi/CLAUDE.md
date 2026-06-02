@@ -312,7 +312,7 @@ Follow the same pattern:
 
 ### Unregistered/Experimental Modules (in code/, not yet in pipeline)
 - **longi_beta1yr.py**, **longi_beta6m.py** - Beta (market sensitivity) over 265/133 days; same pattern as beta3m
-- **longi_winloss_probs.py** - Win/loss probability matrices: longi_P20d_win/loss.csv, longi_P50d_win/loss.csv; uses aux_win_loss_shared.py
+- **longi_winloss_probs.py** - Win/loss probability matrices: longi_P20d_win/loss.csv, longi_P50d_win/loss.csv; uses aux_winloss_shared.py
 
 ## Development Notes
 - VS Code connected via Remote-SSH from Windows

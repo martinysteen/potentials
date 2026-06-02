@@ -16,6 +16,9 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 
 # All files here must have tickers as rows. build_feature_frame uses an inner join on
@@ -196,9 +199,9 @@ class SoftmaxRegressor:
             return loss, grad.reshape(-1)
 
         result = minimize(
-            fun=lambda z: loss_grad(z)[0],
+            fun=loss_grad,
             x0=w0.reshape(-1),
-            jac=lambda z: loss_grad(z)[1],
+            jac=True,
             method="L-BFGS-B",
             options={"maxiter": self.max_iter},
         )
@@ -224,7 +227,10 @@ def fit_predict_multinomial(
     """
     Fit multinomial model and return predicted class indices + full class probs.
 
-    Handles missing classes in train split by re-indexing and expanding back to full classes.
+    Scaling is applied internally via StandardScaler. Callers should pass raw
+    (unscaled) feature arrays.
+
+    Handles missing classes in train split by expanding back to full class set.
     """
     unique_classes = np.unique(y_train)
     probs_full = np.zeros((x_test.shape[0], len(CLASS_NAMES)), dtype=float)
@@ -234,17 +240,21 @@ def fit_predict_multinomial(
         probs_full[:, only_class] = 1.0
         return probs_full.argmax(axis=1), probs_full
 
-    class_old_to_new = {old: idx for idx, old in enumerate(unique_classes)}
-    class_new_to_old = {idx: old for old, idx in class_old_to_new.items()}
-    y_train_small = np.array([class_old_to_new[int(v)] for v in y_train], dtype=int)
+    pipeline = Pipeline([
+        ("scaler", StandardScaler()),
+        ("clf", LogisticRegression(
+            solver="newton-cholesky",
+            C=1.0 / reg_lambda,
+            max_iter=max_iter,
+            fit_intercept=True,
+        )),
+    ])
+    pipeline.fit(x_train, y_train)
+    probs_small = pipeline.predict_proba(x_test)
 
-    model = SoftmaxRegressor(reg_lambda=reg_lambda, max_iter=max_iter)
-    model.fit(x_train, y_train_small, n_classes=unique_classes.size)
-    probs_small = model.predict_proba(x_test)
-
-    for small_idx in range(probs_small.shape[1]):
-        old_idx = class_new_to_old[small_idx]
-        probs_full[:, old_idx] = probs_small[:, small_idx]
+    clf = pipeline.named_steps["clf"]
+    for i, cls in enumerate(clf.classes_):
+        probs_full[:, int(cls)] = probs_small[:, i]
 
     probs_sum = probs_full.sum(axis=1, keepdims=True)
     probs_sum[probs_sum == 0.0] = 1.0
