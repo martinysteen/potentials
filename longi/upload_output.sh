@@ -2,6 +2,9 @@
 # Upload output data to Google Drive
 # Can be called standalone after running individual py-files, or by start_longi.sh
 
+# Ignore SIGHUP so SSH disconnect does not kill the upload mid-sync
+trap '' HUP
+
 echo "=== Upload output data START: $(date) ==="
 
 # Change to working directory

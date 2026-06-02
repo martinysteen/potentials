@@ -2,7 +2,7 @@
 """
 longi_upload.py - Upload output files to Google Drive using rclone
 
-This module uploads processed results from ./output/ and ./across/ to Google Drive.
+This module uploads processed results from ./output/ to Google Drive.
 Output goes to stdout - start_longi.sh handles logging redirection.
 """
 
@@ -100,7 +100,6 @@ def main() -> int:
     """
     # Configuration - list of (source, destination, required) tuples
     RCLONE_FLAGS = [
-        "--update",
         "--verbose",
         "--drive-skip-gdocs",
         "--exclude", "*.txt",
@@ -113,18 +112,6 @@ def main() -> int:
             "source": Path("/home/sm/potentials/longi/app/output"),
             "destination": "GoogleDrive:PotSystem/repositoryRTBI/Longi",
             "required": True,  # Fail if this upload fails
-        },
-        {
-            "name": "output_grp",
-            "source": Path("/home/sm/potentials/longi/app/output_grp"),
-            "destination": "GoogleDrive:PotSystem/repositoryRTBI/Longi/output_grp",
-            "required": False,  # Optional - warn but continue if missing/failed
-        },
-        {
-            "name": "across",
-            "source": Path("/home/sm/potentials/longi/app/across"),
-            "destination": "GoogleDrive:PotSystem/repositoryRTBI/Longi/across",
-            "required": False,  # Optional - warn but continue if missing/failed
         },
     ]
 

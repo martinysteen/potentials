@@ -2,10 +2,12 @@
 
 LOGFILE=~/start_longi.log
 
-# Use tee to show output in real-time AND log to file
-# All output goes to both terminal and log file
-# Note: tee without -a overwrites the log file each run (use -a to append instead)
-exec > >(tee "$LOGFILE") 2>&1
+# Ignore SIGHUP so SSH disconnect does not kill the pipeline
+trap '' HUP
+
+# Log to file; also mirror to terminal while it is connected (tee errors are suppressed
+# so a closed terminal does not break the pipe and kill the script)
+exec > >(tee "$LOGFILE" 2>/dev/null) 2>&1
 
 echo "=== start_longi.sh START: $(date) ==="
 echo "Log file: $LOGFILE"

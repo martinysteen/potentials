@@ -41,7 +41,7 @@ from aux_win_loss_shared import (
 
 INPUT_DIR = Path(__file__).parent.parent / "input"
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
-ACROSS_DIR = Path(__file__).parent.parent / "across"
+ACROSS_DIR = Path(__file__).parent.parent / "output"
 POTDAT_FILE = INPUT_DIR / "PotDat.csv"
 
 OUTPUT_FILES = {
@@ -75,7 +75,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "After writing probability matrices, refresh across files for the selected daynum(s) "
-            "and prune app/across/longi_across_*.csv to those daynums."
+            "and prune app/output/across_*.csv to those daynums."
         ),
     )
     return parser.parse_args()
@@ -218,8 +218,7 @@ def select_daynums(
     if args.max_daynums is not None and int(args.max_daynums) <= 0:
         raise ValueError("--max-daynums must be > 0.")
 
-    feature_days = set(pd.to_numeric(feature_df["daynum"], errors="coerce").dropna().astype(int).tolist())
-    selected = [d for d in potdat_daynums if d in feature_days]
+    selected = list(potdat_daynums)
 
     if args.max_daynums is not None and args.max_daynums > 0:
         selected = selected[: int(args.max_daynums)]
@@ -260,11 +259,11 @@ def get_existing_across_files() -> Dict[int, Path]:
     if not ACROSS_DIR.exists():
         return out
 
-    for path in ACROSS_DIR.glob("longi_across_*.csv"):
+    for path in ACROSS_DIR.glob("across_*.csv"):
         name = path.name
-        if not (name.startswith("longi_across_") and name.endswith(".csv")):
+        if not (name.startswith("across_") and name.endswith(".csv")):
             continue
-        daynum_str = name[len("longi_across_") : -4]
+        daynum_str = name[len("across_") : -4]
         if daynum_str.isdigit():
             out[int(daynum_str)] = path
     return out
@@ -274,14 +273,12 @@ def refresh_across_files_for_daynums(daynums: List[int]) -> None:
     """
     Rebuild across files for the provided daynums so they include updated prob columns.
 
-    Imports aux_across lazily to avoid the cost when not requested.
+    Imports longi_across lazily to avoid the cost when not requested.
     """
     if not daynums:
         return
 
-    import aux_across  # local module in app/code
-
-    ACROSS_DIR.mkdir(parents=True, exist_ok=True)
+    import longi_across  # local module in app/code
 
     print("  Refreshing across files for selected daynum(s)")
     if len(daynums) <= 10:
@@ -291,10 +288,10 @@ def refresh_across_files_for_daynums(daynums: List[int]) -> None:
 
     for idx, daynum in enumerate(daynums, start=1):
         print(f"    [{idx}/{len(daynums)}] daynum {daynum}")
-        tickers, metric_data = aux_across.extract_cross_sectional_data(int(daynum), quiet=True)
+        tickers, metric_data = longi_across.extract_cross_sectional_data(int(daynum), quiet=True)
         if not tickers:
             raise RuntimeError(f"Failed to extract across data for daynum {daynum} (no rows returned)")
-        aux_across.write_cross_sectional_csv(int(daynum), tickers, metric_data)
+        longi_across.write_cross_sectional_csv(int(daynum), tickers, metric_data)
 
 
 def prune_across_files_to_targets(target_daynums: List[int]) -> int:

@@ -3,29 +3,21 @@ Cross-Sectional Data Extraction Module - Extract Data for Specific Daynum
 
 This module creates a cross-sectional view of all derived tables for a specific daynum.
 
-AUTOMATIC UPDATE FEATURE:
-Before creating the new cross-sectional file, this module automatically updates
-all existing historical cross-sectional files to ensure they stay in sync with
-the current ticker population. This ensures consistency when tickers are added
-or removed from PotDat.csv.
-
 Output structure:
 - Rows: Stock tickers
 - Columns: ticker_<daynum> (first column with daynum), then metrics extracted
-  from longi_*.csv files (taken after-the-underscore), plus sector aggregates
+  from longi_*.csv files, plus sector aggregates
   - e.g., ticker_2009, rsi, macd_line, macd_signal, macd_histogram,
     per1d, per1w, per1m, per3m, per6m, per1y, rank, median_10d, median_20d,
     median_50d, median_100d, stepup, GICS_1yr, Sector2_1yr
   - GICS_1yr: Sector-aggregated 1-year performance for stock's GICS sector
   - Sector2_1yr: Sector-aggregated 1-year performance for stock's Sector2
 
-Parameters:
-- daynum: Optional daynum to extract. If not provided, uses the maximum (newest)
-  daynum from PotDat.csv
+Usage:
+  Programmatic: from longi_across import make_across; make_across(daynum, target_folder)
+  CLI: python3 longi_across.py [daynum] [--target-folder=/path]
 
-Output: longi_across_<daynum>.csv
-
-Output goes to stdout - start_longi.sh handles logging redirection.
+Output: across_<daynum>.csv (written to app/output by default)
 """
 
 import csv
@@ -36,8 +28,6 @@ from typing import List, Optional, Dict, Tuple
 # Configuration
 INPUT_DIR = Path(__file__).parent.parent / "input"
 SOURCE_DIR = Path(__file__).parent.parent / "output"
-SOURCE_DIR_GRP = Path(__file__).parent.parent / "output_grp"
-OUTPUT_DIR_ACROSS = Path(__file__).parent.parent / "across"
 POTDAT_FILE = INPUT_DIR / "PotDat.csv"
 STAMDATA_FILE = INPUT_DIR / "Stamdata.csv"
 
@@ -144,8 +134,9 @@ def get_available_output_files() -> List[Tuple[str, str]]:
     for filepath in sorted(SOURCE_DIR.glob("longi_*.csv")):
         filename = filepath.name
 
-        # Skip the longi_across_*.csv files
-        if filename.startswith("longi_across_"):
+        if filename.startswith("across_"):
+            continue
+        if filename.startswith("longi_grp_"):
             continue
 
         # Extract metric name: remove "longi_" prefix and ".csv" suffix
@@ -224,7 +215,7 @@ def load_sector_aggregated_data(daynum: int, quiet: bool = False) -> Tuple[Dict[
     sector2_to_perf = {}
 
     # Load GICS aggregated data
-    gics_file = SOURCE_DIR_GRP / "longi_grp_GICS_1yr.csv"
+    gics_file = SOURCE_DIR / "longi_grp_GICS_1yr.csv"
     if gics_file.exists():
         try:
             with open(gics_file, 'r', encoding='utf-8') as f:
@@ -254,7 +245,7 @@ def load_sector_aggregated_data(daynum: int, quiet: bool = False) -> Tuple[Dict[
             print(f"  WARNING: Failed to load GICS aggregated data: {e}")
 
     # Load Sector2 aggregated data
-    sector2_file = SOURCE_DIR_GRP / "longi_grp_Sector2_1yr.csv"
+    sector2_file = SOURCE_DIR / "longi_grp_Sector2_1yr.csv"
     if sector2_file.exists():
         try:
             with open(sector2_file, 'r', encoding='utf-8') as f:
@@ -367,87 +358,9 @@ def extract_cross_sectional_data(daynum: int, quiet: bool = False) -> Tuple[List
     return tickers, metric_data
 
 
-def get_existing_daynums_to_update(current_daynum: int) -> List[int]:
-    """
-    Scan across/ folder for existing longi_across_*.csv files to update.
-
-    Returns daynums that need updating (excluding the current daynum being created).
-
-    Args:
-        current_daynum: The daynum currently being created (exclude from update list)
-
-    Returns:
-        List of daynums to update
-    """
-    daynums = []
-
-    if not OUTPUT_DIR_ACROSS.exists():
-        return []
-
-    # Find all longi_across_*.csv files
-    for filepath in OUTPUT_DIR_ACROSS.glob("longi_across_*.csv"):
-        filename = filepath.name
-
-        # Extract daynum from filename: longi_across_<daynum>.csv
-        if filename.startswith("longi_across_") and filename.endswith(".csv"):
-            daynum_str = filename[13:-4]  # Remove "longi_across_" and ".csv"
-
-            try:
-                daynum = int(daynum_str)
-                # Exclude the current daynum (it will be created fresh anyway)
-                if daynum != current_daynum:
-                    daynums.append(daynum)
-            except ValueError:
-                continue
-
-    return sorted(daynums)
-
-
-def update_existing_cross_sectional_files(current_daynum: int) -> None:
-    """
-    Update all existing cross-sectional files to sync with current ticker population.
-
-    This ensures historical files stay in sync when ticker population changes.
-
-    Args:
-        current_daynum: The daynum currently being created (will be skipped)
-    """
-    print(f"\nChecking for existing cross-sectional files to update...")
-
-    daynums_to_update = get_existing_daynums_to_update(current_daynum)
-
-    if not daynums_to_update:
-        print("  No existing files to update")
-        return
-
-    print(f"  Found {len(daynums_to_update)} existing file(s) to refresh")
-    print(f"  Daynums: {', '.join(map(str, daynums_to_update))}")
-
-    success_count = 0
-    failure_count = 0
-
-    for daynum in daynums_to_update:
-        try:
-            # Extract and write cross-sectional data for this daynum (quietly)
-            tickers, metric_data = extract_cross_sectional_data(daynum, quiet=True)
-
-            if not tickers:
-                print(f"  WARNING: No data for daynum {daynum}, skipping")
-                failure_count += 1
-                continue
-
-            write_cross_sectional_csv(daynum, tickers, metric_data)
-            success_count += 1
-
-        except Exception as e:
-            print(f"  ✗ Failed to update daynum {daynum}: {e}")
-            failure_count += 1
-
-    print(f"  Updated {success_count} files successfully" + (f", {failure_count} failed" if failure_count else ""))
-
-
 def write_cross_sectional_csv(daynum: int, tickers: List[str],
-                                metric_data: Dict[str, List[Optional[str]]]) -> Path:
+                                metric_data: Dict[str, List[Optional[str]]],
+                                target_folder: Optional[Path] = None) -> Path:
     """
     Write cross-sectional data to CSV file.
 
@@ -459,11 +372,15 @@ def write_cross_sectional_csv(daynum: int, tickers: List[str],
         daynum: Daynum being extracted
         tickers: List of ticker symbols
         metric_data: Dict mapping metric_name -> list of values
+        target_folder: Output folder (default: app/output)
 
     Returns:
         Path to output file
     """
-    output_file = OUTPUT_DIR_ACROSS / f"longi_across_{daynum}.csv"
+    if target_folder is None:
+        target_folder = Path(__file__).parent.parent / "output"
+
+    output_file = target_folder / f"across_{daynum}.csv"
 
     # Separate regular columns from group columns (GICS_*, Sector2_*, etc.)
     # Group columns are those ending with _1yr, _3m, _6m patterns (from longi_grp_* files)
@@ -501,46 +418,36 @@ def write_cross_sectional_csv(daynum: int, tickers: List[str],
     return output_file
 
 
-def main() -> int:
+def make_across(daynum: int, target_folder: Optional[str] = None) -> int:
     """
-    Main execution function.
+    Create a cross-sectional snapshot for a specific daynum.
 
-    Accepts optional command-line argument:
-    - daynum (optional): Specific daynum to extract
+    Deletes any existing across_*.csv files in target_folder before creating new one.
 
-    If no daynum provided, uses maximum daynum from PotDat.csv.
+    Args:
+        daynum: The daynum to extract
+        target_folder: Output folder path (default: app/output); can be string or Path
 
     Returns:
         Exit code (0 = success, 1 = error)
     """
-    print(f"longi_across.py: Cross-sectional data extraction")
-
-    # Parse command-line arguments
-    daynum = None
-    if len(sys.argv) > 1:
-        try:
-            daynum = int(sys.argv[1])
-            print(f"\nUsing daynum from command-line: {daynum}")
-        except ValueError:
-            print(f"ERROR: Invalid daynum argument: {sys.argv[1]}")
-            return 1
-
-    # If no daynum specified, get max from PotDat.csv
-    if daynum is None:
-        print(f"\nNo daynum specified, reading max daynum from {POTDAT_FILE.name}...")
-        daynum = get_max_daynum_from_potdat()
-
-        if daynum is None:
-            print(f"ERROR: Failed to determine daynum from {POTDAT_FILE.name}")
-            return 1
-
-        print(f"  ✓ Using maximum daynum: {daynum}")
+    # Normalize target_folder
+    if target_folder is None:
+        target_path = Path(__file__).parent.parent / "output"
+    else:
+        target_path = Path(target_folder)
 
     try:
-        # Update existing cross-sectional files first
-        update_existing_cross_sectional_files(daynum)
+        # Delete existing across_*.csv files in target folder
+        if target_path.exists():
+            existing_files = list(target_path.glob("across_*.csv"))
+            if existing_files:
+                print(f"\nCleaning up {len(existing_files)} existing across file(s) from {target_path.name}/")
+                for f in existing_files:
+                    f.unlink()
+                    print(f"  ✗ Deleted: {f.name}")
 
-        # Extract cross-sectional data for the new/current daynum
+        # Extract cross-sectional data
         print(f"\nExtracting data for daynum {daynum}...")
         tickers, metric_data = extract_cross_sectional_data(daynum)
 
@@ -565,11 +472,11 @@ def main() -> int:
 
         print(f"  - Data coverage: {filled_cells}/{total_cells} cells ({100*filled_cells/total_cells:.1f}%)")
 
-        # Write output file for current daynum
-        print(f"\nWriting cross-sectional data for daynum {daynum}...")
-        output_file = write_cross_sectional_csv(daynum, tickers, metric_data)
+        # Write output file
+        print(f"\nWriting cross-sectional data for daynum {daynum} to {target_path.name}/...")
+        output_file = write_cross_sectional_csv(daynum, tickers, metric_data, target_path)
 
-        print(f"\nSUCCESS: Cross-sectional data extracted")
+        print(f"\nSUCCESS: Cross-sectional data created")
         print(f"  Daynum: {daynum}")
         print(f"  Output: {output_file.name}")
         print(f"  Tickers: {num_tickers}")
@@ -582,6 +489,69 @@ def main() -> int:
         import traceback
         traceback.print_exc()
         return 1
+
+
+def get_existing_daynums_to_update(current_daynum: int) -> List[int]:
+    """
+    Scan for existing across_*.csv files to update (legacy - kept for backwards compatibility).
+
+    Returns daynums that need updating (excluding the current daynum being created).
+
+    Args:
+        current_daynum: The daynum currently being created (exclude from update list)
+
+    Returns:
+        List of daynums to update
+    """
+    return []  # No longer auto-updating files
+
+
+def update_existing_cross_sectional_files(current_daynum: int) -> None:
+    """Legacy function - kept for backwards compatibility, does nothing now."""
+    pass
+
+
+def main() -> int:
+    """
+    Main execution function for CLI usage.
+
+    Accepts optional command-line arguments:
+    - daynum (optional): Specific daynum to extract
+    - --target-folder (optional): Output folder (default: app/output)
+
+    If no daynum provided, uses maximum daynum from PotDat.csv.
+
+    Returns:
+        Exit code (0 = success, 1 = error)
+    """
+    print(f"longi_across.py: Cross-sectional data extraction")
+
+    # Parse command-line arguments
+    daynum = None
+    target_folder = None
+
+    for arg in sys.argv[1:]:
+        if arg.startswith("--target-folder="):
+            target_folder = arg.split("=", 1)[1]
+        else:
+            try:
+                daynum = int(arg)
+            except ValueError:
+                print(f"ERROR: Invalid argument: {arg}")
+                return 1
+
+    # If no daynum specified, get max from PotDat.csv
+    if daynum is None:
+        print(f"\nNo daynum specified, reading max daynum from {POTDAT_FILE.name}...")
+        daynum = get_max_daynum_from_potdat()
+
+        if daynum is None:
+            print(f"ERROR: Failed to determine daynum from {POTDAT_FILE.name}")
+            return 1
+
+        print(f"  ✓ Using maximum daynum: {daynum}")
+
+    return make_across(daynum, target_folder)
 
 
 if __name__ == "__main__":

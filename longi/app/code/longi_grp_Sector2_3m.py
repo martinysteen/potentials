@@ -6,7 +6,7 @@ Reads:
 - ../output/longi_per3m.csv (individual stock 3-month growth rates)
 
 Writes:
-- ../output_grp/longi_grp_Sector2_3m.csv
+- ../output/longi_grp_Sector2_3m.csv
 
 Output structure:
 - Rows: Unique Sector2 values
@@ -32,10 +32,8 @@ def main() -> int:
         base_path = Path(__file__).parent.parent
         stamdata_path = base_path / 'input' / 'Stamdata.csv'
         per3m_path = base_path / 'output' / 'longi_per3m.csv'
-        output_dir = base_path / 'output_grp'
+        output_dir = base_path / 'output'
         output_path = output_dir / 'longi_grp_Sector2_3m.csv'
-
-        output_dir.mkdir(parents=True, exist_ok=True)
 
         print("Sector2 aggregation (3-month growth)")
         print(f"Reading Stamdata from: {stamdata_path}")

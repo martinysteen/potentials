@@ -2,7 +2,7 @@
 """
 longi_upload.py - Upload output files to Google Drive using rclone
 
-This module uploads processed results from ./output/ and ./across/ to Google Drive.
+This module uploads processed results from ./output/ to Google Drive.
 Output goes to stdout - start_longi.sh handles logging redirection.
 """
 
@@ -100,7 +100,6 @@ def main() -> int:
     """
     # Configuration - list of (source, destination, required) tuples
     RCLONE_FLAGS = [
-        "--update",
         "--verbose",
         "--drive-skip-gdocs",
         "--exclude", "*.txt",
@@ -112,19 +111,15 @@ def main() -> int:
             "name": "output",
             "source": Path("/home/sm/potentials/longi/app/output"),
             "destination": "GoogleDrive:PotSystem/repositoryRTBI/Longi",
-            "required": True,  # Fail if this upload fails
-        },
-        {
-            "name": "output_grp",
-            "source": Path("/home/sm/potentials/longi/app/output_grp"),
-            "destination": "GoogleDrive:PotSystem/repositoryRTBI/Longi/output_grp",
-            "required": False,  # Optional - warn but continue if missing/failed
+            "required": True,
+            "extra_flags": [],
         },
         {
             "name": "across",
-            "source": Path("/home/sm/potentials/longi/app/across"),
+            "source": Path("/home/sm/potentials/longi/app/output"),
             "destination": "GoogleDrive:PotSystem/repositoryRTBI/Longi/across",
-            "required": False,  # Optional - warn but continue if missing/failed
+            "required": False,
+            "extra_flags": ["--filter", "+ across_*.csv", "--filter", "- *"],
         },
     ]
 
@@ -139,6 +134,7 @@ def main() -> int:
         source = task["source"]
         destination = task["destination"]
         required = task["required"]
+        extra_flags = task.get("extra_flags", [])
 
         print(f"\n--- Uploading {name} directory ---")
 
@@ -153,7 +149,7 @@ def main() -> int:
                 continue
 
         # Upload to Google Drive
-        exit_code = upload_to_gdrive(source, destination, RCLONE_FLAGS)
+        exit_code = upload_to_gdrive(source, destination, RCLONE_FLAGS + extra_flags)
 
         if exit_code != 0:
             if required:

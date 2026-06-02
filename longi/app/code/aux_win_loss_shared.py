@@ -18,11 +18,13 @@ import pandas as pd
 from scipy.optimize import minimize
 
 
+# All files here must have tickers as rows. build_feature_frame uses an inner join on
+# (ticker, daynum), so files with non-ticker row keys (e.g. longi_grp_*.csv which have
+# GICS sectors or Sector2 groups as rows) will produce an empty join and blank predictions.
 FEATURE_FILES: List[str] = [
     "longi_beta3m.csv",
     "longi_coreindex.csv",
     "longi_coreindexRSI.csv",
-    "longi_GICS_3m.csv",
     "longi_ma10.csv",
     "longi_ma20.csv",
     "longi_ma50.csv",
@@ -34,7 +36,6 @@ FEATURE_FILES: List[str] = [
     "longi_per1m.csv",
     "longi_per3m.csv",
     "longi_rsi.csv",
-    "longi_Sector2_3m.csv",
     "longi_sh3m.csv",
     "longi_spr100d.csv",
     "longi_stepup100.csv",

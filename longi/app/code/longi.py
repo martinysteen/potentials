@@ -8,11 +8,13 @@ Handles dependencies, parallel execution where possible, error handling, and log
 
 import sys
 import subprocess
+import csv
 from pathlib import Path
 from typing import List, Dict, Set, Optional
 from dataclasses import dataclass
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
+from longi_across import make_across, get_max_daynum_from_potdat
 
 
 @dataclass
@@ -21,6 +23,7 @@ class Module:
     name: str  # Display name
     script: str  # Python script filename (e.g., "longi_rsi.py")
     depends_on: List[str]  # List of module names this depends on
+    timeout: int = 600  # Per-module timeout in seconds
 
     @property
     def script_path(self) -> Path:
@@ -136,16 +139,6 @@ MODULES: Dict[str, Module] = {
         script="longi_grp_Sector2_3m.py",
         depends_on=["performance"],  # Depends on longi_per3m.csv
     ),
-    "GICS_3m": Module(
-        name="GICS 3-Month Performance per Ticker",
-        script="longi_GICS_3m.py",
-        depends_on=["grp_GICS_3m"],  # Depends on longi_grp_GICS_3m.csv
-    ),
-    "Sector2_3m": Module(
-        name="Sector2 3-Month Performance per Ticker",
-        script="longi_Sector2_3m.py",
-        depends_on=["grp_Sector2_3m"],  # Depends on longi_grp_Sector2_3m.csv
-    ),
     "coreindex": Module(
         name="CoreIndex Price per Ticker",
         script="longi_coreindex.py",
@@ -159,6 +152,16 @@ MODULES: Dict[str, Module] = {
     "beta3m": Module(
         name="3-Month Beta (Market Sensitivity)",
         script="longi_beta3m.py",
+        depends_on=[],  # Independent - reads PotDat.csv and Stamdata.csv
+    ),
+    "beta6m": Module(
+        name="6-Month Beta (Market Sensitivity)",
+        script="longi_beta6m.py",
+        depends_on=[],  # Independent - reads PotDat.csv and Stamdata.csv
+    ),
+    "beta1yr": Module(
+        name="1-Year Beta (Market Sensitivity)",
+        script="longi_beta1yr.py",
         depends_on=[],  # Independent - reads PotDat.csv and Stamdata.csv
     ),
     "trump": Module(
@@ -191,10 +194,37 @@ MODULES: Dict[str, Module] = {
         script="longi_sh1yr.py",
         depends_on=[],  # Independent - reads only PotDat.csv
     ),
+    "future_gain20d": Module(
+        name="Future Gain 20-Day",
+        script="future_gain20d.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
+    "future_gain50d": Module(
+        name="Future Gain 50-Day",
+        script="future_gain50d.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
+    "winloss_probs": Module(
+        name="Win/Loss Probability Matrices (P20d, P50d)",
+        script="longi_winloss_probs.py",
+        depends_on=["rsi", "macd", "performance", "medians", "stepup", "spr100d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "PdivMA50", "sh3m", "coreindex", "coreindexRSI", "beta3m"],
+        timeout=3600,
+    ),
+    "aux_win_loss": Module(
+        name="Daily Win/Loss Production Scorer",
+        script="aux_win-loss.py",
+        depends_on=["rsi", "macd", "performance", "medians", "stepup", "spr100d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "PdivMA50", "sh3m", "coreindex", "coreindexRSI", "beta3m"],
+        timeout=3600,
+    ),
+    "aux_deciles": Module(
+        name="Global Decile Boundary Calculator",
+        script="aux_deciles.py",
+        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "sh3m", "sh6m", "sh1yr", "grp_GICS_1yr", "grp_Sector2_1yr", "grp_GICS_3m", "grp_Sector2_3m", "coreindex", "coreindexRSI", "beta3m", "beta6m", "beta1yr", "trump", "iran", "winloss_probs"],
+    ),
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="longi_across.py",
-        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "sh3m", "sh6m", "sh1yr", "grp_GICS_1yr", "grp_Sector2_1yr", "grp_GICS_3m", "grp_Sector2_3m", "GICS_3m", "Sector2_3m", "coreindex", "coreindexRSI", "beta3m", "trump", "iran"],  # Depends on ALL modules - must run last
+        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "sh3m", "sh6m", "sh1yr", "grp_GICS_1yr", "grp_Sector2_1yr", "grp_GICS_3m", "grp_Sector2_3m", "coreindex", "coreindexRSI", "beta3m", "beta6m", "beta1yr", "trump", "iran", "winloss_probs", "aux_win_loss", "aux_deciles"],  # Depends on ALL modules - must run last
     ),
     # Add more modules here:
     # "module_name": Module(
@@ -268,13 +298,24 @@ class ModuleExecutor:
         print(f"  [{datetime.now().strftime('%H:%M:%S')}] Starting: {module.name} ({module.script})")
 
         try:
-            # Execute the module
+            # Special handling for across module - call function directly
+            if module_id == "across":
+                max_daynum = get_max_daynum_from_potdat()
+                if max_daynum is None:
+                    error_msg = "ERROR: Failed to determine max daynum from PotDat.csv"
+                    return (module_id, 1, error_msg)
+
+                output_dir = Path(__file__).parent.parent / "output"
+                exit_code = make_across(max_daynum, str(output_dir))
+                return (module_id, exit_code, "")  # Output captured via make_across's print statements
+
+            # Standard subprocess execution for other modules
             result = subprocess.run(
                 [sys.executable, module.script],
                 cwd=module.script_path.parent,
                 capture_output=True,
                 text=True,
-                timeout=600,  # 10 minute timeout per module
+                timeout=module.timeout,
             )
 
             exit_code = result.returncode
@@ -283,7 +324,7 @@ class ModuleExecutor:
             return (module_id, exit_code, output)
 
         except subprocess.TimeoutExpired:
-            error_msg = f"ERROR: {module.name} timed out after 600 seconds"
+            error_msg = f"ERROR: {module.name} timed out after {module.timeout} seconds"
             print(f"  [{datetime.now().strftime('%H:%M:%S')}] {error_msg}")
             return (module_id, 124, error_msg)  # 124 = timeout exit code
 
