@@ -114,13 +114,6 @@ def main() -> int:
             "required": True,
             "extra_flags": [],
         },
-        {
-            "name": "across",
-            "source": Path("/home/sm/potentials/longi/app/output"),
-            "destination": "GoogleDrive:PotSystem/repositoryRTBI/Longi/across",
-            "required": False,
-            "extra_flags": ["--filter", "+ across_*.csv", "--filter", "- *"],
-        },
     ]
 
     print(f"Upload to Google Drive started")

@@ -4,7 +4,9 @@
       "Bash(ls:*)",
       "Bash(rm:*)",
       "Bash(find //gandalf/sm-home/potentials/longi -name \"CLAUDE.md\" -o -name \".claude.local.md\" 2>/dev/null | head -20)",
-      "Read(///gandalf/sm-home/potentials/**)"
+      "Read(///gandalf/sm-home/potentials/**)",
+      "Bash(ls /home/sm/potentials/longi/app/output/ 2>/dev/null || echo \"Cannot access output dir from here\")",
+      "Read(//home/sm/potentials/longi/app/**)"
     ]
   }
 }
