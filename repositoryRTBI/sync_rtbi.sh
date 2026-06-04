@@ -5,6 +5,7 @@
 SOURCE="GoogleDrive:PotSystem/repositoryRTBI"
 DEST="/home/sm/potentials/repositoryRTBI/data"
 
+echo "*************************************************"
 echo "* sync_rtbi START: $(date)"
 
 rclone sync "$SOURCE" "$DEST" \
@@ -13,7 +14,7 @@ rclone sync "$SOURCE" "$DEST" \
     --exclude "Longi/exp/**" \
     --exclude "Longi/QA/**" \
     --verbose \
-    2>&1 | tee -a "/home/sm/potentials/repositoryRTBI/sync.log"
+    2>&1 | tee -a "/home/sm/logs/sync_repositoryRTBI.log"
 
 EXIT=${PIPESTATUS[0]}
 

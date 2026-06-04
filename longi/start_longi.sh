@@ -1,6 +1,6 @@
 #!/bin/bash
 
-LOGFILE=~/start_longi.log
+LOGFILE=~/logs/start_longi.log
 
 # Ignore SIGHUP so SSH disconnect does not kill the pipeline
 trap '' HUP
