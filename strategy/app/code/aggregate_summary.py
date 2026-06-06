@@ -59,16 +59,28 @@ def aggregate_strategy(strategy_name: str) -> Path | None:
             continue
 
         ws     = wb["Summary"]
-        record = {"_file": path.name}
+        record: dict[str, object] = {"_file": path.name}
         for row in ws.iter_rows(values_only=True):
             if row[0] is not None:
                 record[str(row[0])] = row[1]
+        # Always derive Run# from the filename so renames stay consistent.
+        try:
+            record["Run#"] = int(path.name[3:].split("_")[0])
+        except (ValueError, IndexError):
+            pass
         records.append(record)
         wb.close()
 
     if not records:
         print(f"  No Summary sheets found in {folder}")
         return None
+
+    # Sort: focusset_size ASC, step ASC, No_go_GSPC_rsi ASC
+    records.sort(key=lambda r: (
+        r.get("focusset_size") or 0,
+        r.get("step") or 0,
+        r.get("No_go_GSPC_rsi") or 0,
+    ))
 
     # Ordered column union across all records (preserve first-encounter order)
     seen: dict[str, None] = {}
@@ -78,10 +90,24 @@ def aggregate_strategy(strategy_name: str) -> Path | None:
                 seen[k] = None
     cols = list(seen.keys())
 
+    # Ensure N_hops_active is always adjacent to N_hops regardless of which run introduced it
+    if "N_hops_active" in cols and "N_hops" in cols:
+        cols.remove("N_hops_active")
+        cols.insert(cols.index("N_hops") + 1, "N_hops_active")
+
+    # Keep loss/worst columns grouped to the right of the avg_gain columns
+    _trailing = ["N_20d_loss", "N_50d_loss", "Worst_20d", "Worst_50d"]
+    for _col in _trailing:
+        if _col in cols:
+            cols.remove(_col)
+            cols.append(_col)
+
     # ---------------------------------------------------------------------------
     # Write aggregated Excel
     # ---------------------------------------------------------------------------
     out_path = folder / "aggregated_summary.xlsx"
+    if out_path.exists():
+        out_path.unlink()
     wb_out   = Workbook()
     ws_out   = wb_out.active
     ws_out.title = "Aggregated Summary"
@@ -103,6 +129,11 @@ def aggregate_strategy(strategy_name: str) -> Path | None:
             if col.startswith("avg_gain") and isinstance(val, (int, float)):
                 cell.number_format = _PCT_FMT
                 cell.fill = _GRN_FILL if val >= 0 else _RED_FILL
+            elif col in ("Worst_20d", "Worst_50d") and isinstance(val, (int, float)):
+                cell.number_format = _PCT_FMT
+                cell.fill = _RED_FILL
+            elif col in ("N_20d_loss", "N_50d_loss") and isinstance(val, (int, float)) and val > 0:
+                cell.fill = _RED_FILL
 
     # Column widths
     ws_out.column_dimensions["A"].width = 28   # source filename

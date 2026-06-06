@@ -51,7 +51,7 @@ cd ~/potentials/strategy/app/code
 python strategies/strategy_best_ranknow.py
 
 # Aggregate summaries across runs of one strategy
-python aggregate_summary.py "Best ranknow"
+python aggregate_summary.py "BestRanknow"
 
 # Aggregate all strategies at once
 python aggregate_summary.py

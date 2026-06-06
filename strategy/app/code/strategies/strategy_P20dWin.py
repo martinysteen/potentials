@@ -1,8 +1,7 @@
 """
-Strategy: Best ranknow
-Select the N tickers with the best (lowest) longi_rank at each test daynum,
-then measure their realised forward gains over 20d and 50d horizons.
-N is set via PARAMS["focusset_size"].
+Strategy: P20dWin
+Select tickers where longi_P20d_win >= 0.8 at the test daynum,
+then pick the N with the lowest longi_rank. Backtest 20d and 50d gains.
 """
 
 import sys
@@ -15,25 +14,39 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared.data_loader import load_longi, load_potdat, daynum_to_date
 from shared.report import save_report
 
-STRATEGY_NAME = "BestRanknow"
+STRATEGY_NAME = "P20dWin"
 
 PARAMS: dict = {
-    "focusset_size": 10,
-    "step": 1,
+    "focusset_size": 3,
+    "step": 5,
     "No_go_GSPC_rsi": 40,
+    "p20d_win_min": 0.9,
 }
+
 
 # ---------------------------------------------------------------------------
 # Core strategy logic
 # ---------------------------------------------------------------------------
 
-def select_focusset(daynum: int, rank_df: pd.DataFrame, n: int) -> list[str]:
-    """Return the n tickers with the lowest (best) rank value at daynum."""
+def select_focusset(daynum: int, p20d_win_df: pd.DataFrame,
+                    rank_df: pd.DataFrame, n: int) -> list[str]:
+    """Return the n tickers with P20d_win >= threshold and lowest rank at daynum."""
     col = str(daynum)
+    threshold: float = PARAMS["p20d_win_min"]
+
+    if col not in p20d_win_df.columns:
+        return []
+    win_series = p20d_win_df[col].dropna()
+    qualifying = win_series[win_series >= threshold].index.tolist()
+    if not qualifying:
+        return []
+
     if col not in rank_df.columns:
         return []
-    series = rank_df[col].dropna()
-    return series.nsmallest(n).index.tolist()
+    rank_series = rank_df.loc[rank_df.index.isin(qualifying), col].dropna()
+    if rank_series.empty:
+        return []
+    return rank_series.nsmallest(n).index.tolist()
 
 
 def get_gains(gain_df: pd.DataFrame, tickers: list[str], daynum: int) -> dict[str, float]:
@@ -50,20 +63,21 @@ def get_gains(gain_df: pd.DataFrame, tickers: list[str], daynum: int) -> dict[st
 
 
 def find_start_daynum(gain20_df: pd.DataFrame, rank_df: pd.DataFrame,
-                      min_valid: int = 10) -> int:
+                      p20d_win_df: pd.DataFrame, min_valid: int = 10) -> int:
     """
     Walk future_gain20d columns left-to-right (newest first) and return the
-    first daynum where both rank_df AND gain20_df have at least min_valid valid values.
-    This skips the most recent ~20 daynums where future gain is not yet realized.
+    first daynum where all three data sources have sufficient data.
+    Skips the most recent ~20 daynums where future gain is not yet realized.
     """
     for col in gain20_df.columns:
         daynum = int(col)
         scol = str(daynum)
-        has_rank = scol in rank_df.columns and rank_df[scol].dropna().size >= min_valid
-        has_gain = gain20_df[col].dropna().size >= min_valid
-        if has_rank and has_gain:
+        has_rank  = scol in rank_df.columns     and rank_df[scol].dropna().size >= min_valid
+        has_gain  = gain20_df[col].dropna().size >= min_valid
+        has_p20dw = scol in p20d_win_df.columns
+        if has_rank and has_gain and has_p20dw:
             return daynum
-    raise ValueError("No valid starting daynum found — check future_gain20d.csv and longi_rank.csv")
+    raise ValueError("No valid starting daynum found — check future_gain20d.csv, longi_rank.csv, and longi_P20d_win.csv")
 
 
 def get_reference_values(daynum: int) -> dict[str, float]:
@@ -112,31 +126,35 @@ def _hop_avg(gains: dict[str, float]) -> float:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    rank_df = load_longi("longi_rank.csv")
-    gain20_df = load_longi("future_gain20d.csv")
-    gain50_df = load_longi("future_gain50d.csv")
+    p20d_win_df = load_longi("longi_P20d_win.csv")
+    rank_df     = load_longi("longi_rank.csv")
+    gain20_df   = load_longi("future_gain20d.csv")
+    gain50_df   = load_longi("future_gain50d.csv")
 
-    n: int = PARAMS["focusset_size"]
+    n: int    = PARAMS["focusset_size"]
     step: int = PARAMS["step"]
 
-    start_daynum = find_start_daynum(gain20_df, rank_df)
-    # Stop before the oldest column in either file we depend on
-    min_daynum = max(int(gain20_df.columns[-1]), int(rank_df.columns[-1]))
+    start_daynum = find_start_daynum(gain20_df, rank_df, p20d_win_df)
+    min_daynum = max(
+        int(gain20_df.columns[-1]),
+        int(rank_df.columns[-1]),
+        int(p20d_win_df.columns[-1]),
+    )
 
     print(f"--- {STRATEGY_NAME} ---")
     print(f"Start daynum : {start_daynum} ({daynum_to_date(start_daynum)})")
     print(f"Min daynum   : {min_daynum}")
-    print(f"Focusset size: {n}   Step: {step}")
+    print(f"Focusset size: {n}   Step: {step}   P20d_win >= {PARAMS['p20d_win_min']}")
     print()
 
     hop_results: list[dict] = []
     daynum = start_daynum
 
     while daynum >= min_daynum:
-        tickers = select_focusset(daynum, rank_df, n)
+        tickers = select_focusset(daynum, p20d_win_df, rank_df, n)
         if not tickers:
-            print(f"  daynum {daynum}: no focusset available — stopping")
-            break
+            daynum -= step
+            continue
 
         gains_20d = get_gains(gain20_df, tickers, daynum)
         gains_50d = get_gains(gain50_df, tickers, daynum)
@@ -145,7 +163,8 @@ def main() -> None:
 
         hop_num = len(hop_results) + 1
         date_str = daynum_to_date(daynum)
-        line = (f"  hop {hop_num:>2}: daynum {daynum} ({date_str})"
+        line = (f"  hop {hop_num:>3}: daynum {daynum} ({date_str})"
+                f"  tickers={tickers}"
                 f"  20d avg={avg20:+.2f}%")
         if pd.notna(avg50):
             line += f"  50d avg={avg50:+.2f}%"
@@ -164,7 +183,7 @@ def main() -> None:
 
     print()
     if not hop_results:
-        print("No valid hops produced — exiting")
+        print("No valid hops produced — no tickers met P20d_win >= threshold in the data range")
         sys.exit(1)
 
     save_report(STRATEGY_NAME, PARAMS, hop_results)

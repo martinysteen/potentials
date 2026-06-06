@@ -210,16 +210,10 @@ MODULES: Dict[str, Module] = {
         depends_on=["rsi", "macd", "performance", "medians", "stepup", "spr100d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "PdivMA50", "sh3m", "coreindex", "coreindexRSI", "beta3m"],
         timeout=3600,
     ),
-    "aux_win_loss": Module(
-        name="Daily Win/Loss Production Scorer",
-        script="aux_win-loss.py",
-        depends_on=["rsi", "macd", "performance", "medians", "stepup", "spr100d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "PdivMA50", "sh3m", "coreindex", "coreindexRSI", "beta3m"],
-        timeout=3600,
-    ),
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="longi_across.py",
-        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "sh3m", "sh6m", "sh1yr", "grp_GICS_1yr", "grp_Sector2_1yr", "grp_GICS_3m", "grp_Sector2_3m", "coreindex", "coreindexRSI", "beta3m", "beta6m", "beta1yr", "trump", "iran", "winloss_probs", "aux_win_loss"],  # Depends on ALL modules - must run last
+        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "sh3m", "sh6m", "sh1yr", "grp_GICS_1yr", "grp_Sector2_1yr", "grp_GICS_3m", "grp_Sector2_3m", "coreindex", "coreindexRSI", "beta3m", "beta6m", "beta1yr", "trump", "iran", "winloss_probs"],  # Depends on ALL modules - must run last
     ),
     # Add more modules here:
     # "module_name": Module(
@@ -293,6 +287,7 @@ class ModuleExecutor:
         print(f"  [{datetime.now().strftime('%H:%M:%S')}] Starting: {module.name} ({module.script})")
 
         try:
+            '''
             # Special handling for across module - call function directly
             if module_id == "across":
                 max_daynum = get_max_daynum_from_potdat()
@@ -303,7 +298,8 @@ class ModuleExecutor:
                 output_dir = Path(__file__).parent.parent / "output"
                 exit_code = make_across(max_daynum, str(output_dir))
                 return (module_id, exit_code, "")  # Output captured via make_across's print statements
-
+            '''
+        
             # Standard subprocess execution for other modules
             result = subprocess.run(
                 [sys.executable, module.script],

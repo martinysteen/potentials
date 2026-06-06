@@ -33,10 +33,16 @@ def _hop_avg_topn(hop: dict, gain_key: str, n: int) -> float:
     return sum(vals) / len(vals) if vals else float("nan")
 
 
-def _grand_avg_topn(hop_results: list[dict], gain_key: str, n: int) -> float:
-    """Average gain for the top-n tickers across all hops."""
+def _grand_avg_topn(hop_results: list[dict], gain_key: str, n: int,
+                    params: dict | None = None) -> float:
+    """Average gain for the top-n tickers across active hops (respects No_go_GSPC_rsi)."""
+    threshold = params.get("No_go_GSPC_rsi") if params else None
     vals: list[float] = []
     for h in hop_results:
+        if threshold is not None:
+            gspc = h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan"))
+            if not pd.isna(gspc) and gspc < threshold:
+                continue
         tickers = h.get("tickers", [])[:n]
         gains   = h.get(gain_key, {})
         vals.extend(gains[t] for t in tickers if pd.notna(gains.get(t, float("nan"))))
@@ -78,7 +84,51 @@ def _count_attr(hop_results: list[dict], stamdata: pd.DataFrame,
 
 
 def _next_run_num(folder: Path) -> int:
-    return len(list(folder.glob("run*.xlsx"))) + 1
+    nums = []
+    for p in folder.glob("run*.xlsx"):
+        try:
+            nums.append(int(p.name[3:].split("_")[0]))
+        except ValueError:
+            pass
+    return max(nums, default=0) + 1
+
+
+def _count_active_hops(hop_results: list[dict], params: dict) -> int:
+    """Count hops that survive the No_go_GSPC_rsi filter (NaN RSI counts as active)."""
+    threshold = params.get("No_go_GSPC_rsi")
+    if threshold is None:
+        return len(hop_results)
+    count = 0
+    for h in hop_results:
+        gspc = h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan"))
+        if pd.isna(gspc) or gspc >= threshold:
+            count += 1
+    return count
+
+
+def _active_hop_vals(hop_results: list[dict], gain_key: str, params: dict) -> list[float]:
+    """Return per-hop avg gains for all active, non-NaN hops."""
+    threshold = params.get("No_go_GSPC_rsi")
+    n = params.get("focusset_size", 10)
+    vals: list[float] = []
+    for h in hop_results:
+        if threshold is not None:
+            gspc = h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan"))
+            if not pd.isna(gspc) and gspc < threshold:
+                continue
+        v = _hop_avg_topn(h, gain_key, n)
+        if pd.notna(v):
+            vals.append(v)
+    return vals
+
+
+def _count_loss_hops(hop_results: list[dict], gain_key: str, params: dict) -> int:
+    return sum(1 for v in _active_hop_vals(hop_results, gain_key, params) if v < 0)
+
+
+def _worst_hop_gain(hop_results: list[dict], gain_key: str, params: dict) -> float:
+    vals = _active_hop_vals(hop_results, gain_key, params)
+    return min(vals) if vals else float("nan")
 
 
 # ---------------------------------------------------------------------------
@@ -138,22 +188,21 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     gspc_rsi_row = next((ref_base + i for i, k in enumerate(prev_keys) if "GSPC_rsi" in k), None)
 
     # ---- header rows ----
-    ws.cell(1, 1).fill = _HDR_FILL
-    ws.cell(2, 1).fill = _HDR_FILL
+    # A1/A2 hold the No_go label and editable threshold (safe for any focusset size).
+    if threshold is not None:
+        c = ws.cell(1, 1, "No_go_GSPC_rsi"); c.font = _BOLD
+        c = ws.cell(2, 1, threshold);        c.font, c.fill, c.number_format = _BOLD, _INPUT_FILL, "0"
+    else:
+        ws.cell(1, 1).fill = _HDR_FILL
+        ws.cell(2, 1).fill = _HDR_FILL
     for j, dn in enumerate(daynums, start=2):
         c = ws.cell(1, j, dn);                 c.font, c.fill, c.alignment = _BOLD, _HDR_FILL, _CTR
         c = ws.cell(2, j, daynum_to_date(dn)); c.font, c.fill, c.alignment = _SMALL, _HDR_FILL, _CTR
 
     # ---- ticker rows ----
-    # Column A is vacant for tickers, but rows 3-4 hold the No_go parameter label/value.
     for i in range(n_tickers):
         row = i + 3
-        if i == 0 and threshold is not None:
-            c = ws.cell(row, 1, "No_go_GSPC_rsi");  c.font = _BOLD
-        elif i == 1 and threshold is not None:
-            c = ws.cell(row, 1, threshold);  c.font, c.fill, c.number_format = _BOLD, _INPUT_FILL, "0"
-        else:
-            ws.cell(row, 1, "")
+        ws.cell(row, 1, "")
         for j, h in enumerate(hop_results, start=2):
             tickers = h.get("tickers", [])
             ws.cell(row, j, tickers[i] if i < len(tickers) else "")
@@ -176,14 +225,14 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
             if pd.notna(val) and gspc_rsi_row is not None:
                 # Interactive formula: recalculates when user edits A4
                 col_ltr    = get_column_letter(j)
-                cell.value = f'=IF({col_ltr}{gspc_rsi_row}<$A$4,"",{round(val, 4)})'
+                cell.value = f'=IF({col_ltr}{gspc_rsi_row}<$A$2,"",{round(val, 4)})'
                 cell.fill  = _GRY_FILL if no_go else _gain_fill(val)
             elif pd.notna(val):
                 cell.value = None if no_go else round(val, 4)
                 cell.fill  = _GRY_FILL if no_go else _gain_fill(val)
             else:
                 cell.value = None
-                cell.fill  = _SEP_FILL if sep else _GRY_FILL
+                cell.fill  = PatternFill() if sep else _GRY_FILL
 
     # ---- day-1 ref rows ----
     def _write_ref_rows(start_row: int, hop_key: str, label_suffix: str = "") -> int:
@@ -245,18 +294,26 @@ def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
     n       = params.get("focusset_size", 10)
 
     rows: list[tuple] = [
-        ("StrategyName", strategy_name),
-        ("Run#",         run_num),
-        ("StartDaynum",  daynums[0] if daynums else ""),
-        ("N_hops",       len(hop_results)),
-        ("EndDaynum",    daynums[-1] if daynums else ""),
+        ("StrategyName",  strategy_name),
+        ("Run#",          run_num),
+        ("StartDaynum",   daynums[0] if daynums else ""),
+        ("N_hops",        len(hop_results)),
+        ("N_hops_active", _count_active_hops(hop_results, params)),
+        ("EndDaynum",     daynums[-1] if daynums else ""),
     ]
     for k, v in params.items():
         rows.append((k, v))
 
     for label, gain_key, top_n in _avg_rows(n):
-        val = _grand_avg_topn(hop_results, gain_key, top_n)
+        val = _grand_avg_topn(hop_results, gain_key, top_n, params)
         rows.append((label, round(val, 4) if pd.notna(val) else None))
+
+    rows.append(("N_20d_loss", _count_loss_hops(hop_results, "gains_20d", params)))
+    rows.append(("N_50d_loss", _count_loss_hops(hop_results, "gains_50d", params)))
+    w20 = _worst_hop_gain(hop_results, "gains_20d", params)
+    w50 = _worst_hop_gain(hop_results, "gains_50d", params)
+    rows.append(("Worst_20d", round(w20, 4) if pd.notna(w20) else None))
+    rows.append(("Worst_50d", round(w50, 4) if pd.notna(w50) else None))
 
     ws.column_dimensions["A"].width = 24
     ws.column_dimensions["B"].width = 18
@@ -283,10 +340,11 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
     def _fmt(val: float) -> str:
         return "" if pd.isna(val) else f"{val:.4f}".replace(".", ",")
 
-    param_cols = list(params.keys())
-    avg_labels = [r[0] for r in _avg_rows(n)]
-    all_cols   = (["StrategyName", "Run#", "StartDaynum", "N_hops", "EndDaynum"]
-                  + param_cols + avg_labels)
+    param_cols  = list(params.keys())
+    avg_labels  = [r[0] for r in _avg_rows(n)]
+    extra_cols  = ["N_20d_loss", "N_50d_loss", "Worst_20d", "Worst_50d"]
+    all_cols    = (["StrategyName", "Run#", "StartDaynum", "N_hops", "N_hops_active", "EndDaynum"]
+                   + param_cols + avg_labels + extra_cols)
 
     SUMMARY_CSV.parent.mkdir(parents=True, exist_ok=True)
     write_header = not SUMMARY_CSV.exists()
@@ -295,11 +353,20 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
         w = csv.writer(f, delimiter=";")
         if write_header:
             w.writerow(all_cols)
-        avg_vals = [_fmt(_grand_avg_topn(hop_results, gk, tn)) for _, gk, tn in _avg_rows(n)]
+        avg_vals   = [_fmt(_grand_avg_topn(hop_results, gk, tn, params)) for _, gk, tn in _avg_rows(n)]
+        w20 = _worst_hop_gain(hop_results, "gains_20d", params)
+        w50 = _worst_hop_gain(hop_results, "gains_50d", params)
+        extra_vals = [
+            _count_loss_hops(hop_results, "gains_20d", params),
+            _count_loss_hops(hop_results, "gains_50d", params),
+            _fmt(w20),
+            _fmt(w50),
+        ]
         w.writerow(
-            [strategy_name, run_num, daynums[0], len(hop_results), daynums[-1]]
+            [strategy_name, run_num, daynums[0], len(hop_results),
+             _count_active_hops(hop_results, params), daynums[-1]]
             + [params.get(k, "") for k in param_cols]
-            + avg_vals
+            + avg_vals + extra_vals
         )
 
 
