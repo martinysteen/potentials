@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../logs"
+		},
+		{
+			"path": "../../miniconda3"
+		}
+	],
+	"settings": {}
+}

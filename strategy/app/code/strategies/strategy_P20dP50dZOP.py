@@ -1,7 +1,11 @@
 """
-Strategy: P20dWin
-Select tickers where longi_P20d_win >= 0.8 at the test daynum,
-then pick the N with the lowest longi_rank. Backtest 20d and 50d gains.
+Strategy: P20dP50dZOP
+Four-stage selection:
+  1. longi_macd_Z.csv   — keep tickers flagged "ZOP"
+  2. longi_P20d_win.csv — keep those where P20d_win >= p20d_win_min
+  3. longi_P50d_win.csv — keep those where P50d_win >= p50d_win_min
+  4. longi_rank.csv     — from survivors, pick N with lowest rank
+  Days where fewer than focusset_size tickers survive all filters are skipped entirely.
 """
 
 import sys
@@ -14,13 +18,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared.data_loader import load_longi, load_potdat, daynum_to_date
 from shared.report import save_report
 
-STRATEGY_NAME = "P20dWin"
+STRATEGY_NAME = "P20dP50dZOP"
 
 PARAMS: dict = {
     "focusset_size": 3,
     "step": 1,
     "No_go_GSPC_rsi": 45,
-    "p20d_win_min": 0.9,
+    "p20d_win_min": 0.8,
+    "p50d_win_min": 0.8,
 }
 
 
@@ -28,23 +33,46 @@ PARAMS: dict = {
 # Core strategy logic
 # ---------------------------------------------------------------------------
 
-def select_focusset(daynum: int, p20d_win_df: pd.DataFrame,
+def select_focusset(daynum: int, macd_z_df: pd.DataFrame,
+                    p20d_win_df: pd.DataFrame, p50d_win_df: pd.DataFrame,
                     rank_df: pd.DataFrame, n: int) -> list[str]:
-    """Return the n tickers with P20d_win >= threshold and lowest rank at daynum."""
+    """
+    Return exactly n tickers that are ZOP-flagged, meet both P20d_win and P50d_win
+    thresholds, and have the lowest rank at daynum. Returns [] if fewer than n
+    survivors pass all filters.
+    """
     col = str(daynum)
-    threshold: float = PARAMS["p20d_win_min"]
+    p20d_threshold: float = PARAMS["p20d_win_min"]
+    p50d_threshold: float = PARAMS["p50d_win_min"]
 
+    # Stage 1: ZOP filter
+    if col not in macd_z_df.columns:
+        return []
+    zop_tickers = set(macd_z_df.index[macd_z_df[col] == "ZOP"].tolist())
+    if not zop_tickers:
+        return []
+
+    # Stage 2: P20d_win filter
     if col not in p20d_win_df.columns:
         return []
-    win_series = p20d_win_df[col].dropna()
-    qualifying = win_series[win_series >= threshold].index.tolist()
+    p20d_series = p20d_win_df[col].dropna()
+    qualifying = set(p20d_series[p20d_series >= p20d_threshold].index.tolist()) & zop_tickers
     if not qualifying:
         return []
 
+    # Stage 3: P50d_win filter
+    if col not in p50d_win_df.columns:
+        return []
+    p50d_series = p50d_win_df[col].dropna()
+    qualifying = set(p50d_series[p50d_series >= p50d_threshold].index.tolist()) & qualifying
+    if not qualifying:
+        return []
+
+    # Stage 4: lowest rank
     if col not in rank_df.columns:
         return []
     rank_series = rank_df.loc[rank_df.index.isin(qualifying), col].dropna()
-    if rank_series.empty:
+    if len(rank_series) < n:
         return []
     return rank_series.nsmallest(n).index.tolist()
 
@@ -63,28 +91,29 @@ def get_gains(gain_df: pd.DataFrame, tickers: list[str], daynum: int) -> dict[st
 
 
 def find_start_daynum(gain20_df: pd.DataFrame, rank_df: pd.DataFrame,
-                      p20d_win_df: pd.DataFrame, min_valid: int = 10) -> int:
-    """
-    Walk future_gain20d columns left-to-right (newest first) and return the
-    first daynum where all three data sources have sufficient data.
-    Skips the most recent ~20 daynums where future gain is not yet realized.
-    """
+                      macd_z_df: pd.DataFrame, p20d_win_df: pd.DataFrame,
+                      p50d_win_df: pd.DataFrame, min_valid: int = 10) -> int:
+    """Return the first daynum where all five data sources have sufficient data."""
     for col in gain20_df.columns:
         daynum = int(col)
         scol = str(daynum)
-        has_rank  = scol in rank_df.columns     and rank_df[scol].dropna().size >= min_valid
+        has_rank  = scol in rank_df.columns and rank_df[scol].dropna().size >= min_valid
         has_gain  = gain20_df[col].dropna().size >= min_valid
+        has_macdz = scol in macd_z_df.columns
         has_p20dw = scol in p20d_win_df.columns
-        if has_rank and has_gain and has_p20dw:
+        has_p50dw = scol in p50d_win_df.columns
+        if has_rank and has_gain and has_macdz and has_p20dw and has_p50dw:
             return daynum
-    raise ValueError("No valid starting daynum found — check future_gain20d.csv, longi_rank.csv, and longi_P20d_win.csv")
+    raise ValueError(
+        "No valid starting daynum found — check future_gain20d.csv, longi_rank.csv, "
+        "longi_macd_Z.csv, longi_P20d_win.csv, and longi_P50d_win.csv"
+    )
 
 
 def get_reference_values(daynum: int) -> dict[str, float]:
     """
     Market context at starting daynum.
-    ^GSPC, ^STOXX, ^HSI: RSI14 as direction indicator.
-    ^VIX: raw value (RSI of VIX is misleading as it moves inversely to markets).
+    ^GSPC, ^STOXX, ^HSI: RSI14. ^VIX: raw value.
     """
     rsi_df = load_longi("longi_rsi.csv")
     potdat = load_potdat()
@@ -126,7 +155,9 @@ def _hop_avg(gains: dict[str, float]) -> float:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    macd_z_df   = load_longi("longi_macd_Z.csv")
     p20d_win_df = load_longi("longi_P20d_win.csv")
+    p50d_win_df = load_longi("longi_P50d_win.csv")
     rank_df     = load_longi("longi_rank.csv")
     gain20_df   = load_longi("future_gain20d.csv")
     gain50_df   = load_longi("future_gain50d.csv")
@@ -134,25 +165,30 @@ def main() -> None:
     n: int    = PARAMS["focusset_size"]
     step: int = PARAMS["step"]
 
-    start_daynum = find_start_daynum(gain20_df, rank_df, p20d_win_df)
+    start_daynum = find_start_daynum(gain20_df, rank_df, macd_z_df, p20d_win_df, p50d_win_df)
     min_daynum = max(
         int(gain20_df.columns[-1]),
         int(rank_df.columns[-1]),
+        int(macd_z_df.columns[-1]),
         int(p20d_win_df.columns[-1]),
+        int(p50d_win_df.columns[-1]),
     )
 
     print(f"--- {STRATEGY_NAME} ---")
     print(f"Start daynum : {start_daynum} ({daynum_to_date(start_daynum)})")
     print(f"Min daynum   : {min_daynum}")
-    print(f"Focusset size: {n}   Step: {step}   P20d_win >= {PARAMS['p20d_win_min']}")
+    print(f"Focusset size: {n}   Step: {step}"
+          f"   P20d_win >= {PARAMS['p20d_win_min']}   P50d_win >= {PARAMS['p50d_win_min']}")
     print()
 
     hop_results: list[dict] = []
+    skipped = 0
     daynum = start_daynum
 
     while daynum >= min_daynum:
-        tickers = select_focusset(daynum, p20d_win_df, rank_df, n)
+        tickers = select_focusset(daynum, macd_z_df, p20d_win_df, p50d_win_df, rank_df, n)
         if not tickers:
+            skipped += 1
             daynum -= step
             continue
 
@@ -182,8 +218,9 @@ def main() -> None:
         daynum -= step
 
     print()
+    print(f"Days with no qualifying tickers (ZOP & P20d_win & P50d_win): {skipped}")
     if not hop_results:
-        print("No valid hops produced — no tickers met P20d_win >= threshold in the data range")
+        print("No valid hops produced — no tickers passed all four filters in the data range")
         sys.exit(1)
 
     save_report(STRATEGY_NAME, PARAMS, hop_results)

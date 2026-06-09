@@ -1,5 +1,5 @@
 """
-Strategy: Best ranknow
+Strategy: Ranknow
 Select the N tickers with the best (lowest) longi_rank at each test daynum,
 then measure their realised forward gains over 20d and 50d horizons.
 N is set via PARAMS["focusset_size"].
@@ -15,10 +15,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared.data_loader import load_longi, load_potdat, daynum_to_date
 from shared.report import save_report
 
-STRATEGY_NAME = "BestRanknow"
+STRATEGY_NAME = "Ranknow"
 
 PARAMS: dict = {
-    "focusset_size": 10,
+    "focusset_size": 1,
     "step": 1,
     "No_go_GSPC_rsi": 40,
 }

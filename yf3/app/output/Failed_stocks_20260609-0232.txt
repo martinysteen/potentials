@@ -1,0 +1,3 @@
+Failed to fetch data for 1 stocks:
+
+BBU: Insufficient data returned for ticker BBU

@@ -5,6 +5,7 @@ Fetches stock data from Yahoo Finance for multiple tickers from a CSV file
 and saves the results to CSV format.
 """
 
+import logging
 import random
 import time
 from datetime import datetime
@@ -13,6 +14,8 @@ import pandas as pd
 
 import gd_download
 from getYfinanceData import get_stock_info
+
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 
 
 # Configuration
@@ -155,16 +158,23 @@ def fetch_stock_data(stock_codes, pop_description=True):
     execution_time = (end_time - start_time) / 60
     print(f"\nExecution time: {execution_time:.2f} min")
     print(f"Fetched: {len(stock_data_list)} out of {len(stock_codes)} stocks")
-    print(f"Failed: {len(failed_stocks)} stocks")
-    
+
     if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
         print(f"*** Run was ABORTED due to {MAX_CONSECUTIVE_FAILURES} consecutive failures ***")
-    
-    if failed_stocks and VERBOSE:
-        print("\nFailed stocks:")
-        for code, error in failed_stocks[:10]:
-            print(f"  {code}: {error}")
-    
+
+    if failed_stocks:
+        print(f"\n{'='*54}")
+        print(f"  ACTION REQUIRED - {len(failed_stocks)} ticker(s) failed:")
+        print(f"{'='*54}")
+        for code, error in failed_stocks:
+            if 'Insufficient data' in error or 'No valid data' in error:
+                print(f"  {code:<20}  *** POSSIBLY OBSOLETE / DELISTED ***")
+            else:
+                print(f"  {code:<20}  (transient: {error})")
+        print(f"{'='*54}")
+    else:
+        print(f"Failed: 0 stocks")
+
     return df, failed_stocks
 
 
@@ -203,21 +213,18 @@ def save_results(df, failed_stocks, filename_core, output_path):
     
     # Save failed stocks log
     if failed_stocks:
-        if VERBOSE :
-            dir_path = Path(output_path)
-            dir_path.mkdir(parents=True, exist_ok=True)
-            
-            failed_log_file = dir_path / f'Failed_stocks_{formatted_date}.txt'
-            with open(failed_log_file, 'w', encoding='utf-8') as f:
-                if len([fs for fs in failed_stocks]) >= MAX_CONSECUTIVE_FAILURES:
-                    f.write(f"*** RUN ABORTED after {MAX_CONSECUTIVE_FAILURES} consecutive failures ***\n")
-                    f.write(f"Successfully processed {df.shape[0]} stocks before abort\n\n")
-                f.write(f"Failed to fetch data for {len(failed_stocks)} stocks:\n\n")
-                for code, error in failed_stocks:
-                    f.write(f"{code}: {error}\n")
-            print(f"Failed stocks log created: {failed_log_file}")
-        else :
-            print(f"FAILURE: Some stocks were not processed. Turn VERBOSE on to log more info.")
+        dir_path = Path(output_path)
+        dir_path.mkdir(parents=True, exist_ok=True)
+
+        failed_log_file = dir_path / f'Failed_stocks_{formatted_date}.txt'
+        with open(failed_log_file, 'w', encoding='utf-8') as f:
+            if len(failed_stocks) >= MAX_CONSECUTIVE_FAILURES:
+                f.write(f"*** RUN ABORTED after {MAX_CONSECUTIVE_FAILURES} consecutive failures ***\n")
+                f.write(f"Successfully processed {df.shape[0]} stocks before abort\n\n")
+            f.write(f"Failed to fetch data for {len(failed_stocks)} stocks:\n\n")
+            for code, error in failed_stocks:
+                f.write(f"{code}: {error}\n")
+        print(f"Failed stocks log: {failed_log_file}")
 
 def main():
     """Main execution flow."""

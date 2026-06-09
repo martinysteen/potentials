@@ -24,14 +24,17 @@ from shared.config import REPORT_ROOT
 # ---------------------------------------------------------------------------
 # Styles (self-contained — no dependency on report.py)
 # ---------------------------------------------------------------------------
-_BOLD     = Font(bold=True)
-_SMALL    = Font(size=9)
-_HDR_FILL = PatternFill("solid", fgColor="BDD7EE")
-_GRN_FILL = PatternFill("solid", fgColor="C6EFCE")
-_RED_FILL = PatternFill("solid", fgColor="FFC7CE")
-_GRY_FILL = PatternFill("solid", fgColor="EEEEEE")
-_PCT_FMT  = '+0.00;-0.00;"-"'
-_CTR      = Alignment(horizontal="center")
+_BOLD      = Font(bold=True)
+_SMALL     = Font(size=9)
+_HDR_FILL  = PatternFill("solid", fgColor="BDD7EE")
+_GRN_FILL  = PatternFill("solid", fgColor="C6EFCE")
+_RED_FILL  = PatternFill("solid", fgColor="FFC7CE")
+_GRY_FILL  = PatternFill("solid", fgColor="EEEEEE")
+_PARAM_FILL = PatternFill("solid", fgColor="FFFF99")  # yellow for simulation parameter headers
+_PCT_FMT   = '+0.00;-0.00;"-"'
+_CTR       = Alignment(horizontal="center")
+
+_PARAM_COLS = {"focusset_size", "step", "No_go_GSPC_rsi", "p20d_win_min", "p50d_win_min"}
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +120,9 @@ def aggregate_strategy(strategy_name: str) -> Path | None:
     # Header row
     for j, col in enumerate(all_cols, start=1):
         c = ws_out.cell(1, j, col)
-        c.font, c.fill, c.alignment = _BOLD, _HDR_FILL, _CTR
+        c.font      = _BOLD
+        c.fill      = _PARAM_FILL if col in _PARAM_COLS else _HDR_FILL
+        c.alignment = _CTR
 
     # Data rows — one per run
     for i, rec in enumerate(records, start=2):

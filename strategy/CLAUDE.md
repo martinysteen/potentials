@@ -18,12 +18,19 @@ strategy/
 └── app/
     ├── code/
     │   ├── aggregate_summary.py          # Standalone: stacks Summary sheets from all run*.xlsx
+    │   ├── best_strategy.py              # Cross-strategy comparison (sections per criterion)
     │   ├── shared/
     │   │   ├── config.py                 # Path constants
     │   │   ├── data_loader.py            # Cached CSV loaders
     │   │   └── report.py                 # Excel report writer (save_report)
     │   └── strategies/
-    │       └── strategy_best_ranknow.py  # First strategy
+    │       ├── strategy_ranknow.py       # Baseline: lowest longi_rank
+    │       ├── strategy_ZOP.py           # ZOP-flagged tickers by rank
+    │       ├── strategy_P20dWin.py       # longi_P20d_win >= threshold, then lowest rank
+    │       ├── strategy_P50dWin.py       # longi_P50d_win >= threshold, then lowest rank
+    │       ├── strategy_P20dZOP.py       # ZOP-flagged AND P20d_win >= threshold
+    │       ├── strategy_P50dZOP.py       # ZOP-flagged AND P50d_win >= threshold
+    │       └── strategy_P20dP50dZOP.py   # ZOP-flagged AND both P20d+P50d win filters
     ├── data/                             # Scratch/temp only
     └── report/
         └── <strategy_name>/
@@ -48,13 +55,16 @@ strategy/
 # Run a strategy
 source ~/miniconda3/etc/profile.d/conda.sh && conda activate potsystem_env
 cd ~/potentials/strategy/app/code
-python strategies/strategy_best_ranknow.py
+python strategies/strategy_ranknow.py
 
 # Aggregate summaries across runs of one strategy
-python aggregate_summary.py "BestRanknow"
+python aggregate_summary.py "Ranknow"
 
 # Aggregate all strategies at once
 python aggregate_summary.py
+
+# Cross-strategy comparison (best run per strategy + overall best, per criterion)
+python best_strategy.py
 ```
 
 ---
@@ -233,8 +243,37 @@ def main() -> None:
 - **Cal.csv index is float**: `2055,00` → `2055.0`. Look up with `float(daynum)`.
 - **future_gain20d valid from ~daynum-20**: The most recent ~20 columns are NaN (future not yet realized). `find_start_daynum()` skips these automatically.
 - **future_gain50d valid from ~daynum-50**: NaN for most recent ~50 hops; expected.
-- **Data gap at daynums 1543→1288**: No columns exist between these values. Hops landing in this gap return `[]` from `select_focusset` and stop the loop.
+- **Data gap at daynums 1543→1288**: No columns exist between these values. Hops landing in this gap return `[]` from `select_focusset` and stop the loop. Daynum 1288 itself is a lone outlier present for a special non-strategy purpose — ignore it in strategy work.
 - **Stamdata.csv first column header** is a timestamp string (e.g. `"03-06-26  23:02"`), not a meaningful label.
+
+---
+
+## Excel Styling Conventions
+
+Consistent across all xlsx output (`aggregate_summary.py`, `best_strategy.py`):
+
+| Fill colour | Hex | Used for |
+|-------------|-----|----------|
+| Blue | `BDD7EE` | Normal column headers (`_HDR_FILL`) |
+| Yellow | `FFFF99` | Simulation parameter column headers: `focusset_size`, `step`, `No_go_GSPC_rsi`, `p20d_win_min`, `p50d_win_min` (`_PARAM_FILL`) |
+| Amber | `FFE599` | "Best overall" row in best_strategy.xlsx; editable No_go threshold cell in Operational sheet |
+| Green | `C6EFCE` | Positive gains |
+| Red | `FFC7CE` | Negative gains |
+| Grey | `EEEEEE` | Suppressed / n/a values |
+
+The `_PARAM_COLS` set is defined in both `aggregate_summary.py` and `best_strategy.py` and must be kept in sync if new strategy parameters are added.
+
+---
+
+## best_strategy.py Output Structure
+
+`app/report/best_strategy.xlsx` has one section per criterion (4 total):
+- Grey section header row (criterion label)
+- One data row per strategy, sorted best→worst by that criterion
+- Amber "Best overall" row (the single cross-strategy winner)
+- Blank separator row
+
+`app/report/best_strategy.csv` has the same data with a `Type` column ("strategy name" or "Best overall").
 
 ---
 

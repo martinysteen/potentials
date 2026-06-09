@@ -19,7 +19,7 @@ STRATEGY_NAME = "ZOP"
 PARAMS: dict = {
     "focusset_size": 3,
     "step": 1,
-    "No_go_GSPC_rsi": 50,
+    "No_go_GSPC_rsi": 40,
 }
 
 

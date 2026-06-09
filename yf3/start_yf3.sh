@@ -1,6 +1,6 @@
 #!/bin/bash
 
-LOGFILE=/home/sm/start_yf3.log
+LOGFILE=/home/sm/logs/start_yf3.log
 # Delete log file if it exists
 # if [ -f "$LOGFILE" ]; then
 #    rm "$LOGFILE"
