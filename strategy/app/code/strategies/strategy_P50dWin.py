@@ -17,10 +17,10 @@ from shared.report import save_report
 STRATEGY_NAME = "P50dWin"
 
 PARAMS: dict = {
-    "focusset_size": 1,
+    "focusset_size": 3,
     "step": 1,
-    "No_go_GSPC_rsi": 45,
-    "p50d_win_min": 0.8,
+    "No_go_GSPC_rsi": 40,
+    "p50d_win_min": 0.9,
 }
 
 

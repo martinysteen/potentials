@@ -21,7 +21,7 @@ STRATEGY_NAME = "P20dZOP"
 PARAMS: dict = {
     "focusset_size": 3,
     "step": 1,
-    "No_go_GSPC_rsi": 40,
+    "No_go_GSPC_rsi": 50,
     "p20d_win_min": 0.9,
 }
 

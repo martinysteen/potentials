@@ -21,11 +21,11 @@ from shared.report import save_report
 STRATEGY_NAME = "P20dP50dZOP"
 
 PARAMS: dict = {
-    "focusset_size": 3,
+    "focusset_size": 10,
     "step": 1,
     "No_go_GSPC_rsi": 45,
-    "p20d_win_min": 0.8,
-    "p50d_win_min": 0.8,
+    "p20d_win_min": 0.9,
+    "p50d_win_min": 0.9,
 }
 
 
