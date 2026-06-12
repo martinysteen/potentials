@@ -19,9 +19,12 @@ strategy/
     ├── code/
     │   ├── aggregate_summary.py          # Standalone: stacks Summary sheets from all run*.xlsx
     │   ├── best_strategy.py              # Cross-strategy comparison (sections per criterion)
+    │   ├── run_extension.py              # Extension for P20dP50dZOP (see Extension Files section)
+    │   ├── run_extension.py             # Multi-strategy stub — grows as strategies are wired up
     │   ├── shared/
     │   │   ├── config.py                 # Path constants
     │   │   ├── data_loader.py            # Cached CSV loaders
+    │   │   ├── extension.py              # Extension runner + Excel writer
     │   │   └── report.py                 # Excel report writer (save_report)
     │   └── strategies/
     │       ├── strategy_ranknow.py       # Baseline: lowest longi_rank
@@ -65,6 +68,9 @@ python aggregate_summary.py
 
 # Cross-strategy comparison (best run per strategy + overall best, per criterion)
 python best_strategy.py
+
+# Build extension for P20dP50dZOP (partial-gain snapshot of the most recent ~20 days)
+python run_extension.py
 ```
 
 ---
@@ -137,6 +143,48 @@ Also appends one row to `app/report/summary.csv` (master cross-strategy CSV).
 ### `aggregate_summary.py`
 Standalone script. Reads the Summary sheet from every `run*.xlsx` in a strategy folder
 and writes `aggregated_summary.xlsx` with one row per run, columns coloured by gain sign.
+
+---
+
+## Extension Files
+
+`run_extension.py` builds a snapshot of the current portfolio situation for strategies
+that have a `build_extension()` function. Currently only P20dP50dZOP is wired up — other
+strategies can be added to `run_extension.py` once their `build_extension()` is implemented.
+
+### What it does
+
+The most recent ~20 trading days have no realized 20d gain in `future_gain20d.csv`.
+The extension covers exactly this gap: from `start_daynum+step` (one step beyond the
+last valid backtest daynum) up to the most recent daynum in `PotDat.csv`.
+
+For each entry daynum D, the partial gain is computed from prices:
+`(price[exit] - price[D]) / price[D] * 100`
+
+where `exit` = latest available price daynum (same for all hops in one extension run).
+
+### Extension Operational sheet layout
+
+| Rows | Content | Colour |
+|------|---------|--------|
+| 1 | A1=`"Size/Step/No_RSI/P20/P50"` \| daynum headers | Blue |
+| 2 | A2=param values e.g. `"5/5/45/0.8/0.8"` \| date headers | Blue |
+| 3–(N+2) | Ticker names (rank 1→N) | — |
+| N+3 | Per-column labels: `"avg_gain15d"`, `"avg_gain10d"`, … | Light green |
+| N+4 | `avg_partial_gain` values (no-go suppressed at write time) | Orange(−) / Light yellow(+) / Grey(suppressed) |
+| N+5 | *(reserved — 50d labels)* | — |
+| N+6 | *(reserved — 50d results)* | — |
+| N+7+ | `^GSPC_rsi (day-1)`, `^STOXX_rsi (day-1)`, … | Yellow |
+| … | GICS / Sector2 / Zone counts | Purple/peach/teal |
+
+For `focusset_size=5` (current default): labels at row 8, values at row 9, 50d reserved at rows 10–11, ref rows from row 12.
+
+Param values use `"-"` for keys absent from the strategy's PARAMS (e.g. a strategy without `p50d_win_min` shows `"5/5/45/0.8/-"`).
+
+### Adding a strategy to run_extension.py
+
+1. Add `build_extension()` to the strategy file (mirror P20dP50dZOP as template)
+2. Import and add to the loop in `run_extension.py`
 
 ---
 
@@ -272,8 +320,6 @@ The `_PARAM_COLS` set is defined in both `aggregate_summary.py` and `best_strate
 - One data row per strategy, sorted best→worst by that criterion
 - Amber "Best overall" row (the single cross-strategy winner)
 - Blank separator row
-
-`app/report/best_strategy.csv` has the same data with a `Type` column ("strategy name" or "Best overall").
 
 ---
 

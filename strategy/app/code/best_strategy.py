@@ -13,7 +13,6 @@ Criteria:
 
 Output:
   app/report/best_strategy.xlsx  — one section per criterion
-  app/report/best_strategy.csv   — same data, European CSV (;  ,)
 
 Usage (from app/code/):
   python best_strategy.py
@@ -40,7 +39,6 @@ CRITERIA: list[tuple[str, str, str]] = [
 ]
 
 OUTPUT_XLSX = REPORT_ROOT / "best_strategy.xlsx"
-OUTPUT_CSV  = REPORT_ROOT / "best_strategy.csv"
 
 # Columns shown first (in this order), then any remaining cols
 _KEY_COLS = [
@@ -213,32 +211,6 @@ def write_xlsx(sections: list[dict], data_cols: list[str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# CSV writer
-# ---------------------------------------------------------------------------
-
-def write_csv(sections: list[dict], data_cols: list[str]) -> None:
-    def _fmt(v) -> str:
-        if v is None or (isinstance(v, float) and pd.isna(v)):
-            return ""
-        if isinstance(v, float):
-            return f"{v:.4f}".replace(".", ",")
-        return str(v)
-
-    lines: list[str] = [";".join(["Criterion", "Type"] + data_cols)]
-    for section in sections:
-        for strat_name, strat_row in section["per_strategy"]:
-            vals = [section["label"], strat_name] + [_fmt(_cell_val(strat_row, c)) for c in data_cols]
-            lines.append(";".join(vals))
-        overall = section["overall"]
-        vals = [section["label"], "Best overall"] + [_fmt(_cell_val(overall, c)) for c in data_cols]
-        lines.append(";".join(vals))
-        lines.append("")   # blank separator between criteria
-
-    OUTPUT_CSV.write_text("\n".join(lines), encoding="utf-8")
-    print(f"Written: {OUTPUT_CSV}")
-
-
-# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -266,7 +238,6 @@ def main() -> None:
     print()
 
     write_xlsx(sections, ordered)
-    write_csv(sections, ordered)
     print("Done.")
 
 

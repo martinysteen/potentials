@@ -21,11 +21,11 @@ from shared.report import save_report
 STRATEGY_NAME = "P20dP50dZOP"
 
 PARAMS: dict = {
-    "focusset_size": 10,
-    "step": 1,
+    "focusset_size": 5,
+    "step": 5,
     "No_go_GSPC_rsi": 45,
-    "p20d_win_min": 0.9,
-    "p50d_win_min": 0.9,
+    "p20d_win_min": 0.8,
+    "p50d_win_min": 0.8,
 }
 
 
@@ -228,6 +228,18 @@ def main() -> None:
     n_hops = len(hop_results)
     print(f"Done: {n_hops} hops  "
           f"daynum {hop_results[0]['daynum']} → {hop_results[-1]['daynum']}")
+
+
+def build_extension() -> None:
+    from shared.extension import run_extension
+    macd_z_df   = load_longi("longi_macd_Z.csv")
+    p20d_win_df = load_longi("longi_P20d_win.csv")
+    p50d_win_df = load_longi("longi_P50d_win.csv")
+    rank_df     = load_longi("longi_rank.csv")
+    n: int      = PARAMS["focusset_size"]
+    run_extension(STRATEGY_NAME, PARAMS,
+                  lambda d: select_focusset(d, macd_z_df, p20d_win_df, p50d_win_df, rank_df, n),
+                  get_reference_values)
 
 
 if __name__ == "__main__":
