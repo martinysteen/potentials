@@ -24,8 +24,8 @@ PARAMS: dict = {
     "focusset_size": 5,
     "step": 5,
     "No_go_GSPC_rsi": 45,
-    "p20d_win_min": 0.8,
-    "p50d_win_min": 0.8,
+    "p20d_win_min": 0.9,
+    "p50d_win_min": 0.9,
 }
 
 
