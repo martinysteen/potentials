@@ -44,6 +44,8 @@ OUTPUT_XLSX = REPORT_ROOT / "best_strategy.xlsx"
 _KEY_COLS = [
     "StrategyName", "Run#",
     "avg_gain20d", "avg_gain50d",
+    "chain_cagr20d", "chain_cagr50d", "chain_ret20d", "chain_ret50d",
+    "chain_n20d", "chain_n50d",
     "Worst_20d", "Worst_50d",
     "N_20d_loss", "N_50d_loss",
     "N_hops", "N_hops_active",
@@ -51,6 +53,10 @@ _KEY_COLS = [
     "source_file",
 ]
 _GAIN_COLS = {"avg_gain20d", "avg_gain50d", "Worst_20d", "Worst_50d"}
+
+
+def _is_gain_col(col: str) -> bool:
+    return col in _GAIN_COLS or "gain" in col or col.startswith(("chain_ret", "chain_cagr"))
 
 # ---------------------------------------------------------------------------
 # Styles
@@ -66,7 +72,8 @@ _PARAM_FILL = PatternFill("solid", fgColor="FFFF99")   # yellow for simulation p
 _PCT_FMT    = '+0.00;-0.00;"-"'
 _CTR        = Alignment(horizontal="center")
 
-_PARAM_COLS = {"focusset_size", "step", "No_go_GSPC_rsi", "p20d_win_min", "p50d_win_min"}
+_PARAM_COLS = {"focusset_size", "step", "No_go_GSPC_rsi", "p20d_win_min", "p50d_win_min",
+               "q10_20_min", "q20_50_min"}
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +148,7 @@ def _cell_val(row: pd.Series, col: str):
 
 def _style_gain_cell(cell, val, col: str) -> None:
     cell.alignment = _CTR
-    if col in _GAIN_COLS and isinstance(val, (int, float)):
+    if _is_gain_col(col) and isinstance(val, (int, float)):
         cell.number_format = _PCT_FMT
         cell.fill = _GRN_FILL if val >= 0 else _RED_FILL
 
@@ -193,7 +200,7 @@ def write_xlsx(sections: list[dict], data_cols: list[str]) -> None:
             cell = ws.cell(cur_row, j, val)
             cell.fill = _BEST_FILL
             _style_gain_cell(cell, val, col)
-            if col in _GAIN_COLS and isinstance(val, (int, float)):
+            if _is_gain_col(col) and isinstance(val, (int, float)):
                 cell.fill = _BEST_FILL   # amber overrides green/red on this row
         cur_row += 1
 

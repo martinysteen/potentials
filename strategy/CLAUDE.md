@@ -33,7 +33,9 @@ strategy/
     │       ├── strategy_P50dWin.py       # longi_P50d_win >= threshold, then lowest rank
     │       ├── strategy_P20dZOP.py       # ZOP-flagged AND P20d_win >= threshold
     │       ├── strategy_P50dZOP.py       # ZOP-flagged AND P50d_win >= threshold
-    │       └── strategy_P20dP50dZOP.py   # ZOP-flagged AND both P20d+P50d win filters
+    │       ├── strategy_P20dP50dZOP.py   # ZOP-flagged AND both P20d+P50d win filters
+    │       ├── strategy_P20P50cross1020.py # P20d+P50d win AND ad-hoc Q10_20=MA10/MA20 >= min
+    │       └── strategy_P20P50cross2050.py # P20d+P50d win AND ad-hoc Q20_50=MA20/MA50 >= min
     ├── data/                             # Scratch/temp only
     └── report/
         └── <strategy_name>/
@@ -136,7 +138,8 @@ save_report(strategy_name, params, hop_results, run_num=None)
 
 Writes `run<N>_<date>.xlsx` with two sheets:
 - **Operational** — see layout below
-- **Summary** — key/value pairs of params + avg gains
+- **Summary** — key/value metrics (params, avg gains, realizable chain, loss/worst
+  stats) — see "Summary Sheet Metrics" below
 
 Also appends one row to `app/report/summary.csv` (master cross-strategy CSV).
 
@@ -215,6 +218,7 @@ Each item in the list passed to `save_report`:
 | 1 | Daynum headers | Blue |
 | 2 | Date headers | Blue |
 | 3–(N+2) | Ticker names, rank 1→N (col A vacant except A3="No_go_GSPC_rsi", A4=threshold) | — |
+| *(optional)* | `N_survivors` per hop — **only** when hops carry an `"n_survivors"` key; inserted directly below the tickers, shifting every row below it down by 1 | Pale blue |
 | N+3 | `avg_gain20d` | Green/red/grey |
 | N+4 | `avg_gain50d` | Blue-grey sep / green/red/grey |
 | N+5 to N+8 | `^GSPC_rsi (day-1)`, `^STOXX_rsi (day-1)`, `^HSI_rsi (day-1)`, `^VIX (day-1)` | Yellow |
@@ -224,6 +228,71 @@ Each item in the list passed to `save_report`:
 
 **avg_gain cells use Excel formulas** referencing the `^GSPC_rsi (day-1)` row and `$A$4`:
 `=IF(Bn_gspc < $A$4, "", value)` — change A4 to try a different no-go threshold live.
+
+`report.py` computes the `^GSPC_rsi` row position dynamically, so the optional `N_survivors`
+row keeps the formulas correct when present. A strategy opts in by adding `"n_survivors": <int>`
+to each `hop_results` dict (see `strategy_P20P50cross1020.py`).
+
+---
+
+## Summary Sheet Metrics
+
+The Summary sheet is a flat list of `(key, value)` rows. `aggregate_summary.py` and
+`best_strategy.py` ingest these keys **generically** — any new Summary row automatically
+becomes a column downstream, so adding a metric only means appending a row in `report.py`.
+
+Rows, in write order:
+
+| Key(s) | Meaning |
+|--------|---------|
+| `StrategyName`, `Run#`, `StartDaynum`, `EndDaynum` | Identity / daynum range |
+| `N_hops`, `N_hops_active` | Total hops / hops surviving the No_go filter |
+| *(PARAMS keys)* | `focusset_size`, `step`, `No_go_GSPC_rsi`, `p20d_win_min`, … |
+| `avg_gain20d`, `avg_gain50d` | Grand average per-hop top-N gain (No_go-filtered) |
+| `chain_ret20d/50d`, `chain_cagr20d/50d`, `chain_n20d/50d` | **Realizable chain** (see below) |
+| `N_20d_loss`, `N_50d_loss` | Count of active hops with negative avg gain |
+| `Worst_20d`, `Worst_50d` | Worst single active-hop avg gain |
+
+### Two ways to read performance — and why overlap matters
+
+With `step < horizon`, consecutive hops measure **overlapping** forward windows, so you cannot
+*sum/compound* per-hop gains into a portfolio return without massive double-counting. But overlap
+does **not** bias an *average*. So the metrics split along that line:
+
+- **Averages → valid for comparing configs.** `avg_gain*` is a mean; overlap only reduces sample
+  independence, not the point estimate.
+- **Accumulation → must be made realizable.** The retired `acc_gain*` summed overlapping hops and
+  overstated returns; the `chain_*` family replaces it with a non-overlapping compound.
+
+To study `focusset_size`, just run it as a sweep axis (`focusset_size: [1, 3, 5]`) and compare
+`avg_gain*` across runs — quality degrades monotonically with size, so a per-run rank-marginal
+curve was redundant.
+
+### Realizable chain (`chain_ret/cagr/n` × `20d/50d`)
+
+A non-overlapping compounded backtest: hops are walked oldest→newest and a hop is taken only once the
+previous position has closed (daynums spaced ≥ the holding horizon: 20 or 50). The chained hops'
+top-N avg gains are compounded. **This is the clean way to study `step`** — and reveals it directly:
+
+- `chain_n20d/50d` — realizable trade count (≈ span ÷ horizon, capped by holding period, **not** by step)
+- `chain_ret20d/50d` — total compounded return %
+- `chain_cagr20d/50d` — annualized (`_TRADING_DAYS_YEAR = 252`; 1 daynum ≈ 1 trading day)
+
+Implication: `step < horizon` yields no realizable benefit (capital locked); `step ≈ horizon` is the
+sweet spot; `step > horizon` idles capital and lowers CAGR. Respects `No_go_GSPC_rsi`; NaN-safe.
+A chain spanning the 1543→1288 daynum gap has a slightly distorted span — an acceptable edge case.
+
+### Retired: `acc_gain*` and `top{k}_gain*`
+
+Two metric families are **removed**:
+- `acc_gain{20d,50d}_w{20,50,100,200}` (sum of per-hop gains over trailing nominal-daynum windows) —
+  double-counted overlapping positions.
+- `top{k}_gain{20d,50d}` (the rank-marginal curve, k = 1…N) — quality degradation with `focusset_size`
+  is monotonic and already evident from comparing `avg_gain*` across `focusset_size` sweep runs, so the
+  per-run curve only bloated the table.
+
+`aggregate_summary.py` actively **drops any legacy `acc_gain*` or `top*` column** still present in
+older `run*.xlsx`, so both are gone from all downstream output without needing to delete history.
 
 ---
 
@@ -283,6 +352,25 @@ def main() -> None:
 - `str(daynum)` for all DataFrame column lookups
 - Load only files your strategy actually uses
 - Do not store `ref_values` (current-day) — only `ref_values_prev` (day-1) is used by report.py
+
+### Ad-hoc feature tables
+
+A strategy may build a signal matrix at runtime from existing Longi matrices and use it exactly like
+a preformed CSV (same tickers×daynum shape, `df[str(daynum)]` lookups). Used by the `cross` strategies:
+
+```python
+def build_q10_20() -> pd.DataFrame:           # MA quotient; == 1 at the golden cross
+    ma_fast = load_longi("longi_ma10.csv")     # cross1020: MA10/MA20, threshold key q10_20_min
+    ma_slow = load_longi("longi_ma20.csv")     # cross2050 names it build_q20_50: MA20/MA50, q20_50_min
+    return ma_fast.divide(ma_slow.replace(0, float("nan")))  # NaN-safe; aligns on index+cols
+```
+
+The quotient name encodes its MA pair: `cross1020` → `Q10_20` / `build_q10_20` / `q10_20_min`;
+`cross2050` → `Q20_50` / `build_q20_50` / `q20_50_min`.
+
+To also surface a pre-prioritisation count (e.g. how many tickers passed all filters before the
+rank cut), add `"n_survivors": <int>` to each `hop_results` dict — `report.py` then renders the
+optional `N_survivors` row (see Operational Sheet Layout).
 
 ---
 

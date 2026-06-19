@@ -34,7 +34,8 @@ _PARAM_FILL = PatternFill("solid", fgColor="FFFF99")  # yellow for simulation pa
 _PCT_FMT   = '+0.00;-0.00;"-"'
 _CTR       = Alignment(horizontal="center")
 
-_PARAM_COLS = {"focusset_size", "step", "No_go_GSPC_rsi", "p20d_win_min", "p50d_win_min"}
+_PARAM_COLS = {"focusset_size", "step", "No_go_GSPC_rsi", "p20d_win_min", "p50d_win_min",
+               "q10_20_min", "q20_50_min"}
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +94,9 @@ def aggregate_strategy(strategy_name: str) -> Path | None:
                 seen[k] = None
     cols = list(seen.keys())
 
+    # Retired metrics — drop legacy columns still present in older run files.
+    cols = [c for c in cols if not c.startswith(("acc_gain", "top"))]
+
     # Ensure N_hops_active is always adjacent to N_hops regardless of which run introduced it
     if "N_hops_active" in cols and "N_hops" in cols:
         cols.remove("N_hops_active")
@@ -131,7 +135,7 @@ def aggregate_strategy(strategy_name: str) -> Path | None:
             val  = rec.get(col)
             cell = ws_out.cell(i, j, val)
             cell.alignment = _CTR
-            if col.startswith("avg_gain") and isinstance(val, (int, float)):
+            if ("gain" in col or col.startswith(("chain_ret", "chain_cagr"))) and isinstance(val, (int, float)):
                 cell.number_format = _PCT_FMT
                 cell.fill = _GRN_FILL if val >= 0 else _RED_FILL
             elif col in ("Worst_20d", "Worst_50d") and isinstance(val, (int, float)):

@@ -57,6 +57,68 @@ def _avg_rows(n: int) -> list[tuple[str, str, int]]:
     ]
 
 
+# Per-horizon: (gain_key, label-tag, hold period in nominal daynums).
+# The hold period doubles as the non-overlap spacing for the realizable chain below.
+_HORIZONS: tuple[tuple[str, str, int], ...] = (
+    ("gains_20d", "20d", 20),
+    ("gains_50d", "50d", 50),
+)
+_TRADING_DAYS_YEAR = 252
+
+
+def _chain_metric_labels() -> list[str]:
+    """Realizable-chain summary labels, in write order, both horizons."""
+    labels: list[str] = []
+    for _gk, tag, _hold in _HORIZONS:
+        labels += [f"chain_ret{tag}", f"chain_cagr{tag}", f"chain_n{tag}"]
+    return labels
+
+
+def _chain_metrics(hop_results: list[dict], gain_key: str, n: int,
+                   hold: int, params: dict) -> tuple[float, float, int]:
+    """
+    Realizable non-overlapping compounded chain.
+
+    Greedily walk hops oldest→newest, taking a hop only once the previous position
+    has closed (daynum spaced >= `hold` nominal daynums apart), so no two positions
+    overlap. Compound the top-n avg gains of the chained hops. Respects No_go_GSPC_rsi.
+
+    Returns (total_return_pct, cagr_pct, n_trades). total/cagr are NaN and n_trades 0
+    when no hop qualifies.
+    """
+    threshold = params.get("No_go_GSPC_rsi")
+    usable: list[tuple[int, float]] = []
+    for h in hop_results:
+        if threshold is not None:
+            gspc = h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan"))
+            if not pd.isna(gspc) and gspc < threshold:
+                continue
+        v = _hop_avg_topn(h, gain_key, n)
+        if pd.notna(v):
+            usable.append((h["daynum"], v))
+    usable.sort(key=lambda t: t[0])  # chronological (ascending daynum)
+
+    chain: list[tuple[int, float]] = []
+    next_allowed: int | None = None
+    for dn, g in usable:
+        if next_allowed is None or dn >= next_allowed:
+            chain.append((dn, g))
+            next_allowed = dn + hold
+    if not chain:
+        return float("nan"), float("nan"), 0
+
+    growth = 1.0
+    for _dn, g in chain:
+        growth *= (1.0 + g / 100.0)
+    total_ret = (growth - 1.0) * 100.0
+
+    span_daynums = (chain[-1][0] + hold) - chain[0][0]
+    years = span_daynums / _TRADING_DAYS_YEAR
+    cagr = ((growth ** (1.0 / years) - 1.0) * 100.0
+            if years > 0 and growth > 0 else float("nan"))
+    return total_ret, cagr, len(chain)
+
+
 def _count_attr(hop_results: list[dict], stamdata: pd.DataFrame,
                 attr_col: str) -> tuple[list[str], list[dict]]:
     """
@@ -144,6 +206,7 @@ _GRY_FILL = PatternFill("solid", fgColor="EEEEEE")  # gray (n/a)
 _SEP_FILL = PatternFill("solid", fgColor="D9E1F2")  # separator 20d→50d
 _REF_FILL   = PatternFill("solid", fgColor="FFF2CC")  # yellow for day-1 ref rows
 _INPUT_FILL = PatternFill("solid", fgColor="FFE599")  # amber for editable input cells
+_SURV_FILL  = PatternFill("solid", fgColor="DDEBF7")  # pale blue for N_survivors row
 
 _ATTR_FILLS: dict[str, PatternFill] = {
     "GICS":    PatternFill("solid", fgColor="D9D2E9"),  # light purple
@@ -181,9 +244,13 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     n_tickers = n
     threshold = params.get("No_go_GSPC_rsi")
 
+    # Optional N_survivors row, inserted directly below the ticker rows.
+    has_surv = any("n_survivors" in h for h in hop_results)
+    surv_off = 1 if has_surv else 0
+
     # Pre-compute the row where ^GSPC_rsi (day-1) will land, for use in avg formulas.
     rows_list    = _avg_rows(n)
-    ref_base     = n_tickers + 3 + len(rows_list)
+    ref_base     = n_tickers + 3 + surv_off + len(rows_list)
     prev_keys    = list(hop_results[0].get("ref_values_prev", {}).keys()) if hop_results else []
     gspc_rsi_row = next((ref_base + i for i, k in enumerate(prev_keys) if "GSPC_rsi" in k), None)
 
@@ -207,9 +274,19 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
             tickers = h.get("tickers", [])
             ws.cell(row, j, tickers[i] if i < len(tickers) else "")
 
+    # ---- N_survivors row (optional — only when hops carry the count) ----
+    if has_surv:
+        srow = n_tickers + 3
+        c = ws.cell(srow, 1, "N_survivors"); c.font, c.fill = _BOLD, _SURV_FILL
+        for j, h in enumerate(hop_results, start=2):
+            val  = h.get("n_survivors")
+            cell = ws.cell(srow, j)
+            cell.font, cell.fill, cell.alignment = _BOLD, _SURV_FILL, _CTR
+            cell.value = int(val) if val is not None else None
+
     # ---- avg rows ----
     for idx, (label, gain_key, top_n) in enumerate(rows_list):
-        row      = n_tickers + 3 + idx
+        row      = n_tickers + 3 + surv_off + idx
         sep      = (gain_key == "gains_50d")
         lbl_cell = ws.cell(row, 1, label)
         lbl_cell.font = _BOLD
@@ -251,7 +328,7 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
                     cell.value = None
         return len(keys)
 
-    base   = n_tickers + 3 + len(rows_list)
+    base   = n_tickers + 3 + surv_off + len(rows_list)
     n_prev = _write_ref_rows(base, "ref_values_prev", " (day-1)")
 
     # ---- attribute frequency rows ----
@@ -308,6 +385,13 @@ def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
         val = _grand_avg_topn(hop_results, gain_key, top_n, params)
         rows.append((label, round(val, 4) if pd.notna(val) else None))
 
+    # Realizable non-overlapping compounded chain per horizon.
+    for gain_key, tag, hold in _HORIZONS:
+        ret, cagr, ntr = _chain_metrics(hop_results, gain_key, n, hold, params)
+        rows.append((f"chain_ret{tag}",  round(ret, 4)  if pd.notna(ret)  else None))
+        rows.append((f"chain_cagr{tag}", round(cagr, 4) if pd.notna(cagr) else None))
+        rows.append((f"chain_n{tag}",    ntr))
+
     rows.append(("N_20d_loss", _count_loss_hops(hop_results, "gains_20d", params)))
     rows.append(("N_50d_loss", _count_loss_hops(hop_results, "gains_50d", params)))
     w20 = _worst_hop_gain(hop_results, "gains_20d", params)
@@ -318,11 +402,13 @@ def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
     ws.column_dimensions["A"].width = 24
     ws.column_dimensions["B"].width = 18
 
-    avg_labels = {r[0] for r in _avg_rows(n)}
+    gain_labels = {r[0] for r in _avg_rows(n)}
+    for _gk, tag, _hold in _HORIZONS:
+        gain_labels |= {f"chain_ret{tag}", f"chain_cagr{tag}"}
     for i, (k, v) in enumerate(rows, start=1):
         kc = ws.cell(i, 1, k);  kc.font = _BOLD
         vc = ws.cell(i, 2, v)
-        if k in avg_labels:
+        if k in gain_labels:
             vc.number_format = _PCT_FMT
             if v is not None:
                 vc.fill = _gain_fill(v)
@@ -340,11 +426,12 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
     def _fmt(val: float) -> str:
         return "" if pd.isna(val) else f"{val:.4f}".replace(".", ",")
 
-    param_cols  = list(params.keys())
-    avg_labels  = [r[0] for r in _avg_rows(n)]
-    extra_cols  = ["N_20d_loss", "N_50d_loss", "Worst_20d", "Worst_50d"]
-    all_cols    = (["StrategyName", "Run#", "StartDaynum", "N_hops", "N_hops_active", "EndDaynum"]
-                   + param_cols + avg_labels + extra_cols)
+    param_cols   = list(params.keys())
+    avg_labels   = [r[0] for r in _avg_rows(n)]
+    chain_labels = _chain_metric_labels()
+    extra_cols   = ["N_20d_loss", "N_50d_loss", "Worst_20d", "Worst_50d"]
+    all_cols     = (["StrategyName", "Run#", "StartDaynum", "N_hops", "N_hops_active", "EndDaynum"]
+                    + param_cols + avg_labels + chain_labels + extra_cols)
 
     SUMMARY_CSV.parent.mkdir(parents=True, exist_ok=True)
     write_header = not SUMMARY_CSV.exists()
@@ -354,6 +441,10 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
         if write_header:
             w.writerow(all_cols)
         avg_vals   = [_fmt(_grand_avg_topn(hop_results, gk, tn, params)) for _, gk, tn in _avg_rows(n)]
+        chain_vals: list[str] = []
+        for gk, tag, hold in _HORIZONS:
+            ret, cagr, ntr = _chain_metrics(hop_results, gk, n, hold, params)
+            chain_vals += [_fmt(ret), _fmt(cagr), str(ntr)]
         w20 = _worst_hop_gain(hop_results, "gains_20d", params)
         w50 = _worst_hop_gain(hop_results, "gains_50d", params)
         extra_vals = [
@@ -366,7 +457,7 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
             [strategy_name, run_num, daynums[0], len(hop_results),
              _count_active_hops(hop_results, params), daynums[-1]]
             + [params.get(k, "") for k in param_cols]
-            + avg_vals + extra_vals
+            + avg_vals + chain_vals + extra_vals
         )
 
 
