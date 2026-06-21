@@ -1,5 +1,15 @@
+import sys
 from pathlib import Path
 from typing import Final
+
+# Force UTF-8 stdout/stderr so the em-dashes and arrows in our log lines don't
+# crash on a Windows cp1252 console. Imported transitively by every entry point
+# (strategies, run_sweep, aggregate_summary, best_strategy), so one place covers all.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+    except (AttributeError, ValueError):
+        pass  # already UTF-8, or a stream that can't be reconfigured
 
 DATA_ROOT: Final = Path("/home/sm/potentials/repositoryRTBI/data")
 DATA_LONGI: Final = DATA_ROOT / "Longi"

@@ -49,19 +49,19 @@ LINKED: dict[str, list[str]] = {
 }
 
 # Applied to every strategy below (where the key exists in that strategy's PARAMS).
-# No_go_GSPC_rsi is intentionally NOT here, so each strategy keeps its own value
-# unless you override it per-strategy (or add it here to force one value on all).
 DEFAULTS: dict = {
-    "focusset_size": [1, 3, 5],
-    "step":          [1, 5],
-    "p_win_min":     [0.8, 0.9],          # -> p20d_win_min / p50d_win_min, kept equal
+    "focusset_size":  [3, 5],
+    "step":           [1, 5],
+    "p_win_min":      0.8,         # -> p20d_win_min / p50d_win_min, kept equal
+    "No_go_GSPC_rsi": [0, 40],            # 0 = filter off; 40 = typical. Swept so Summary
+                                          # metrics (chain_*, avg_gain*, N_*_loss) reflect each.
 }
 
 # Strategy-specific overrides. An empty dict {} means "just use DEFAULTS".
 # Keys must match each strategy's STRATEGY_NAME (see `python run_sweep.py --list`).
 STRATEGIES: dict[str, dict] = {
     # --- have both win-thresholds + the golden-cross quotient ---
-    "P20P50cross1020": {"q10_20_min": [1.03, 1.10]},
+    "P20P50cross1020": {"q10_20_min": [1.03, 1.10]},  # combination of p_win_min=0.9 og qu10_20_min=1.1 makes very few survivors
     "P20P50cross2050": {"q20_50_min": [1.03, 1.10]},
 
     # --- have both win-thresholds, no quotient ---

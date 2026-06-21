@@ -18,6 +18,9 @@ from shared.report import save_report
 
 STRATEGY_NAME = "P20dZOP"
 
+# Set True to log every hop; keep False to avoid noise during sweeps.
+VERBOSE = False
+
 PARAMS: dict = {
     "focusset_size": 3,
     "step": 1,
@@ -189,7 +192,8 @@ def main() -> None:
             line += f"  50d avg={avg50:+.2f}%"
         else:
             line += "  50d=n/a"
-        print(line)
+        if VERBOSE:
+            print(line)
 
         hop_results.append({
             "daynum": daynum,

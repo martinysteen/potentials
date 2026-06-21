@@ -140,7 +140,7 @@ def aggregate_strategy(strategy_name: str) -> Path | None:
                 cell.fill = _GRN_FILL if val >= 0 else _RED_FILL
             elif col in ("Worst_20d", "Worst_50d") and isinstance(val, (int, float)):
                 cell.number_format = _PCT_FMT
-                cell.fill = _RED_FILL
+                cell.fill = _GRN_FILL if val >= 0 else _RED_FILL
             elif col in ("N_20d_loss", "N_50d_loss") and isinstance(val, (int, float)) and val > 0:
                 cell.fill = _RED_FILL
 
