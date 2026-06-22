@@ -17,6 +17,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
+from shared.chain import realizable_chain
 from shared.config import REPORT_ROOT, SUMMARY_CSV
 from shared.data_loader import daynum_to_date, load_stamdata
 
@@ -50,73 +51,39 @@ def _grand_avg_topn(hop_results: list[dict], gain_key: str, n: int,
 
 
 def _avg_rows(n: int) -> list[tuple[str, str, int]]:
-    """Two avg rows for the active focusset size — (label, gain_key, top_n)."""
-    return [
-        ("avg_gain20d", "gains_20d", n),
-        ("avg_gain50d", "gains_50d", n),
-    ]
+    """The single avg-gain row for the active focusset size — (label, gain_key, top_n).
+
+    Horizon-agnostic: the forward horizon is the `period` param; gains live under the
+    single key "gains" in each hop. Names carry no 20d/50d suffix so one run = one column.
+    """
+    return [("avg_gain", "gains", n)]
 
 
-# Per-horizon: (gain_key, label-tag, hold period in nominal daynums).
-# The hold period doubles as the non-overlap spacing for the realizable chain below.
-_HORIZONS: tuple[tuple[str, str, int], ...] = (
-    ("gains_20d", "20d", 20),
-    ("gains_50d", "50d", 50),
-)
-_TRADING_DAYS_YEAR = 252
+# Gains for the chosen horizon live under this single hop key.
+_GAIN_KEY = "gains"
 
 
 def _chain_metric_labels() -> list[str]:
-    """Realizable-chain summary labels, in write order, both horizons."""
-    labels: list[str] = []
-    for _gk, tag, _hold in _HORIZONS:
-        labels += [f"chain_ret{tag}", f"chain_cagr{tag}", f"chain_n{tag}"]
-    return labels
+    """Realizable-chain summary labels, in write order."""
+    return ["chain_ret", "chain_cagr", "chain_n"]
 
 
 def _chain_metrics(hop_results: list[dict], gain_key: str, n: int,
                    hold: int, params: dict) -> tuple[float, float, int]:
     """
-    Realizable non-overlapping compounded chain.
+    Realizable non-overlapping compounded chain over this run's full span.
 
-    Greedily walk hops oldest→newest, taking a hop only once the previous position
-    has closed (daynum spaced >= `hold` nominal daynums apart), so no two positions
-    overlap. Compound the top-n avg gains of the chained hops. Respects No_go_GSPC_rsi.
+    Thin wrapper over shared.chain.realizable_chain (the single source of the chain
+    math). best_strategy.py re-runs the same function with a common floor/cap so
+    cross-strategy chain returns are comparable; see shared/chain.py.
 
-    Returns (total_return_pct, cagr_pct, n_trades). total/cagr are NaN and n_trades 0
-    when no hop qualifies.
+    Returns (total_return_pct, cagr_pct, n_trades).
     """
     threshold = params.get("No_go_GSPC_rsi")
-    usable: list[tuple[int, float]] = []
-    for h in hop_results:
-        if threshold is not None:
-            gspc = h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan"))
-            if not pd.isna(gspc) and gspc < threshold:
-                continue
-        v = _hop_avg_topn(h, gain_key, n)
-        if pd.notna(v):
-            usable.append((h["daynum"], v))
-    usable.sort(key=lambda t: t[0])  # chronological (ascending daynum)
-
-    chain: list[tuple[int, float]] = []
-    next_allowed: int | None = None
-    for dn, g in usable:
-        if next_allowed is None or dn >= next_allowed:
-            chain.append((dn, g))
-            next_allowed = dn + hold
-    if not chain:
-        return float("nan"), float("nan"), 0
-
-    growth = 1.0
-    for _dn, g in chain:
-        growth *= (1.0 + g / 100.0)
-    total_ret = (growth - 1.0) * 100.0
-
-    span_daynums = (chain[-1][0] + hold) - chain[0][0]
-    years = span_daynums / _TRADING_DAYS_YEAR
-    cagr = ((growth ** (1.0 / years) - 1.0) * 100.0
-            if years > 0 and growth > 0 else float("nan"))
-    return total_ret, cagr, len(chain)
+    rows = ((h["daynum"], _hop_avg_topn(h, gain_key, n),
+             h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan")))
+            for h in hop_results)
+    return realizable_chain(rows, hold, threshold, phase_average=True)
 
 
 def _count_attr(hop_results: list[dict], stamdata: pd.DataFrame,
@@ -385,26 +352,21 @@ def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
         val = _grand_avg_topn(hop_results, gain_key, top_n, params)
         rows.append((label, round(val, 4) if pd.notna(val) else None))
 
-    # Realizable non-overlapping compounded chain per horizon.
-    for gain_key, tag, hold in _HORIZONS:
-        ret, cagr, ntr = _chain_metrics(hop_results, gain_key, n, hold, params)
-        rows.append((f"chain_ret{tag}",  round(ret, 4)  if pd.notna(ret)  else None))
-        rows.append((f"chain_cagr{tag}", round(cagr, 4) if pd.notna(cagr) else None))
-        rows.append((f"chain_n{tag}",    ntr))
+    # Realizable non-overlapping compounded chain for the active horizon (= period).
+    hold = int(params.get("period", 20))
+    ret, cagr, ntr = _chain_metrics(hop_results, _GAIN_KEY, n, hold, params)
+    rows.append(("chain_ret",  round(ret, 4)  if pd.notna(ret)  else None))
+    rows.append(("chain_cagr", round(cagr, 4) if pd.notna(cagr) else None))
+    rows.append(("chain_n",    ntr))
 
-    rows.append(("N_20d_loss", _count_loss_hops(hop_results, "gains_20d", params)))
-    rows.append(("N_50d_loss", _count_loss_hops(hop_results, "gains_50d", params)))
-    w20 = _worst_hop_gain(hop_results, "gains_20d", params)
-    w50 = _worst_hop_gain(hop_results, "gains_50d", params)
-    rows.append(("Worst_20d", round(w20, 4) if pd.notna(w20) else None))
-    rows.append(("Worst_50d", round(w50, 4) if pd.notna(w50) else None))
+    rows.append(("N_loss", _count_loss_hops(hop_results, _GAIN_KEY, params)))
+    worst = _worst_hop_gain(hop_results, _GAIN_KEY, params)
+    rows.append(("Worst", round(worst, 4) if pd.notna(worst) else None))
 
     ws.column_dimensions["A"].width = 24
     ws.column_dimensions["B"].width = 18
 
-    gain_labels = {r[0] for r in _avg_rows(n)}
-    for _gk, tag, _hold in _HORIZONS:
-        gain_labels |= {f"chain_ret{tag}", f"chain_cagr{tag}"}
+    gain_labels = {r[0] for r in _avg_rows(n)} | {"chain_ret", "chain_cagr"}
     for i, (k, v) in enumerate(rows, start=1):
         kc = ws.cell(i, 1, k);  kc.font = _BOLD
         vc = ws.cell(i, 2, v)
@@ -412,6 +374,30 @@ def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
             vc.number_format = _PCT_FMT
             if v is not None:
                 vc.fill = _gain_fill(v)
+
+
+# ---------------------------------------------------------------------------
+# HopData sheet — machine-readable per-hop chain inputs
+# ---------------------------------------------------------------------------
+
+def _fill_hopdata(ws, hop_results: list[dict], params: dict) -> None:
+    """
+    Raw per-hop values needed to recompute the realizable chain later over an
+    arbitrary daynum window (best_strategy.py clamps to a common floor/cap).
+
+    Stored as plain numbers (not Excel formulas) so they read back reliably.
+    Columns: daynum | gain | gspc_rsi_prev  (gain = top-N avg for the active period).
+    """
+    n = params.get("focusset_size", 10)
+    ws.append(["daynum", "gain", "gspc_rsi_prev"])
+    for h in hop_results:
+        g    = _hop_avg_topn(h, _GAIN_KEY, n)
+        gspc = h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan"))
+        ws.append([
+            int(h["daynum"]),
+            None if pd.isna(g)    else round(float(g), 6),
+            None if pd.isna(gspc) else round(float(gspc), 4),
+        ])
 
 
 # ---------------------------------------------------------------------------
@@ -429,7 +415,7 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
     param_cols   = list(params.keys())
     avg_labels   = [r[0] for r in _avg_rows(n)]
     chain_labels = _chain_metric_labels()
-    extra_cols   = ["N_20d_loss", "N_50d_loss", "Worst_20d", "Worst_50d"]
+    extra_cols   = ["N_loss", "Worst"]
     all_cols     = (["StrategyName", "Run#", "StartDaynum", "N_hops", "N_hops_active", "EndDaynum"]
                     + param_cols + avg_labels + chain_labels + extra_cols)
 
@@ -441,17 +427,13 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
         if write_header:
             w.writerow(all_cols)
         avg_vals   = [_fmt(_grand_avg_topn(hop_results, gk, tn, params)) for _, gk, tn in _avg_rows(n)]
-        chain_vals: list[str] = []
-        for gk, tag, hold in _HORIZONS:
-            ret, cagr, ntr = _chain_metrics(hop_results, gk, n, hold, params)
-            chain_vals += [_fmt(ret), _fmt(cagr), str(ntr)]
-        w20 = _worst_hop_gain(hop_results, "gains_20d", params)
-        w50 = _worst_hop_gain(hop_results, "gains_50d", params)
+        hold = int(params.get("period", 20))
+        ret, cagr, ntr = _chain_metrics(hop_results, _GAIN_KEY, n, hold, params)
+        chain_vals = [_fmt(ret), _fmt(cagr), str(ntr)]
+        worst = _worst_hop_gain(hop_results, _GAIN_KEY, params)
         extra_vals = [
-            _count_loss_hops(hop_results, "gains_20d", params),
-            _count_loss_hops(hop_results, "gains_50d", params),
-            _fmt(w20),
-            _fmt(w50),
+            _count_loss_hops(hop_results, _GAIN_KEY, params),
+            _fmt(worst),
         ]
         w.writerow(
             [strategy_name, run_num, daynums[0], len(hop_results),
@@ -490,6 +472,9 @@ def save_report(strategy_name: str, params: dict, hop_results: list[dict],
 
     ws_sum = wb.create_sheet("Summary")
     _fill_summary(ws_sum, strategy_name, run_num, params, hop_results)
+
+    ws_hop = wb.create_sheet("HopData")
+    _fill_hopdata(ws_hop, hop_results, params)
 
     wb.save(xlsx_path)
     _append_summary_csv(strategy_name, run_num, params, hop_results)

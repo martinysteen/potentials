@@ -28,7 +28,7 @@ Some strategies have two win-thresholds that must stay equal
 (p20d_win_min == p50d_win_min). Rather than set them twice — which a grid would
 also let drift apart — set the single alias `p_win_min`. The driver writes its
 value to whichever of the two a strategy actually has:
-    - both present  (cross1020, cross2050, P20dP50dZOP) -> both set equal
+    - both present  (cross1020, cross2050) -> both set equal
     - only one      (P20dWin/P20dZOP -> 20d; P50dWin/P50dZOP -> 50d)
     - neither       (ZOP, Ranknow) -> ignored
 `p_win_min` may itself be a list to sweep the threshold as ONE axis (the pair
@@ -51,29 +51,31 @@ LINKED: dict[str, list[str]] = {
 # Applied to every strategy below (where the key exists in that strategy's PARAMS).
 DEFAULTS: dict = {
     "focusset_size":  [3, 5],
-    "step":           [1, 5],
+    "step":           1,            # fixed at 1: finest phase-averaging for the chain;
+                                          # step is otherwise second-order for the chain metric.
+    "period":         20,           # forward horizon in trading days (20 or 50). Single
+                                          # value -> one column per strategy in best_strategy.
     "p_win_min":      0.8,         # -> p20d_win_min / p50d_win_min, kept equal
-    "No_go_GSPC_rsi": [0, 40],            # 0 = filter off; 40 = typical. Swept so Summary
-                                          # metrics (chain_*, avg_gain*, N_*_loss) reflect each.
+    "No_go_GSPC_rsi": 0,            # 0 = filter off; 40 = typical. Swept so Summary
+                                          # metrics (chain_*, avg_gain, N_loss) reflect each.
 }
 
 # Strategy-specific overrides. An empty dict {} means "just use DEFAULTS".
 # Keys must match each strategy's STRATEGY_NAME (see `python run_sweep.py --list`).
 STRATEGIES: dict[str, dict] = {
     # --- have both win-thresholds + the golden-cross quotient ---
-    "P20P50cross1020": {"q10_20_min": [1.03, 1.10]},  # combination of p_win_min=0.9 og qu10_20_min=1.1 makes very few survivors
-    "P20P50cross2050": {"q20_50_min": [1.03, 1.10]},
-
-    # --- have both win-thresholds, no quotient ---
-    "P20dP50dZOP": {},
+    "P20P50cross1020": {"q10_20_min": [1.03, 1.05]},  # combination of p_win_min=0.9 og qu10_20_min=1.1 makes very few survivors
+    "P20P50cross2050": {"q20_50_min": [1.03, 1.05]},
 
     # --- have a single win-threshold (p_win_min sets whichever exists) ---
     "P20dWin": {},
-    "P20dZOP": {},
     "P50dWin": {},
-    "P50dZOP": {},
 
     # --- no win-threshold (p_win_min ignored) ---
-    "ZOP": {},
     "Ranknow": {},
+
+    # NOTE: all ZOP-based strategies (ZOP, P20dZOP, P50dZOP, P20dP50dZOP) are
+    # parked in code/_not_used/ (and their reports in report/_not_used/). ZOP is a
+    # good signal but too volatile intraday; refining it is postponed in favour of
+    # the more stable cross strategies. Move the files back to restore them.
 }

@@ -34,8 +34,8 @@ _PARAM_FILL = PatternFill("solid", fgColor="FFFF99")  # yellow for simulation pa
 _PCT_FMT   = '+0.00;-0.00;"-"'
 _CTR       = Alignment(horizontal="center")
 
-_PARAM_COLS = {"focusset_size", "step", "No_go_GSPC_rsi", "p20d_win_min", "p50d_win_min",
-               "q10_20_min", "q20_50_min"}
+_PARAM_COLS = {"focusset_size", "step", "period", "No_go_GSPC_rsi",
+               "p20d_win_min", "p50d_win_min", "q10_20_min", "q20_50_min"}
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +103,7 @@ def aggregate_strategy(strategy_name: str) -> Path | None:
         cols.insert(cols.index("N_hops") + 1, "N_hops_active")
 
     # Keep loss/worst columns grouped to the right of the avg_gain columns
-    _trailing = ["N_20d_loss", "N_50d_loss", "Worst_20d", "Worst_50d"]
+    _trailing = ["N_loss", "Worst"]
     for _col in _trailing:
         if _col in cols:
             cols.remove(_col)
@@ -138,10 +138,10 @@ def aggregate_strategy(strategy_name: str) -> Path | None:
             if ("gain" in col or col.startswith(("chain_ret", "chain_cagr"))) and isinstance(val, (int, float)):
                 cell.number_format = _PCT_FMT
                 cell.fill = _GRN_FILL if val >= 0 else _RED_FILL
-            elif col in ("Worst_20d", "Worst_50d") and isinstance(val, (int, float)):
+            elif col == "Worst" and isinstance(val, (int, float)):
                 cell.number_format = _PCT_FMT
                 cell.fill = _GRN_FILL if val >= 0 else _RED_FILL
-            elif col in ("N_20d_loss", "N_50d_loss") and isinstance(val, (int, float)) and val > 0:
+            elif col == "N_loss" and isinstance(val, (int, float)) and val > 0:
                 cell.fill = _RED_FILL
 
     # Column widths

@@ -22,6 +22,7 @@ VERBOSE = False
 PARAMS: dict = {
     "focusset_size": 3,
     "step": 1,
+    "period": 20,           # forward horizon in trading days (20 or 50)
     "No_go_GSPC_rsi": 40,
     "p20d_win_min": 0.8,
 }
@@ -131,15 +132,15 @@ def _hop_avg(gains: dict[str, float]) -> float:
 def main() -> None:
     p20d_win_df = load_longi("longi_P20d_win.csv")
     rank_df     = load_longi("longi_rank.csv")
-    gain20_df   = load_longi("future_gain20d.csv")
-    gain50_df   = load_longi("future_gain50d.csv")
+    period: int = PARAMS.get("period", 20)
+    gain_df     = load_longi(f"future_gain{period}d.csv")
 
     n: int    = PARAMS["focusset_size"]
     step: int = PARAMS["step"]
 
-    start_daynum = find_start_daynum(gain20_df, rank_df, p20d_win_df)
+    start_daynum = find_start_daynum(gain_df, rank_df, p20d_win_df)
     min_daynum = max(
-        int(gain20_df.columns[-1]),
+        int(gain_df.columns[-1]),
         int(rank_df.columns[-1]),
         int(p20d_win_df.columns[-1]),
     )
@@ -147,7 +148,7 @@ def main() -> None:
     print(f"--- {STRATEGY_NAME} ---")
     print(f"Start daynum : {start_daynum} ({daynum_to_date(start_daynum)})")
     print(f"Min daynum   : {min_daynum}")
-    print(f"Focusset size: {n}   Step: {step}   P20d_win >= {PARAMS['p20d_win_min']}")
+    print(f"Focusset size: {n}   Step: {step}   Period: {period}d   P20d_win >= {PARAMS['p20d_win_min']}")
     print()
 
     hop_results: list[dict] = []
@@ -159,28 +160,21 @@ def main() -> None:
             daynum -= step
             continue
 
-        gains_20d = get_gains(gain20_df, tickers, daynum)
-        gains_50d = get_gains(gain50_df, tickers, daynum)
-        avg20 = _hop_avg(gains_20d)
-        avg50 = _hop_avg(gains_50d)
+        gains = get_gains(gain_df, tickers, daynum)
+        avg = _hop_avg(gains)
 
         hop_num = len(hop_results) + 1
         date_str = daynum_to_date(daynum)
         line = (f"  hop {hop_num:>3}: daynum {daynum} ({date_str})"
                 f"  tickers={tickers}"
-                f"  20d avg={avg20:+.2f}%")
-        if pd.notna(avg50):
-            line += f"  50d avg={avg50:+.2f}%"
-        else:
-            line += "  50d=n/a"
+                f"  {period}d avg={avg:+.2f}%")
         if VERBOSE:
             print(line)
 
         hop_results.append({
             "daynum": daynum,
             "tickers": tickers,
-            "gains_20d": gains_20d,
-            "gains_50d": gains_50d,
+            "gains": gains,
             "ref_values_prev": get_reference_values(daynum - 1),
         })
         daynum -= step
