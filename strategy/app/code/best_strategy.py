@@ -22,17 +22,21 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
-from shared.chain import realizable_chain
+from shared.chain import realizable_chain, laddered_portfolio
 from shared.config import REPORT_ROOT
+from shared.data_loader import daynum_to_date
 
 # Decision metric is chain CAGR (phase-averaged, common-span); chain_ret breaks
 # ties. Per-strategy columns are defined by _SUBCOLS near main().
 OUTPUT_XLSX = REPORT_ROOT / "best_strategy.xlsx"
 
 # Metric row order in the transposed table (these first, then any remaining cols).
+# StrategyName is intentionally absent: the strategy name is the column header
+# (corner label "StrategyName"), so a separate StrategyName row would just repeat it.
 _KEY_COLS = [
-    "StrategyName", "Run#", "period",
+    "Run#", "period",
     "chain_cagr", "chain_ret", "chain_n", "chain_floor", "chain_cap",
+    "ladder_cagr", "ladder_ret", "ladder_n", "ladder_inv%",
     "avg_gain", "Worst", "N_loss",
     "N_hops", "N_hops_active",
     "focusset_size", "step", "No_go_GSPC_rsi",
@@ -40,9 +44,41 @@ _KEY_COLS = [
 ]
 _GAIN_COLS = {"avg_gain", "Worst"}
 
+# Metric keys never shown as their own row (folded into the header corner instead).
+_DROP_ROWS = {"StrategyName"}
+
+# Plain-language gloss for the metric rows that need one (column B). Rows are kept
+# under their technical identity name in column A; this is the human explanation.
+_COMMENTS = {
+    "period":        "Trading days (per investment)",
+    "chain_cagr":    "Annualized return (stacked gain%)",
+    "chain_ret":     "Return of full chain (stacked gain%)",
+    "ladder_cagr":   "Annualized return, laddered always-invested style (diagnostic)",
+    "ladder_ret":    "Total return of laddered portfolio (stacked gain%)",
+    "ladder_inv%":   "Share of tranches invested vs cash (%)",
+    "avg_gain":      "Average gain% per investment",
+    "Worst":         "Worst negative day (gain%)",
+    "N_loss":        "Number of negative days in chain",
+    "focusset_size": "Number of stocks in each investment lot",
+}
+
+_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _fmt_date(daynum: int) -> str:
+    """daynum -> 'D. Mon YYYY' (e.g. 1804 -> '8. Jan 2025'); ISO/fallback on parse miss."""
+    iso = daynum_to_date(int(daynum))  # "YYYY-MM-DD" from Cal.csv
+    try:
+        y, m, d = iso.split("-")
+        return f"{int(d)}. {_MONTHS[int(m) - 1]} {y}"
+    except Exception:
+        return iso
+
 
 def _is_gain_col(col: str) -> bool:
-    return col in _GAIN_COLS or "gain" in col or col.startswith(("chain_ret", "chain_cagr"))
+    return (col in _GAIN_COLS or "gain" in col
+            or col.startswith(("chain_ret", "chain_cagr", "ladder_ret", "ladder_cagr")))
 
 # ---------------------------------------------------------------------------
 # Styles
@@ -150,6 +186,18 @@ def reclamp_chains(df: pd.DataFrame) -> tuple[pd.DataFrame, int | None, int | No
         df.at[idx, "chain_ret"]  = round(ret, 4)  if pd.notna(ret)  else None
         df.at[idx, "chain_cagr"] = round(cagr, 4) if pd.notna(cagr) else None
         df.at[idx, "chain_n"]    = ntr
+
+        # Diagnostic only — laddered (always-invested) estimate over the same span.
+        # Never feeds selection; ranking stays on chain_cagr.
+        step_v = row.get("step")
+        step_v = int(step_v) if pd.notna(step_v) else None
+        if step_v:
+            lret, lcagr, lslv, linv = laddered_portfolio(
+                ((r[0], r[1], r[2]) for r in rows), hold, step_v, thr, floor, cap)
+            df.at[idx, "ladder_ret"]  = round(lret, 4)  if pd.notna(lret)  else None
+            df.at[idx, "ladder_cagr"] = round(lcagr, 4) if pd.notna(lcagr) else None
+            df.at[idx, "ladder_n"]    = lslv
+            df.at[idx, "ladder_inv%"] = round(linv * 100, 1) if pd.notna(linv) else None
         n_done += 1
 
     print(f"  chain reclamped to common span [{floor}, {cap}] for {n_done} run(s)"
@@ -196,29 +244,51 @@ def best_run(group: pd.DataFrame, primary: str, tiebreaker: str) -> pd.Series | 
     return valid.sort_values(cols, ascending=False).iloc[0]
 
 
-def write_xlsx(columns: list[dict], metric_rows: list[str]) -> None:
+_HDR_ROW = 3   # the strategy-header row; titles occupy rows 1-2 above it
+
+
+def write_xlsx(columns: list[dict], metric_rows: list[str],
+               floor: int | None = None, cap: int | None = None,
+               period: int | None = None) -> None:
     """
-    Transposed report: metrics down the rows, one column per strategy.
+    Transposed report: two title rows, then metrics down the rows, one col per strategy.
 
     columns: [{"strategy", "row"}], one per strategy (its best run by chain_cagr).
     metric_rows: metric names in display order (the table's row labels).
+    floor/cap/period: common-span bounds + horizon, used to phrase the title rows.
     """
     wb = Workbook()
     ws = wb.active
     ws.title = "Best Strategy"
 
-    # ---- header row: corner + one column per strategy ----
-    corner = ws.cell(1, 1, "metric"); corner.font, corner.fill = _BOLD, _HDR_FILL
-    for j, col in enumerate(columns, start=2):
-        h = ws.cell(1, j, col["strategy"])
+    # ---- title rows (1-2): plain-language summary for unprepared readers ----
+    if floor is not None and cap is not None and period:
+        n_runs = (cap - floor) // period
+        title1 = ("Comparison of strategies all recalculated for performance in period "
+                  f"daynum {floor} to {cap} ({_fmt_date(floor)} to {_fmt_date(cap)})")
+        title2 = (f"Using {period} days as investment horizon, this allows a chain of "
+                  f"{n_runs} not-overlapping investment runs.")
+    else:
+        title1 = "Comparison of strategies"
+        title2 = ""
+    ws.cell(1, 1, title1).font = _BOLD
+    ws.cell(2, 1, title2).font = _BOLD
+
+    # ---- header row: corner + Comment column + one column per strategy ----
+    _FIRST_STRAT_COL = 3   # col A = metric, col B = comment, strategies from col C
+    corner = ws.cell(_HDR_ROW, 1, "StrategyName"); corner.font, corner.fill = _BOLD, _HDR_FILL
+    chdr = ws.cell(_HDR_ROW, 2, "Comment"); chdr.font, chdr.fill = _BOLD, _HDR_FILL
+    for j, col in enumerate(columns, start=_FIRST_STRAT_COL):
+        h = ws.cell(_HDR_ROW, j, col["strategy"])
         h.font, h.fill, h.alignment = _BOLD, _SECT_FILL, _CTR
 
     # ---- one row per metric ----
-    for i, metric in enumerate(metric_rows, start=2):
+    for i, metric in enumerate(metric_rows, start=_HDR_ROW + 1):
         lbl = ws.cell(i, 1, metric)
         lbl.font = _BOLD
         lbl.fill = _PARAM_FILL if metric in _PARAM_COLS else _HDR_FILL
-        for j, col in enumerate(columns, start=2):
+        ws.cell(i, 2, _COMMENTS.get(metric))   # column B gloss (blank if none)
+        for j, col in enumerate(columns, start=_FIRST_STRAT_COL):
             val  = _cell_val(col["row"], metric) if col["row"] is not None else None
             cell = ws.cell(i, j, val)
             _style_gain_cell(cell, val, metric)
@@ -227,40 +297,55 @@ def write_xlsx(columns: list[dict], metric_rows: list[str]) -> None:
 
     # ---- widths / freeze ----
     ws.column_dimensions["A"].width = 16
-    for j in range(2, len(columns) + 2):
+    ws.column_dimensions["B"].width = 38   # comment column
+    for j in range(_FIRST_STRAT_COL, len(columns) + _FIRST_STRAT_COL):
         ws.column_dimensions[get_column_letter(j)].width = 16
-    ws.freeze_panes = "B2"
+    ws.freeze_panes = f"C{_HDR_ROW + 1}"
 
     wb.save(OUTPUT_XLSX)
     print(f"Written: {OUTPUT_XLSX}")
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Ranking (shared by main() and extension_of_best_strategy.py)
 # ---------------------------------------------------------------------------
 
-def main() -> None:
-    print("Loading aggregated summaries...")
-    df = load_all_runs()
-    print(f"Total runs across all strategies: {len(df)}")
-    df, _floor, _cap = reclamp_chains(df)
-    print()
+def select_best_runs(verbose: bool = False) -> tuple[
+        list[dict], list[str], int | None, int | None, int | None]:
+    """Load every run, reclamp chains to the common span, and rank strategies.
 
+    Returns (columns, all_cols, floor, cap, period):
+      columns  : [{"strategy", "row"}], one per strategy (its best run by chain_cagr,
+                 chain_ret as tiebreaker), strongest chain_cagr first.
+      all_cols : every column present across the loaded runs (for metric-row order).
+      floor/cap: common-span bounds. period: the shared forward horizon.
+
+    Returns an empty columns list (never raises) when there is nothing comparable —
+    no StrategyName column, or runs mixing forward horizons.
+    """
+    df = load_all_runs()
+    if verbose:
+        print(f"Total runs across all strategies: {len(df)}")
+    df, floor, cap = reclamp_chains(df)
+    if verbose:
+        print()
+
+    all_cols = list(df.columns)
     if "StrategyName" not in df.columns:
-        print("No StrategyName column — nothing to report.")
-        return
+        if verbose:
+            print("No StrategyName column — nothing to report.")
+        return [], all_cols, floor, cap, None
 
     # Guard: every compared run must share the same forward horizon.
+    period: int | None = None
     if "period" in df.columns:
         periods = sorted(pd.to_numeric(df["period"], errors="coerce").dropna().unique())
         if len(periods) > 1:
             print(f"ERROR: mixed periods across runs {periods} — re-run the sweep at a "
                   "single period before comparing. Aborting.")
-            return
-
-    all_cols    = list(df.columns)
-    metric_rows = [c for c in _KEY_COLS if c in all_cols]
-    metric_rows += [c for c in all_cols if c not in metric_rows]
+            return [], all_cols, floor, cap, None
+        if periods:
+            period = int(periods[0])
 
     groups = {str(name): g for name, g in df.groupby("StrategyName", sort=False)}
 
@@ -270,15 +355,30 @@ def main() -> None:
         return float(v) if v is not None and pd.notna(v) else float("-inf")
     order = sorted(groups, key=_rank, reverse=True)   # strongest chain_cagr leftmost
 
-    columns: list[dict] = []
-    for name in order:
-        row = best_run(groups[name], "chain_cagr", "chain_ret")
-        columns.append({"strategy": name, "row": row})
-        c = row.get("chain_cagr") if row is not None else None
-        print(f"  {name:18} best chain_cagr={_fmt(c)}")
+    columns = [{"strategy": name, "row": best_run(groups[name], "chain_cagr", "chain_ret")}
+               for name in order]
+    return columns, all_cols, floor, cap, period
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    print("Loading aggregated summaries...")
+    columns, all_cols, floor, cap, period = select_best_runs(verbose=True)
+    if not columns:
+        return
+
+    metric_rows = [c for c in _KEY_COLS if c in all_cols and c not in _DROP_ROWS]
+    metric_rows += [c for c in all_cols if c not in metric_rows and c not in _DROP_ROWS]
+
+    for col in columns:
+        c = col["row"].get("chain_cagr") if col["row"] is not None else None
+        print(f"  {col['strategy']:18} best chain_cagr={_fmt(c)}")
     print()
 
-    write_xlsx(columns, metric_rows)
+    write_xlsx(columns, metric_rows, floor, cap, period)
     print("Done.")
 
 

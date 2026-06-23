@@ -1,9 +1,11 @@
 """
-Extension runner: measures partial realised gains for the ~20 recent days where
-future_gain20d is not yet available.
+Extension runner: measures partial realised gains for the recent days where the
+strategy's forward horizon (future_gain{period}d) is not yet fully realized.
 
-For each strategy, iterates entry daynums from start_daynum+step to today (newest
-first), computes gain as (exit_price - entry_price) / entry_price * 100 from PotDat.
+The horizon is read from params["period"] (20 or 50), so the extension window is
+roughly the last `period` trading days. For each strategy, iterates entry daynums
+from the gain cutoff+step to today (newest first), computing gain as
+(exit_price - entry_price) / entry_price * 100 from PotDat.
 
 Output: app/report/<strategy>/extension_YYYYMMDD.xlsx
 
@@ -18,11 +20,13 @@ Operational sheet layout (focusset_size = N):
   Row N+7+   : day-1 ref rows (^GSPC_rsi, ^STOXX_rsi, ^HSI_rsi, ^VIX)  (yellow)
   ...        : GICS / Sector2 / Zone occurrence counts
 
-Usage (from app/code/):
-  python run_extension.py
+Entry points (from app/code/):
+  python extension_of_best_strategy.py   # extend the chain_cagr winner only
+  <strategy>.build_extension()           # extend one strategy directly
 """
 
 from datetime import date
+from pathlib import Path
 from typing import Callable
 
 import pandas as pd
@@ -60,12 +64,12 @@ _CTR     = Alignment(horizontal="center")
 # Data helpers
 # ---------------------------------------------------------------------------
 
-def _find_gain20_cutoff(gain20_df: pd.DataFrame, min_valid: int = 10) -> int:
-    """Return the newest daynum where future_gain20d has sufficient realized data."""
-    for col in gain20_df.columns:
-        if gain20_df[col].dropna().size >= min_valid:
+def _find_gain_cutoff(gain_df: pd.DataFrame, period: int, min_valid: int = 10) -> int:
+    """Return the newest daynum where future_gain{period}d has sufficient realized data."""
+    for col in gain_df.columns:
+        if gain_df[col].dropna().size >= min_valid:
             return int(col)
-    raise ValueError("No valid daynum found in future_gain20d.csv")
+    raise ValueError(f"No valid daynum found in future_gain{period}d.csv")
 
 
 def _compute_partial_gains(potdat: pd.DataFrame, tickers: list[str],
@@ -208,7 +212,7 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     ws.freeze_panes = "B3"
 
 
-def _write_xlsx(strategy_name: str, params: dict, hop_results: list[dict]) -> None:
+def _write_xlsx(strategy_name: str, params: dict, hop_results: list[dict]) -> Path:
     folder = REPORT_ROOT / strategy_name
     folder.mkdir(parents=True, exist_ok=True)
     xlsx_path = folder / f"extension_{date.today().strftime('%Y%m%d')}.xlsx"
@@ -218,6 +222,7 @@ def _write_xlsx(strategy_name: str, params: dict, hop_results: list[dict]) -> No
     _fill_operational(ws_op, hop_results, params)
     wb.save(xlsx_path)
     print(f"** Extension written: {xlsx_path} **")
+    return xlsx_path
 
 
 # ---------------------------------------------------------------------------
@@ -229,21 +234,25 @@ def run_extension(
     params: dict,
     get_focusset_fn: Callable[[int], list[str]],
     get_ref_fn: Callable[[int], dict],
-) -> None:
+) -> Path | None:
     """
     Run the extension loop and write extension_YYYYMMDD.xlsx.
+
+    Returns the path of the written workbook, or None if the extension window was
+    empty (data fully up to date) or no hop produced a focusset.
 
     get_focusset_fn(daynum) → list[str]  — strategy selector with pre-bound DataFrames
     get_ref_fn(daynum)      → dict       — market context (same as get_reference_values)
     """
-    gain20_df    = load_longi("future_gain20d.csv")
+    period: int  = int(params.get("period", 20))
+    gain_df      = load_longi(f"future_gain{period}d.csv")
     potdat       = load_potdat()
-    start_daynum = _find_gain20_cutoff(gain20_df)   # last valid backtest daynum
+    start_daynum = _find_gain_cutoff(gain_df, period)  # last fully-realized backtest daynum
     exit_daynum  = int(potdat.columns[0])            # most recent price available
     step: int    = params.get("step", 1)
     pot_cols     = set(potdat.columns)
 
-    print(f"--- {strategy_name} extension ---")
+    print(f"--- {strategy_name} extension ({period}d horizon) ---")
     print(f"Backtest cutoff: {start_daynum} ({daynum_to_date(start_daynum)})")
     print(f"Exit daynum    : {exit_daynum}  ({daynum_to_date(exit_daynum)})")
     print(f"Step           : {step}")
@@ -260,7 +269,7 @@ def run_extension(
 
     if not ext_daynums:
         print("Extension period is empty — data fully up to date.\n")
-        return
+        return None
     print(f"Entries        : {len(ext_daynums)}"
           f" (daynums {ext_daynums[-1]}→{ext_daynums[0]})\n")
 
@@ -286,7 +295,8 @@ def run_extension(
     print()
     if not hop_results:
         print(f"No valid hops — strategy selected nothing in the extension period.\n")
-        return
+        return None
 
-    _write_xlsx(strategy_name, params, hop_results)
+    xlsx_path = _write_xlsx(strategy_name, params, hop_results)
     print(f"Done: {len(hop_results)} extension hops.\n")
+    return xlsx_path

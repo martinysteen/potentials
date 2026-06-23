@@ -255,16 +255,16 @@ def main() -> None:
           f"daynum {hop_results[0]['daynum']} → {hop_results[-1]['daynum']}")
 
 
-def build_extension() -> None:
+def build_extension():
     from shared.extension import run_extension
     p20d_win_df = load_longi("longi_P20d_win.csv")
     p50d_win_df = load_longi("longi_P50d_win.csv")
     rank_df     = load_longi("longi_rank.csv")
     q_df        = build_q10_20()
     n: int      = PARAMS["focusset_size"]
-    run_extension(STRATEGY_NAME, PARAMS,
-                  lambda d: select_focusset(d, p20d_win_df, p50d_win_df, q_df, rank_df, n),
-                  get_reference_values)
+    return run_extension(STRATEGY_NAME, PARAMS,
+                         lambda d: select_focusset(d, p20d_win_df, p50d_win_df, q_df, rank_df, n),
+                         get_reference_values)
 
 
 if __name__ == "__main__":

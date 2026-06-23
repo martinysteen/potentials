@@ -241,6 +241,10 @@ def main() -> None:
     print("\nRebuilding best_strategy.xlsx ...")
     best_strategy.main()
 
+    print("\nExtending the best strategy ...")
+    import extension_of_best_strategy          # local import avoids an import cycle
+    extension_of_best_strategy.run()
+
     print("\nSweep complete.")
 
 

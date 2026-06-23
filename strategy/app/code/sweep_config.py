@@ -51,7 +51,7 @@ LINKED: dict[str, list[str]] = {
 # Applied to every strategy below (where the key exists in that strategy's PARAMS).
 DEFAULTS: dict = {
     "focusset_size":  [3, 5],
-    "step":           1,            # fixed at 1: finest phase-averaging for the chain;
+    "step":           5,            # fixed at 1: finest phase-averaging for the chain;
                                           # step is otherwise second-order for the chain metric.
     "period":         20,           # forward horizon in trading days (20 or 50). Single
                                           # value -> one column per strategy in best_strategy.
@@ -64,8 +64,8 @@ DEFAULTS: dict = {
 # Keys must match each strategy's STRATEGY_NAME (see `python run_sweep.py --list`).
 STRATEGIES: dict[str, dict] = {
     # --- have both win-thresholds + the golden-cross quotient ---
-    "P20P50cross1020": {"q10_20_min": [1.03, 1.05]},  # combination of p_win_min=0.9 og qu10_20_min=1.1 makes very few survivors
-    "P20P50cross2050": {"q20_50_min": [1.03, 1.05]},
+    "P20P50cross1020": {"q10_20_min": 1.05},  # combination of p_win_min=0.9 og qu10_20_min=1.1 makes very few survivors
+    "P20P50cross2050": {"q20_50_min": 1.03},
 
     # --- have a single win-threshold (p_win_min sets whichever exists) ---
     "P20dWin": {},

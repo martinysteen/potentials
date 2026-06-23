@@ -10,6 +10,12 @@ swings wildly with the exact start day (which hop it lands on). `phase_average=T
 removes that fragility: it runs the chain from every possible start offset inside the
 first holding window and averages — i.e. the expected realizable return regardless of
 which day you happen to begin trading.
+
+`laddered_portfolio` is a second, economically distinct estimator over the *same* hops:
+instead of one serial position, it models an always-invested book of n = hold/step
+staggered tranches and reports the realized CAGR of the blended portfolio. It is a
+diagnostic alternative (a trend-following, continuously-deployed investment style), not
+the selection metric — best_strategy.py still ranks on the phase-averaged chain.
 """
 
 from __future__ import annotations
@@ -106,3 +112,72 @@ def realizable_chain(rows: Iterable[Tuple[int, float, float]], hold: int,
     avg_cagr = sum(valid_cagr) / len(valid_cagr) if valid_cagr else float("nan")
     avg_n = round(sum(ns) / len(ns))
     return avg_total, avg_cagr, avg_n
+
+
+def laddered_portfolio(rows: Iterable[Tuple[int, float, float]], hold: int, step: int,
+                       no_go_threshold: float | None = None,
+                       floor_daynum: int | None = None,
+                       cap_daynum: int | None = None
+                       ) -> Tuple[float, float, int, float]:
+    """
+    Continuously-invested laddered portfolio over the same hops — an alternative to
+    realizable_chain, not a replacement.
+
+    Models an always-in book of n = hold // step equal-weight tranches entered `step`
+    daynums apart, each held `hold`. Two deliberate differences from realizable_chain:
+      * No phasing loop — the n staggered sleeves ARE the phases, run concurrently, so
+        the result is the value-blend of those sleeves (vs the rate-mean phase_average
+        returns). By construction this sits at/above the phase-averaged chain CAGR; the
+        gap is the start-day dispersion the chain averages away.
+      * A no-go (gspc_rsi_prev < threshold) or missing-gain slot is held in CASH (0% for
+        that cycle) and the tranche stays on schedule — it does NOT delay re-entry the
+        way the serial chain does. This is the always-invested, trend-following posture.
+
+    rows            : (daynum, gain_pct, gspc_rsi_prev)
+    hold            : holding horizon (the `period` param); must be a multiple of step
+    step            : entry spacing between tranches
+    no_go_threshold : a hop whose gspc_rsi_prev is present and < threshold -> cash (0%)
+    floor/cap       : restrict to the common comparison span (as in realizable_chain)
+
+    Returns (total_return_pct, cagr_pct, n_sleeves, invested_frac). NaN when the span is
+    empty or `hold` is not a positive multiple of `step`.
+    """
+    if step <= 0 or hold <= 0 or hold % step != 0:
+        return float("nan"), float("nan"), 0, float("nan")
+    n = hold // step
+
+    # Collect hops in span; a gated / missing slot becomes cash (0%) but keeps its slot
+    # so the tranches stay rigidly staggered.
+    hops: List[Tuple[int, float]] = []
+    for daynum, gain, gspc in rows:
+        dn = int(daynum)
+        if floor_daynum is not None and dn < floor_daynum:
+            continue
+        if cap_daynum is not None and dn > cap_daynum:
+            continue
+        cash = (no_go_threshold is not None and gspc is not None
+                and not pd.isna(gspc) and gspc < no_go_threshold)
+        if gain is None or pd.isna(gain):
+            cash = True
+        hops.append((dn, 0.0 if cash else float(gain)))
+    if not hops:
+        return float("nan"), float("nan"), n, float("nan")
+    hops.sort(key=lambda t: t[0])
+
+    first_dn, last_dn = hops[0][0], hops[-1][0]
+    invested = sum(1 for _dn, g in hops if g != 0.0)
+
+    # Assign each hop to a sleeve by its step-slot modulo n; compound within the sleeve.
+    sleeve_growth: dict[int, float] = {}
+    for dn, g in hops:
+        phase = round((dn - first_dn) / step) % n
+        sleeve_growth[phase] = sleeve_growth.get(phase, 1.0) * (1.0 + g / 100.0)
+
+    # Equal-weight value blend; an absent sleeve contributes 1.0 (idle cash all span).
+    blended = sum(sleeve_growth.get(p, 1.0) for p in range(n)) / n
+    total_ret = (blended - 1.0) * 100.0
+    span_daynums = (last_dn + hold) - first_dn
+    years = span_daynums / _TRADING_DAYS_YEAR
+    cagr = ((blended ** (1.0 / years) - 1.0) * 100.0
+            if years > 0 and blended > 0 else float("nan"))
+    return total_ret, cagr, n, invested / len(hops)

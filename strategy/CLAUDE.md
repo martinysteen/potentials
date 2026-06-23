@@ -22,12 +22,13 @@ strategy/
     │   ├── sweep_config.py               # the single place you edit to decide WHAT runs
     │   ├── aggregate_summary.py          # stacks Summary sheets from all run*.xlsx of a strategy
     │   ├── best_strategy.py              # cross-strategy comparison (transposed, one column per strategy)
+    │   ├── extension_of_best_strategy.py # pick the winner, extend it in its folder, move xlsx to report/
     │   ├── shared/
     │   │   ├── config.py                 # path constants
     │   │   ├── data_loader.py            # cached CSV loaders
     │   │   ├── chain.py                  # realizable_chain — the one place the chain math lives
     │   │   ├── report.py                 # per-run Excel writer (save_report) + master summary.csv
-    │   │   └── extension.py              # DORMANT/STALE (still 20d-hardcoded; pending rework)
+    │   │   └── extension.py              # partial-gain extension runner (period-driven)
     │   ├── strategies/
     │   │   ├── strategy_ranknow.py       # baseline: lowest longi_rank
     │   │   ├── strategy_P20dWin.py       # longi_P20d_win >= threshold, then lowest rank
@@ -140,6 +141,21 @@ realizable_chain(rows, hold, no_go_threshold=None,
   hops. Both report generation and best_strategy use `phase_average=True`.
 - `floor`/`cap` clamp the daynum range (used by best_strategy for a common comparison span).
 
+```python
+laddered_portfolio(rows, hold, step, no_go_threshold=None,
+                   floor_daynum=None, cap_daynum=None)
+```
+- A second, economically distinct estimator over the **same** hops — a continuously-invested
+  ladder of `n = hold // step` equal-weight tranches entered `step` daynums apart. Reports the
+  realized CAGR of the **blended portfolio** (value-blend of the staggered sleeves), an
+  always-invested / trend-following style.
+- Differs from `realizable_chain` in no-go handling: a gated or missing slot is held in **cash
+  (0%) on schedule** (no delayed re-entry), so tranches stay rigidly staggered.
+- By construction sits at/above the phase-averaged chain CAGR (the gap = start-day dispersion the
+  chain averages away). **Diagnostic only** — best_strategy shows `ladder_cagr`/`ladder_ret`/
+  `ladder_n`/`ladder_inv%` as extra rows beside the chain rows, but ranking still keys on
+  `chain_cagr`.
+
 ### `shared/report.py`
 `save_report(strategy_name, params, hop_results, run_num=None)` writes
 `run<N>_<date>.xlsx` with **three sheets** and appends one row to `app/report/summary.csv`:
@@ -153,10 +169,21 @@ Reads the Summary sheet from every `run*.xlsx` in a strategy folder → `aggrega
 (one row per run). Generic: any new Summary key becomes a column automatically. Still drops
 legacy `acc_gain*`/`top*` columns from old files.
 
-### `shared/extension.py` — DORMANT / STALE
-Still hard-codes 20d and the old `gains_20d/gains_50d` hop shape. Not called by the sweep (its
-runners are parked in `_not_used/`; only the cross strategies retain a `build_extension()`).
-**Needs reworking to the `period` model before use** — pending.
+### `shared/extension.py` — partial-gain extension runner
+Covers the recent days where the strategy's forward horizon isn't fully realized yet. The horizon
+is read from `params["period"]` (loads `future_gain{period}d.csv`, so the window is ~`period`
+trading days). For each entry daynum it computes partial gain `(exit_price-entry_price)/entry_price`
+from PotDat up to the latest available price. `run_extension(...)` writes
+`report/<strategy>/extension_<YYYYMMDD>.xlsx` and **returns its path** (or `None` if the window is
+empty / no hops). Every active strategy exposes a `build_extension()` that binds its selector and
+calls `run_extension`.
+
+### `extension_of_best_strategy.py` — extend the winner
+Standalone daily tool (no sweep needed; the sweep is for development). Reuses
+`best_strategy.select_best_runs()` to find the highest-`chain_cagr` strategy, runs that strategy's
+`build_extension()` on its winning-run params **in its own folder**, then moves the result up to
+`report/` beside `best_strategy.xlsx` as `extension_<name>_<YYYYMMDD>.xlsx`. `run_sweep.py` also
+calls `run()` after rebuilding `best_strategy.xlsx`.
 
 ---
 
@@ -355,4 +382,4 @@ in sync when adding a strategy parameter.
 
 - VS Code Remote-SSH from Windows; Danish keyboard. Claude Code: Ctrl+Alt+C, terminal Ctrl+Æ.
 - The chain math (`shared/chain.py`) is shared by generation and comparison so they can't drift.
-- TODO (next): rework `shared/extension.py` to the `period` model (it's still 20d-hardcoded).
+- The chain ranking lives once in `best_strategy.select_best_runs()`; `extension_of_best_strategy.py` reuses it so the extended strategy is always the one the comparison crowned.
