@@ -151,8 +151,16 @@ laddered_portfolio(rows, hold, step, no_go_threshold=None,
   always-invested / trend-following style.
 - Differs from `realizable_chain` in no-go handling: a gated or missing slot is held in **cash
   (0%) on schedule** (no delayed re-entry), so tranches stay rigidly staggered.
-- By construction sits at/above the phase-averaged chain CAGR (the gap = start-day dispersion the
-  chain averages away). **Diagnostic only** — best_strategy shows `ladder_cagr`/`ladder_ret`/
+- **Active-window anchored:** the span (years) and `inv%` are measured from the **first to the
+  last *invested* hop**, trimming leading/trailing cash (e.g. the pre-signal warm-up daynums a
+  win-prob strategy cannot trade). Without this, a late-starting strategy got padded with phantom
+  cash years off the common-span floor, sinking `ladder_cagr` and `inv%` far below reality.
+- **Neither estimator dominates** the other. When `inv%`=100 and hops are uniformly `step`-spaced
+  the sleeves *are* the chain phases, so `ladder_ret == chain_ret` exactly; but `ladder_cagr`
+  usually sits *below* `chain_cagr` (the chain annualizes each phase over its own ragged,
+  ~`hold`-shorter span, lifting the rate-mean), and with interior skips `ladder_ret < chain_ret`
+  too (the ladder eats 0% cash cycles the chain skips). Ladder ≥ chain only for dense, skip-free
+  strategies (e.g. Ranknow). **Diagnostic only** — best_strategy shows `ladder_cagr`/`ladder_ret`/
   `ladder_n`/`ladder_inv%` as extra rows beside the chain rows, but ranking still keys on
   `chain_cagr`.
 

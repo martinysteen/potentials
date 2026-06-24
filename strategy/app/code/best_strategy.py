@@ -31,6 +31,49 @@ from shared.data_loader import daynum_to_date
 # ties. Per-strategy columns are defined by _SUBCOLS near main().
 OUTPUT_XLSX = REPORT_ROOT / "best_strategy.xlsx"
 
+# ===========================================================================
+# Human-facing text — EDIT FREELY. Everything a reader sees as prose in the
+# workbook is gathered here: the two title rows, the right-table header, and
+# every row's plain-language Comment. Nothing here affects any calculation —
+# only the words on the page.
+#
+# _TITLE1/_TITLE2 are .format()-ed in write_xlsx with the common-span bounds, so
+# keep the {placeholders} intact. Comments are split by table: _COMMENTS_CHAIN
+# for the LEFT (chained) column B, _COMMENTS_LADDER for the RIGHT (ladder)
+# column I. A metric with no entry shows a blank comment, so add/remove keys
+# freely — the key must match the row's name (the metric/param identifier in
+# column A / H). Shared rows (period, focusset_size, …) live only in
+# _COMMENTS_CHAIN and are reused for column I, so edit them once.
+# ===========================================================================
+_TITLE1 = ("Comparison of strategies all recalculated for performance in period "
+           "daynum {floor} to {cap} ({floor_date} to {cap_date})")
+_TITLE2 = ("Using {period} days as investment horizon, this allows a chain of "
+           "{n_runs} not-overlapping investment runs.")
+_TITLE1_FALLBACK = "Comparison of strategies"    # shown when the common span is unknown
+_TITLE2_FALLBACK = ""
+
+_LADDER_TITLE = "Ladder investment"              # header of the right-hand table
+
+_COMMENTS_CHAIN = {     # left table (column B) — plus the shared rows reused on the right
+    "period":        "Trading days (per investment)",
+    "chain_cagr":    "Annualized return (stacked gain%)",
+    "chain_ret":     "Return of full chain (stacked gain%)",
+    "chain_n":       "Number of lots in full chain",
+    "avg_gain":      "Average gain% per chain lot",
+    "Worst":         "Worst chain lot (gain%)",
+    "N_loss":        "Negative lots in chain (of chain_n)",
+    "focusset_size": "Number of stocks in each investment lot",
+}
+_COMMENTS_LADDER = {    # right table (column I) — the ladder_* rows only
+    "ladder_cagr":   "Annualized return, laddered always-invested style (diagnostic)",
+    "ladder_ret":    "Total return of laddered portfolio (stacked gain%)",
+    "ladder_n":      "Total laddered investments (period/step sleeves, continuous)",
+    "ladder_inv%":   "Share of tranches invested vs cash (%)",
+    "ladder_avg_gain": "Average gain% per laddered investment",
+    "ladder_worst":  "Worst laddered investment (gain%)",
+    "ladder_n_loss": "Negative investments in ladder (of ladder_n)",
+}
+
 # The report is two side-by-side tables sharing the same strategy columns: a left
 # "chained" table and a right "Ladder investment" table. _CHAINED_KEYS is the row
 # order of the LEFT table (these first, then any remaining param cols appended). The
@@ -71,28 +114,6 @@ _CHAIN_TO_LADDER = {
     "N_hops_active": "ladder_inv%",
     "source_file":   None,
 }
-_LADDER_TITLE = "Ladder investment"
-
-# Plain-language gloss for the metric rows that need one (column B / I). Rows are kept
-# under their technical identity name in column A / H; this is the human explanation.
-_COMMENTS = {
-    "period":        "Trading days (per investment)",
-    "chain_cagr":    "Annualized return (stacked gain%)",
-    "chain_ret":     "Return of full chain (stacked gain%)",
-    "chain_n":       "Number of lots in full chain",
-    "ladder_cagr":   "Annualized return, laddered always-invested style (diagnostic)",
-    "ladder_ret":    "Total return of laddered portfolio (stacked gain%)",
-    "ladder_n":      "Total laddered investments (period/step sleeves, continuous)",
-    "ladder_inv%":   "Share of tranches invested vs cash (%)",
-    "avg_gain":      "Average gain% per chain lot",
-    "Worst":         "Worst chain lot (gain%)",
-    "N_loss":        "Negative lots in chain (of chain_n)",
-    "ladder_avg_gain": "Average gain% per laddered investment",
-    "ladder_worst":  "Worst laddered investment (gain%)",
-    "ladder_n_loss": "Negative investments in ladder (of ladder_n)",
-    "focusset_size": "Number of stocks in each investment lot",
-}
-
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
@@ -315,15 +336,13 @@ def write_xlsx(columns: list[dict], chained_rows: list[str],
     ns = len(columns)
 
     # ---- title rows (1-2): plain-language summary for unprepared readers ----
+    # (text templates live in the human-facing block at the top of the module)
     if floor is not None and cap is not None and period:
-        n_runs = (cap - floor) // period
-        title1 = ("Comparison of strategies all recalculated for performance in period "
-                  f"daynum {floor} to {cap} ({_fmt_date(floor)} to {_fmt_date(cap)})")
-        title2 = (f"Using {period} days as investment horizon, this allows a chain of "
-                  f"{n_runs} not-overlapping investment runs.")
+        title1 = _TITLE1.format(floor=floor, cap=cap,
+                                floor_date=_fmt_date(floor), cap_date=_fmt_date(cap))
+        title2 = _TITLE2.format(period=period, n_runs=(cap - floor) // period)
     else:
-        title1 = "Comparison of strategies"
-        title2 = ""
+        title1, title2 = _TITLE1_FALLBACK, _TITLE2_FALLBACK
     ws.cell(1, 1, title1).font = _BOLD
     ws.cell(2, 1, title2).font = _BOLD
 
@@ -349,11 +368,13 @@ def write_xlsx(columns: list[dict], chained_rows: list[str],
 
         lbl = ws.cell(i, A_LBL, metric); lbl.font = _BOLD
         lbl.fill = _PARAM_FILL if metric in _PARAM_COLS else _HDR_FILL
-        ws.cell(i, A_CMT, _COMMENTS.get(metric))
+        ws.cell(i, A_CMT, _COMMENTS_CHAIN.get(metric))
         if lad_metric is not None:              # None => dropped from the laddered table
             rlbl = ws.cell(i, lad_lbl, lad_metric); rlbl.font = _BOLD
             rlbl.fill = _PARAM_FILL if lad_metric in _PARAM_COLS else _HDR_FILL
-            ws.cell(i, lad_cmt, _COMMENTS.get(lad_metric))
+            # ladder_* rows from _COMMENTS_LADDER; shared rows fall back to the chain text
+            ws.cell(i, lad_cmt,
+                    _COMMENTS_LADDER.get(lad_metric, _COMMENTS_CHAIN.get(lad_metric)))
 
         for j, col in enumerate(columns):
             row = col["row"]

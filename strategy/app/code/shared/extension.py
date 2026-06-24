@@ -1,23 +1,27 @@
 """
-Extension runner: measures partial realised gains for the recent days where the
-strategy's forward horizon (future_gain{period}d) is not yet fully realized.
+Extension runner: shows the "known future" — for every trading day where the
+strategy's forward horizon (future_gain{period}d) is not yet fully realized, it
+lists that day's focusset and its partial realised gain so far.
 
-The horizon is read from params["period"] (20 or 50), so the extension window is
-roughly the last `period` trading days. For each strategy, iterates entry daynums
-from the gain cutoff+step to today (newest first), computing gain as
-(exit_price - entry_price) / entry_price * 100 from PotDat.
+The horizon is read from params["period"] (20 or 50), so the window is roughly the
+last `period` trading days. It iterates EVERY day (step=1) from the gain cutoff to
+today (newest first), computing gain as (exit_price - entry_price)/entry_price*100
+from PotDat. The strategy's own step is NOT used to pick days — it only MARKS the
+strategy's investment days (lighter blue in the daynum/date header rows), anchored
+to today's daynum.
 
 Output: app/report/<strategy>/extension_YYYYMMDD.xlsx
 
 Operational sheet layout (focusset_size = N):
-  Row 1      : A1="Size/Step/No_RSI/P20/P50"  | daynum headers     (blue)
-  Row 2      : A2=param values string          | date headers       (blue)
-  Rows 3…N+2 : ticker rows
-  Row N+3    : per-column "avg_gainXd" labels                       (light green)
-  Row N+4    : avg_partial_gain values                              (orange/light-yellow/grey)
-  Row N+5    : (reserved — 50d labels)
-  Row N+6    : (reserved — 50d results)
-  Row N+7+   : day-1 ref rows (^GSPC_rsi, ^STOXX_rsi, ^HSI_rsi, ^VIX)  (yellow)
+  Row 1      : A1=strategy name      | daynum headers  (blue; step days lighter blue)
+  Row 2      : A2="Size/Step/No_RSI/P20/P50" | date headers (blue; step days lighter blue)
+  Row 3      : A3=param values string  | (blank)                          (blue)
+  Rows 4…N+3 : ticker rows
+  Row N+4    : per-column "avg_gainXd" labels                       (light green)
+  Row N+5    : avg_partial_gain values                              (orange/light-yellow/grey)
+  Row N+6    : (reserved — 50d labels)
+  Row N+7    : (reserved — 50d results)
+  Row N+8+   : day-1 ref rows (^GSPC_rsi, ^STOXX_rsi, ^HSI_rsi, ^VIX)  (yellow)
   ...        : GICS / Sector2 / Zone occurrence counts
 
 Entry points (from app/code/):
@@ -43,7 +47,9 @@ from shared.data_loader import load_longi, load_potdat, load_stamdata, daynum_to
 # ---------------------------------------------------------------------------
 _BOLD         = Font(bold=True)
 _SMALL        = Font(size=9)
+_PLAIN        = Font()                                   # plain — default size, not bold
 _HDR_FILL     = PatternFill("solid", fgColor="BDD7EE")   # blue — headers
+_STEP_FILL    = PatternFill("solid", fgColor="DDEBF7")   # lighter blue — strategy-step days
 _GRY_FILL     = PatternFill("solid", fgColor="EEEEEE")   # grey — suppressed / n/a
 _REF_FILL     = PatternFill("solid", fgColor="FFF2CC")   # yellow — day-1 ref rows
 _LBL_FILL     = PatternFill("solid", fgColor="E2EFDA")   # light green — label row
@@ -122,43 +128,50 @@ def _count_attr(hop_results: list[dict], stamdata: pd.DataFrame,
 # Excel writer
 # ---------------------------------------------------------------------------
 
-def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
+def _fill_operational(ws, hop_results: list[dict], params: dict,
+                      strategy_name: str, mark_step: int = 1) -> None:
     daynums   = [h["daynum"] for h in hop_results]
     n         = params.get("focusset_size",
                             max(len(h.get("tickers", [])) for h in hop_results))
     threshold = params.get("No_go_GSPC_rsi")
+    # Step grid is anchored to the newest price daynum (today), not the newest shown
+    # entry, so the marking stays aligned even if the latest day had no pick.
+    anchor    = (hop_results[0]["daynum"] + hop_results[0]["days_realized"]
+                 if hop_results else 0)
 
-    # ---- A1: param label, A2: param values ----
+    # ---- column-A header stack: A1 strategy, A2 param label, A3 param values ----
     def _pv(key: str) -> str:
         v = params.get(key)
         return "-" if v is None else str(v)
 
-    c = ws.cell(1, 1, "Size/Step/No_RSI/P20/P50"); c.font, c.fill = _BOLD, _HDR_FILL
-    c = ws.cell(2, 1, "/".join([_pv("focusset_size"), _pv("step"),
+    c = ws.cell(1, 1, strategy_name);                c.font, c.fill = _BOLD, _HDR_FILL
+    c = ws.cell(2, 1, "Size/Step/No_RSI/P20/P50");   c.font, c.fill = _PLAIN, _HDR_FILL
+    c = ws.cell(3, 1, "/".join([_pv("focusset_size"), _pv("step"),
                                  _pv("No_go_GSPC_rsi"), _pv("p20d_win_min"),
-                                 _pv("p50d_win_min")]));  c.font, c.fill = _SMALL, _HDR_FILL
+                                 _pv("p50d_win_min")]));  c.font, c.fill = _PLAIN, _HDR_FILL
 
-    # ---- daynum / date header columns ----
+    # ---- daynum (row 1) / date (row 2) headers; strategy-step days in lighter blue ----
     for j, dn in enumerate(daynums, start=2):
-        c = ws.cell(1, j, dn);                 c.font, c.fill, c.alignment = _BOLD, _HDR_FILL, _CTR
-        c = ws.cell(2, j, daynum_to_date(dn)); c.font, c.fill, c.alignment = _SMALL, _HDR_FILL, _CTR
+        is_step = mark_step > 0 and (anchor - dn) % mark_step == 0
+        fill    = _STEP_FILL if is_step else _HDR_FILL
+        c = ws.cell(1, j, dn);                 c.font, c.fill, c.alignment = _BOLD, fill, _CTR
+        c = ws.cell(2, j, daynum_to_date(dn)); c.font, c.fill, c.alignment = _SMALL, fill, _CTR
 
-    # ---- ticker rows (3 … N+2) ----
+    # ---- ticker rows (4 … N+3) ----
     for i in range(n):
-        ws.cell(i + 3, 1, "")
         for j, h in enumerate(hop_results, start=2):
             tickers = h.get("tickers", [])
-            ws.cell(i + 3, j, tickers[i] if i < len(tickers) else "")
+            ws.cell(i + 4, j, tickers[i] if i < len(tickers) else "")
 
-    # ---- per-column "avg_gainXd" label row (N+3) ----
-    lbl_row = n + 3
+    # ---- per-column "avg_gainXd" label row (N+4) ----
+    lbl_row = n + 4
     c = ws.cell(lbl_row, 1, "realized"); c.font, c.fill = _BOLD, _LBL_FILL
     for j, h in enumerate(hop_results, start=2):
         cell = ws.cell(lbl_row, j, f"avg_gain{h['days_realized']}d")
         cell.fill, cell.alignment, cell.font = _LBL_FILL, _CTR, _SMALL
 
-    # ---- avg_partial_gain values row (N+4) — orange/light-yellow/grey ----
-    gain_row = n + 4
+    # ---- avg_partial_gain values row (N+5) — orange/light-yellow/grey ----
+    gain_row = n + 5
     c = ws.cell(gain_row, 1, "avg_partial_gain"); c.font = _BOLD
     for j, h in enumerate(hop_results, start=2):
         val    = _hop_avg(h["gains_partial"])
@@ -173,10 +186,10 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
             cell.value = None
             cell.fill  = _GRY_FILL
 
-    # ---- rows N+5 and N+6 intentionally blank (reserved for 50d labels / results) ----
+    # ---- rows N+6 and N+7 intentionally blank (reserved for 50d labels / results) ----
 
-    # ---- day-1 ref rows (starting at N+7) ----
-    gspc_row  = n + 7
+    # ---- day-1 ref rows (starting at N+8) ----
+    gspc_row  = n + 8
     prev_keys = list(hop_results[0].get("ref_values_prev", {}).keys()) if hop_results else []
     for idx, key in enumerate(prev_keys):
         row = gspc_row + idx
@@ -209,17 +222,18 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     ws.column_dimensions["A"].width = 22
     for j in range(2, len(daynums) + 2):
         ws.column_dimensions[get_column_letter(j)].width = 11
-    ws.freeze_panes = "B3"
+    ws.freeze_panes = "B4"
 
 
-def _write_xlsx(strategy_name: str, params: dict, hop_results: list[dict]) -> Path:
+def _write_xlsx(strategy_name: str, params: dict, hop_results: list[dict],
+                mark_step: int = 1) -> Path:
     folder = REPORT_ROOT / strategy_name
     folder.mkdir(parents=True, exist_ok=True)
     xlsx_path = folder / f"extension_{date.today().strftime('%Y%m%d')}.xlsx"
     wb    = Workbook()
     ws_op = wb.active
     ws_op.title = "Extension"
-    _fill_operational(ws_op, hop_results, params)
+    _fill_operational(ws_op, hop_results, params, strategy_name, mark_step)
     wb.save(xlsx_path)
     print(f"** Extension written: {xlsx_path} **")
     return xlsx_path
@@ -249,28 +263,29 @@ def run_extension(
     potdat       = load_potdat()
     start_daynum = _find_gain_cutoff(gain_df, period)  # last fully-realized backtest daynum
     exit_daynum  = int(potdat.columns[0])            # most recent price available
-    step: int    = params.get("step", 1)
+    mark_step: int = params.get("step", 1)           # strategy cadence — used only to mark days
     pot_cols     = set(potdat.columns)
 
     print(f"--- {strategy_name} extension ({period}d horizon) ---")
     print(f"Backtest cutoff: {start_daynum} ({daynum_to_date(start_daynum)})")
     print(f"Exit daynum    : {exit_daynum}  ({daynum_to_date(exit_daynum)})")
-    print(f"Step           : {step}")
+    print(f"Entries        : every day (step=1); marking every {mark_step} days")
 
-    # Entry daynums aligned with the strategy's step, newest-first.
-    # Only include daynums that exist in PotDat (guards against any daynum gaps).
+    # Every trading day in the not-yet-realized window (step=1), newest-first — the
+    # extension just shows the "known future" of the recent picks; the strategy's step
+    # only marks its investment days. Skip daynums absent from PotDat (guards gaps).
     ext_daynums: list[int] = []
-    d = start_daynum + step
+    d = start_daynum + 1
     while d <= exit_daynum:
         if str(d) in pot_cols:
             ext_daynums.append(d)
-        d += step
+        d += 1
     ext_daynums.reverse()
 
     if not ext_daynums:
         print("Extension period is empty — data fully up to date.\n")
         return None
-    print(f"Entries        : {len(ext_daynums)}"
+    print(f"Days           : {len(ext_daynums)}"
           f" (daynums {ext_daynums[-1]}→{ext_daynums[0]})\n")
 
     hop_results: list[dict] = []
@@ -297,6 +312,6 @@ def run_extension(
         print(f"No valid hops — strategy selected nothing in the extension period.\n")
         return None
 
-    xlsx_path = _write_xlsx(strategy_name, params, hop_results)
-    print(f"Done: {len(hop_results)} extension hops.\n")
+    xlsx_path = _write_xlsx(strategy_name, params, hop_results, mark_step=mark_step)
+    print(f"Done: {len(hop_results)} extension days.\n")
     return xlsx_path

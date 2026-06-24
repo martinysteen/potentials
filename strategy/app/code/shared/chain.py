@@ -141,11 +141,26 @@ def laddered_portfolio(rows: Iterable[Tuple[int, float, float]], hold: int, step
     daynums apart, each held `hold`. Two deliberate differences from realizable_chain:
       * No phasing loop — the n staggered sleeves ARE the phases, run concurrently, so
         the result is the value-blend of those sleeves (vs the rate-mean phase_average
-        returns). By construction this sits at/above the phase-averaged chain CAGR; the
-        gap is the start-day dispersion the chain averages away.
+        returns). Neither estimator dominates: when inv% is 100 and hops are uniformly
+        step-spaced the n sleeves ARE the n chain phases, so ladder_ret == chain_ret
+        exactly (mean(growth)-1 == mean of phase totals); but ladder_cagr usually lands
+        BELOW chain_cagr, because the chain annualizes each phase over its own (ragged,
+        ~hold-shorter) span — which lifts the rate-mean — while the ladder uses one
+        consistent full-active-window span. On skip days the ladder additionally holds
+        cash (0%) where the chain redeploys, so with interior skips ladder_ret < chain_ret
+        too. (Ladder >= chain holds only for dense, skip-free strategies like Ranknow.)
       * A no-go (gspc_rsi_prev < threshold) or missing-gain slot is held in CASH (0% for
         that cycle) and the tranche stays on schedule — it does NOT delay re-entry the
         way the serial chain does. This is the always-invested, trend-following posture.
+
+    The clock is anchored to the ACTIVE window — the first to the last *invested* hop.
+    Leading/trailing cash (e.g. the pre-signal warm-up daynums a win-prob strategy cannot
+    trade, or the most-recent unrealized hops) is trimmed before the span and the invested
+    fraction are computed, so both match what realizable_chain measures over its usable
+    hops. Without this the span would be padded by the common-span floor/cap and the CAGR
+    would annualize over phantom cash years (sinking it below the chain CAGR) and inv%
+    would count days the strategy structurally could not act on. Interior cash (genuine
+    skip days inside the active window) is kept as 0% so the sleeves stay rigidly staggered.
 
     rows            : (daynum, gain_pct, gspc_rsi_prev)
     hold            : holding horizon (the `period` param); must be a multiple of step
@@ -153,16 +168,17 @@ def laddered_portfolio(rows: Iterable[Tuple[int, float, float]], hold: int, step
     no_go_threshold : a hop whose gspc_rsi_prev is present and < threshold -> cash (0%)
     floor/cap       : restrict to the common comparison span (as in realizable_chain)
 
-    Returns (total_return_pct, cagr_pct, n_sleeves, invested_frac). NaN when the span is
-    empty or `hold` is not a positive multiple of `step`.
+    Returns (total_return_pct, cagr_pct, n_sleeves, invested_frac). NaN when the active
+    window is empty or `hold` is not a positive multiple of `step`.
     """
     if step <= 0 or hold <= 0 or hold % step != 0:
         return float("nan"), float("nan"), 0, float("nan")
     n = hold // step
 
     # Collect hops in span; a gated / missing slot becomes cash (0%) but keeps its slot
-    # so the tranches stay rigidly staggered.
-    hops: List[Tuple[int, float]] = []
+    # so the tranches stay rigidly staggered. The cash flag is carried so leading/trailing
+    # cash can be trimmed below (a real gain of exactly 0.0 must not read as cash).
+    hops: List[Tuple[int, float, bool]] = []
     for daynum, gain, gspc in rows:
         dn = int(daynum)
         if floor_daynum is not None and dn < floor_daynum:
@@ -173,13 +189,18 @@ def laddered_portfolio(rows: Iterable[Tuple[int, float, float]], hold: int, step
                 and not pd.isna(gspc) and gspc < no_go_threshold)
         if gain is None or pd.isna(gain):
             cash = True
-        hops.append((dn, 0.0 if cash else float(gain)))
+        hops.append((dn, 0.0 if cash else float(gain), cash))
     if not hops:
         return float("nan"), float("nan"), n, float("nan")
     hops.sort(key=lambda t: t[0])
 
-    first_dn, last_dn = hops[0][0], hops[-1][0]
-    invested = sum(1 for _dn, g in hops if g != 0.0)
+    # Trim to the active window [first invested, last invested]; interior cash is retained.
+    invested_dns = [dn for dn, _g, cash in hops if not cash]
+    if not invested_dns:
+        return float("nan"), float("nan"), n, float("nan")
+    first_dn, last_dn = invested_dns[0], invested_dns[-1]
+    hops = [(dn, g) for dn, g, _cash in hops if first_dn <= dn <= last_dn]
+    invested = len(invested_dns)
 
     # Assign each hop to a sleeve by its step-slot modulo n; compound within the sleeve.
     sleeve_growth: dict[int, float] = {}

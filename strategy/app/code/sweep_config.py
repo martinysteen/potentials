@@ -49,6 +49,7 @@ LINKED: dict[str, list[str]] = {
 }
 
 # Applied to every strategy below (where the key exists in that strategy's PARAMS).
+# Multiple values offered by list format like "step": [1, 5]
 DEFAULTS: dict = {
     "focusset_size":  5,
     "step":           5,            # fixed at 1: finest phase-averaging for the chain;
