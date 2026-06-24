@@ -52,6 +52,33 @@ def _greedy_from(usable: List[Tuple[int, float]], start_idx: int,
     return chain
 
 
+def _filter_usable(rows: Iterable[Tuple[int, float, float]],
+                   no_go_threshold: float | None,
+                   floor_daynum: int | None,
+                   cap_daynum: int | None) -> List[Tuple[int, float]]:
+    """(daynum, gain) for hops in [floor, cap] with a real gain that pass the no-go gate.
+
+    The single hop-selection rule shared by realizable_chain and the *_lot_stats
+    dispersion helpers, so a chain and its own per-lot statistics can never disagree
+    about which hops are investable.
+    """
+    usable: List[Tuple[int, float]] = []
+    for daynum, gain, gspc in rows:
+        dn = int(daynum)
+        if floor_daynum is not None and dn < floor_daynum:
+            continue
+        if cap_daynum is not None and dn > cap_daynum:
+            continue
+        if (no_go_threshold is not None and gspc is not None
+                and not pd.isna(gspc) and gspc < no_go_threshold):
+            continue
+        if gain is None or pd.isna(gain):
+            continue
+        usable.append((dn, float(gain)))
+    usable.sort(key=lambda t: t[0])
+    return usable
+
+
 def realizable_chain(rows: Iterable[Tuple[int, float, float]], hold: int,
                      no_go_threshold: float | None = None,
                      floor_daynum: int | None = None,
@@ -70,20 +97,7 @@ def realizable_chain(rows: Iterable[Tuple[int, float, float]], hold: int,
     Returns (total_return_pct, cagr_pct, n_trades) — averaged across phases when
     phase_average is set. NaN/0 when no hop qualifies.
     """
-    usable: List[Tuple[int, float]] = []
-    for daynum, gain, gspc in rows:
-        dn = int(daynum)
-        if floor_daynum is not None and dn < floor_daynum:
-            continue
-        if cap_daynum is not None and dn > cap_daynum:
-            continue
-        if (no_go_threshold is not None and gspc is not None
-                and not pd.isna(gspc) and gspc < no_go_threshold):
-            continue
-        if gain is None or pd.isna(gain):
-            continue
-        usable.append((dn, float(gain)))
-    usable.sort(key=lambda t: t[0])
+    usable = _filter_usable(rows, no_go_threshold, floor_daynum, cap_daynum)
     if not usable:
         return float("nan"), float("nan"), 0
 
@@ -181,3 +195,71 @@ def laddered_portfolio(rows: Iterable[Tuple[int, float, float]], hold: int, step
     cagr = ((blended ** (1.0 / years) - 1.0) * 100.0
             if years > 0 and blended > 0 else float("nan"))
     return total_ret, cagr, n, invested / len(hops)
+
+
+# ---------------------------------------------------------------------------
+# Per-investment dispersion (avg gain / worst / loss count) over the SAME hops the
+# return estimators use. Kept here so the dispersion of a chain and of a ladder are
+# each measured over exactly that estimator's investment set — never copied between
+# the two (the chain holds ~hold/step times fewer positions than the ladder).
+# ---------------------------------------------------------------------------
+
+def chain_lot_stats(rows: Iterable[Tuple[int, float, float]], hold: int,
+                    no_go_threshold: float | None = None,
+                    floor_daynum: int | None = None,
+                    cap_daynum: int | None = None,
+                    phase_average: bool = True) -> Tuple[float, float, int]:
+    """Per-lot dispersion of the realizable chain over its non-overlapping lots.
+
+    Phase-averaged like realizable_chain: each start offset yields one chain; we report
+    the mean of per-chain (mean gain), the mean of per-chain (worst lot), and the
+    rounded mean of per-chain (loss count) — i.e. typical behaviour of one realized
+    chain of ~chain_n lots, NOT of the full hop population.
+
+    Returns (avg_gain_pct, worst_pct, n_loss). NaN/0 when no hop qualifies.
+    """
+    usable = _filter_usable(rows, no_go_threshold, floor_daynum, cap_daynum)
+    if not usable:
+        return float("nan"), float("nan"), 0
+    if phase_average:
+        first_dn = usable[0][0]
+        starts = [i for i, (dn, _g) in enumerate(usable) if dn < first_dn + hold]
+    else:
+        starts = [0]
+
+    means: List[float] = []
+    worsts: List[float] = []
+    nlosses: List[int] = []
+    for si in starts:
+        gains = [g for _dn, g in _greedy_from(usable, si, hold)]
+        if not gains:
+            continue
+        means.append(sum(gains) / len(gains))
+        worsts.append(min(gains))
+        nlosses.append(sum(1 for g in gains if g < 0))
+    if not means:
+        return float("nan"), float("nan"), 0
+    return (sum(means) / len(means),
+            sum(worsts) / len(worsts),
+            round(sum(nlosses) / len(nlosses)))
+
+
+def laddered_lot_stats(rows: Iterable[Tuple[int, float, float]],
+                       no_go_threshold: float | None = None,
+                       floor_daynum: int | None = None,
+                       cap_daynum: int | None = None
+                       ) -> Tuple[float, float, int, int]:
+    """Per-investment dispersion of the ladder over every invested hop in the span.
+
+    The ladder buys at every hop, so this is the whole investable population (cash /
+    no-go slots are not investments and are excluded). Returns (avg_gain_pct,
+    worst_pct, n_loss, n_invested) — n_invested is the ladder's total investment count.
+    """
+    gains = [g for _dn, g in _filter_usable(
+        rows, no_go_threshold, floor_daynum, cap_daynum)]
+    if not gains:
+        return float("nan"), float("nan"), 0, 0
+    return (sum(gains) / len(gains),
+            min(gains),
+            sum(1 for g in gains if g < 0),
+            len(gains))

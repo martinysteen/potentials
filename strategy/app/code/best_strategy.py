@@ -22,7 +22,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
-from shared.chain import realizable_chain, laddered_portfolio
+from shared.chain import (realizable_chain, laddered_portfolio,
+                          chain_lot_stats, laddered_lot_stats)
 from shared.config import REPORT_ROOT
 from shared.data_loader import daynum_to_date
 
@@ -30,35 +31,65 @@ from shared.data_loader import daynum_to_date
 # ties. Per-strategy columns are defined by _SUBCOLS near main().
 OUTPUT_XLSX = REPORT_ROOT / "best_strategy.xlsx"
 
-# Metric row order in the transposed table (these first, then any remaining cols).
-# StrategyName is intentionally absent: the strategy name is the column header
-# (corner label "StrategyName"), so a separate StrategyName row would just repeat it.
-_KEY_COLS = [
+# The report is two side-by-side tables sharing the same strategy columns: a left
+# "chained" table and a right "Ladder investment" table. _CHAINED_KEYS is the row
+# order of the LEFT table (these first, then any remaining param cols appended). The
+# right table mirrors it row-for-row, swapping chained metrics for their laddered
+# twins via _CHAIN_TO_LADDER.
+#
+# StrategyName is absent: the strategy name is the column header, so a row would just
+# repeat it. Floor/cap are absent: they are already stated in the title rows.
+_CHAINED_KEYS = [
     "Run#", "period",
-    "chain_cagr", "chain_ret", "chain_n", "chain_floor", "chain_cap",
-    "ladder_cagr", "ladder_ret", "ladder_n", "ladder_inv%",
+    "chain_cagr", "chain_ret", "chain_n",
     "avg_gain", "Worst", "N_loss",
     "N_hops", "N_hops_active",
     "focusset_size", "step", "No_go_GSPC_rsi",
     "source_file",
 ]
-_GAIN_COLS = {"avg_gain", "Worst"}
+_GAIN_COLS = {"avg_gain", "Worst", "ladder_avg_gain", "ladder_worst"}
 
-# Metric keys never shown as their own row (folded into the header corner instead).
-_DROP_ROWS = {"StrategyName"}
+# Never a row of their own: StrategyName (it's the header); floor/cap (they're in the
+# title); the ladder_* metrics (rendered in the right table by mapping their chained
+# twin, not as standalone rows).
+_DROP_ROWS = {"StrategyName", "chain_floor", "chain_cap",
+              "ladder_cagr", "ladder_ret", "ladder_n", "ladder_inv%",
+              "ladder_avg_gain", "ladder_worst", "ladder_n_loss"}
 
-# Plain-language gloss for the metric rows that need one (column B). Rows are kept
-# under their technical identity name in column A; this is the human explanation.
+# Chained metric -> its counterpart in the right-hand laddered table. A key not listed
+# is shared verbatim (identical value, shown in both tables for every strategy). None
+# drops the row from the laddered side (only source_file does). avg_gain/Worst/N_loss
+# are per-investment dispersion and so are NOT shared — each side gets its own set,
+# computed over its own (chain vs ladder) investment population.
+_CHAIN_TO_LADDER = {
+    "chain_cagr":    "ladder_cagr",
+    "chain_ret":     "ladder_ret",
+    "chain_n":       "ladder_n",
+    "avg_gain":      "ladder_avg_gain",
+    "Worst":         "ladder_worst",
+    "N_loss":        "ladder_n_loss",
+    "N_hops_active": "ladder_inv%",
+    "source_file":   None,
+}
+_LADDER_TITLE = "Ladder investment"
+
+# Plain-language gloss for the metric rows that need one (column B / I). Rows are kept
+# under their technical identity name in column A / H; this is the human explanation.
 _COMMENTS = {
     "period":        "Trading days (per investment)",
     "chain_cagr":    "Annualized return (stacked gain%)",
     "chain_ret":     "Return of full chain (stacked gain%)",
+    "chain_n":       "Number of lots in full chain",
     "ladder_cagr":   "Annualized return, laddered always-invested style (diagnostic)",
     "ladder_ret":    "Total return of laddered portfolio (stacked gain%)",
+    "ladder_n":      "Total laddered investments (period/step sleeves, continuous)",
     "ladder_inv%":   "Share of tranches invested vs cash (%)",
-    "avg_gain":      "Average gain% per investment",
-    "Worst":         "Worst negative day (gain%)",
-    "N_loss":        "Number of negative days in chain",
+    "avg_gain":      "Average gain% per chain lot",
+    "Worst":         "Worst chain lot (gain%)",
+    "N_loss":        "Negative lots in chain (of chain_n)",
+    "ladder_avg_gain": "Average gain% per laddered investment",
+    "ladder_worst":  "Worst laddered investment (gain%)",
+    "ladder_n_loss": "Negative investments in ladder (of ladder_n)",
     "focusset_size": "Number of stocks in each investment lot",
 }
 
@@ -187,17 +218,36 @@ def reclamp_chains(df: pd.DataFrame) -> tuple[pd.DataFrame, int | None, int | No
         df.at[idx, "chain_cagr"] = round(cagr, 4) if pd.notna(cagr) else None
         df.at[idx, "chain_n"]    = ntr
 
+        # Per-lot dispersion of the CHAIN's ~chain_n non-overlapping lots, on the common
+        # span — overwrites the run-Summary avg_gain/Worst/N_loss (those were over ALL of
+        # the run's hops, over the run's own span; that is why Ranknow showed N_loss=42
+        # next to chain_n=17). Now N_loss <= chain_n by construction.
+        cavg, cworst, cnloss = chain_lot_stats(
+            ((r[0], r[1], r[2]) for r in rows), hold, thr, floor, cap,
+            phase_average=True)
+        df.at[idx, "avg_gain"] = round(cavg, 4)   if pd.notna(cavg)   else None
+        df.at[idx, "Worst"]    = round(cworst, 4) if pd.notna(cworst) else None
+        df.at[idx, "N_loss"]   = cnloss
+
         # Diagnostic only — laddered (always-invested) estimate over the same span.
         # Never feeds selection; ranking stays on chain_cagr.
         step_v = row.get("step")
         step_v = int(step_v) if pd.notna(step_v) else None
         if step_v:
-            lret, lcagr, lslv, linv = laddered_portfolio(
+            lret, lcagr, _sleeves, linv = laddered_portfolio(
                 ((r[0], r[1], r[2]) for r in rows), hold, step_v, thr, floor, cap)
-            df.at[idx, "ladder_ret"]  = round(lret, 4)  if pd.notna(lret)  else None
-            df.at[idx, "ladder_cagr"] = round(lcagr, 4) if pd.notna(lcagr) else None
-            df.at[idx, "ladder_n"]    = lslv
-            df.at[idx, "ladder_inv%"] = round(linv * 100, 1) if pd.notna(linv) else None
+            # The ladder buys at every hop, so its dispersion is over the whole investable
+            # population (~chain_n * hold/step investments) — independently computed, NOT
+            # copied from the chain. ladder_n is that total investment count.
+            lavg, lworst, lnloss, lcount = laddered_lot_stats(
+                ((r[0], r[1], r[2]) for r in rows), thr, floor, cap)
+            df.at[idx, "ladder_ret"]      = round(lret, 4)   if pd.notna(lret)   else None
+            df.at[idx, "ladder_cagr"]     = round(lcagr, 4)  if pd.notna(lcagr)  else None
+            df.at[idx, "ladder_n"]        = lcount
+            df.at[idx, "ladder_inv%"]     = round(linv * 100, 1) if pd.notna(linv) else None
+            df.at[idx, "ladder_avg_gain"] = round(lavg, 4)   if pd.notna(lavg)   else None
+            df.at[idx, "ladder_worst"]    = round(lworst, 4) if pd.notna(lworst) else None
+            df.at[idx, "ladder_n_loss"]   = lnloss
         n_done += 1
 
     print(f"  chain reclamped to common span [{floor}, {cap}] for {n_done} run(s)"
@@ -247,19 +297,22 @@ def best_run(group: pd.DataFrame, primary: str, tiebreaker: str) -> pd.Series | 
 _HDR_ROW = 3   # the strategy-header row; titles occupy rows 1-2 above it
 
 
-def write_xlsx(columns: list[dict], metric_rows: list[str],
+def write_xlsx(columns: list[dict], chained_rows: list[str],
                floor: int | None = None, cap: int | None = None,
                period: int | None = None) -> None:
     """
-    Transposed report: two title rows, then metrics down the rows, one col per strategy.
+    Two side-by-side tables sharing the same strategy columns: a left "chained" table
+    and a right "Ladder investment" table, row-aligned. Two title rows above both.
 
     columns: [{"strategy", "row"}], one per strategy (its best run by chain_cagr).
-    metric_rows: metric names in display order (the table's row labels).
+    chained_rows: chained metric names in display order; each row's laddered twin is
+                  resolved via _CHAIN_TO_LADDER (shared keys repeat in both tables).
     floor/cap/period: common-span bounds + horizon, used to phrase the title rows.
     """
     wb = Workbook()
     ws = wb.active
     ws.title = "Best Strategy"
+    ns = len(columns)
 
     # ---- title rows (1-2): plain-language summary for unprepared readers ----
     if floor is not None and cap is not None and period:
@@ -274,33 +327,55 @@ def write_xlsx(columns: list[dict], metric_rows: list[str],
     ws.cell(1, 1, title1).font = _BOLD
     ws.cell(2, 1, title2).font = _BOLD
 
-    # ---- header row: corner + Comment column + one column per strategy ----
-    _FIRST_STRAT_COL = 3   # col A = metric, col B = comment, strategies from col C
-    corner = ws.cell(_HDR_ROW, 1, "StrategyName"); corner.font, corner.fill = _BOLD, _HDR_FILL
-    chdr = ws.cell(_HDR_ROW, 2, "Comment"); chdr.font, chdr.fill = _BOLD, _HDR_FILL
-    for j, col in enumerate(columns, start=_FIRST_STRAT_COL):
-        h = ws.cell(_HDR_ROW, j, col["strategy"])
-        h.font, h.fill, h.alignment = _BOLD, _SECT_FILL, _CTR
+    # ---- column geometry: [A]label [B]comment [chained strats] | [H]label [I]comment [laddered strats]
+    A_LBL, A_CMT = 1, 2
+    chain_c0 = 3                 # first chained strategy column (C)
+    lad_lbl  = chain_c0 + ns     # laddered metric label   (H when ns=5)
+    lad_cmt  = lad_lbl + 1       # laddered comment        (I)
+    lad_c0   = lad_lbl + 2       # first laddered strategy column (J)
 
-    # ---- one row per metric ----
-    for i, metric in enumerate(metric_rows, start=_HDR_ROW + 1):
-        lbl = ws.cell(i, 1, metric)
-        lbl.font = _BOLD
+    # ---- header row ----
+    for col, text in ((A_LBL, "StrategyName"), (A_CMT, "Comment"),
+                      (lad_lbl, _LADDER_TITLE), (lad_cmt, "Comment")):
+        h = ws.cell(_HDR_ROW, col, text); h.font, h.fill = _BOLD, _HDR_FILL
+    for j, col in enumerate(columns):
+        for base in (chain_c0, lad_c0):
+            h = ws.cell(_HDR_ROW, base + j, col["strategy"])
+            h.font, h.fill, h.alignment = _BOLD, _SECT_FILL, _CTR
+
+    # ---- one row per chained metric, with its laddered twin on the right ----
+    for i, metric in enumerate(chained_rows, start=_HDR_ROW + 1):
+        lad_metric = _CHAIN_TO_LADDER.get(metric, metric)   # default: shared verbatim
+
+        lbl = ws.cell(i, A_LBL, metric); lbl.font = _BOLD
         lbl.fill = _PARAM_FILL if metric in _PARAM_COLS else _HDR_FILL
-        ws.cell(i, 2, _COMMENTS.get(metric))   # column B gloss (blank if none)
-        for j, col in enumerate(columns, start=_FIRST_STRAT_COL):
-            val  = _cell_val(col["row"], metric) if col["row"] is not None else None
-            cell = ws.cell(i, j, val)
-            _style_gain_cell(cell, val, metric)
+        ws.cell(i, A_CMT, _COMMENTS.get(metric))
+        if lad_metric is not None:              # None => dropped from the laddered table
+            rlbl = ws.cell(i, lad_lbl, lad_metric); rlbl.font = _BOLD
+            rlbl.fill = _PARAM_FILL if lad_metric in _PARAM_COLS else _HDR_FILL
+            ws.cell(i, lad_cmt, _COMMENTS.get(lad_metric))
+
+        for j, col in enumerate(columns):
+            row = col["row"]
+            cv = _cell_val(row, metric) if row is not None else None
+            cc = ws.cell(i, chain_c0 + j, cv); _style_gain_cell(cc, cv, metric)
             if metric == "chain_cagr":          # the ranking criterion
-                cell.font = _BOLD
+                cc.font = _BOLD
+            if lad_metric is not None:
+                lv = _cell_val(row, lad_metric) if row is not None else None
+                lc = ws.cell(i, lad_c0 + j, lv); _style_gain_cell(lc, lv, lad_metric)
+                if lad_metric == "ladder_cagr":
+                    lc.font = _BOLD
 
     # ---- widths / freeze ----
-    ws.column_dimensions["A"].width = 16
-    ws.column_dimensions["B"].width = 38   # comment column
-    for j in range(_FIRST_STRAT_COL, len(columns) + _FIRST_STRAT_COL):
-        ws.column_dimensions[get_column_letter(j)].width = 16
-    ws.freeze_panes = f"C{_HDR_ROW + 1}"
+    ws.column_dimensions[get_column_letter(A_LBL)].width = 16
+    ws.column_dimensions[get_column_letter(A_CMT)].width = 38
+    ws.column_dimensions[get_column_letter(lad_lbl)].width = 16
+    ws.column_dimensions[get_column_letter(lad_cmt)].width = 38
+    for j in range(ns):
+        ws.column_dimensions[get_column_letter(chain_c0 + j)].width = 16
+        ws.column_dimensions[get_column_letter(lad_c0 + j)].width = 16
+    ws.freeze_panes = f"{get_column_letter(chain_c0)}{_HDR_ROW + 1}"
 
     wb.save(OUTPUT_XLSX)
     print(f"Written: {OUTPUT_XLSX}")
@@ -370,15 +445,15 @@ def main() -> None:
     if not columns:
         return
 
-    metric_rows = [c for c in _KEY_COLS if c in all_cols and c not in _DROP_ROWS]
-    metric_rows += [c for c in all_cols if c not in metric_rows and c not in _DROP_ROWS]
+    chained_rows = [c for c in _CHAINED_KEYS if c in all_cols and c not in _DROP_ROWS]
+    chained_rows += [c for c in all_cols if c not in chained_rows and c not in _DROP_ROWS]
 
     for col in columns:
         c = col["row"].get("chain_cagr") if col["row"] is not None else None
         print(f"  {col['strategy']:18} best chain_cagr={_fmt(c)}")
     print()
 
-    write_xlsx(columns, metric_rows, floor, cap, period)
+    write_xlsx(columns, chained_rows, floor, cap, period)
     print("Done.")
 
 

@@ -157,6 +157,14 @@ def main() -> None:
     while daynum >= min_daynum:
         tickers = select_focusset(daynum, p20d_win_df, rank_df, n)
         if not tickers:
+            # Record the no-pick day so it stays visible in HopData and the ladder counts
+            # it as a cash slot (NaN gain -> cash, excluded from the chain).
+            hop_results.append({
+                "daynum": daynum,
+                "tickers": [],
+                "gains": {},
+                "ref_values_prev": get_reference_values(daynum - 1),
+            })
             daynum -= step
             continue
 

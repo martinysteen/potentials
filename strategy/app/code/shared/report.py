@@ -123,14 +123,20 @@ def _next_run_num(folder: Path) -> int:
 
 
 def _count_active_hops(hop_results: list[dict], params: dict) -> int:
-    """Count hops that survive the No_go_GSPC_rsi filter (NaN RSI counts as active)."""
+    """Count hops actually invested: a non-empty focusset surviving No_go_GSPC_rsi.
+
+    No-pick hops (empty tickers — days the strategy sat out, now recorded so they are
+    visible in HopData/Operational) are NOT active, so N_hops_active is the number of
+    days with a real investment (the chain-side mirror of the ladder's invested count).
+    NaN RSI counts as passing the No_go gate.
+    """
     threshold = params.get("No_go_GSPC_rsi")
-    if threshold is None:
-        return len(hop_results)
     count = 0
     for h in hop_results:
+        if not h.get("tickers"):
+            continue
         gspc = h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan"))
-        if pd.isna(gspc) or gspc >= threshold:
+        if threshold is None or pd.isna(gspc) or gspc >= threshold:
             count += 1
     return count
 

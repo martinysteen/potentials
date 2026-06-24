@@ -12,7 +12,9 @@ Four-stage selection:
      N_survivors = number of tickers passing all three filters (recorded per hop)
   4. longi_rank.csv     — from survivors, pick N with lowest rank
 
-Days where fewer than focusset_size tickers survive all filters are skipped entirely.
+Days where fewer than focusset_size tickers survive all filters make no pick, but are
+still recorded as an empty (cash) hop so they stay visible in HopData and count as a
+cash slot for the ladder; the chain skips them (NaN gain).
 """
 
 import sys
@@ -216,7 +218,17 @@ def main() -> None:
     while daynum >= min_daynum:
         tickers = select_focusset(daynum, p20d_win_df, p50d_win_df, q_df, rank_df, n)
         if not tickers:
+            # Record the no-pick day (empty focusset) so it stays visible in HopData and
+            # the ladder counts it as a cash slot. n_survivors shows how many tickers
+            # passed the filters but fell short of focusset_size, for investigation.
             skipped += 1
+            hop_results.append({
+                "daynum": daynum,
+                "tickers": [],
+                "n_survivors": len(survivors(daynum, p20d_win_df, p50d_win_df, q_df)),
+                "gains": {},
+                "ref_values_prev": get_reference_values(daynum - 1),
+            })
             daynum -= step
             continue
 
