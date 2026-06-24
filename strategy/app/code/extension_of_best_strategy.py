@@ -31,7 +31,7 @@ from shared.config import REPORT_ROOT
 
 # Params a run row may carry that a strategy consumes; others keep module defaults.
 # Integer-valued keys are rounded to int; the rest are taken as floats.
-_INT_PARAMS   = {"focusset_size", "step", "period", "No_go_GSPC_rsi"}
+_INT_PARAMS   = {"focusset_size", "step", "period", "No_go_GSPC_rsi", "from_rank"}
 _FLOAT_PARAMS = {"p20d_win_min", "p50d_win_min", "q10_20_min", "q20_50_min"}
 
 
