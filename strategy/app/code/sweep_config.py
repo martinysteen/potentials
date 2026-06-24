@@ -59,6 +59,13 @@ DEFAULTS: dict = {
     "p_win_min":      0.8,         # -> p20d_win_min / p50d_win_min, kept equal
     "No_go_GSPC_rsi": 0,            # 0 = filter off; 40 = typical. Swept so Summary
                                           # metrics (chain_*, avg_gain, N_loss) reflect each.
+    "from_rank":      1,            # WHERE in the rank-ordered survivor set to draw the
+                                          # focusset from (smaller longi_rank == better):
+                                          #   1   -> the best n            (classic top-pick)
+                                          #   k>1 -> skip the best k-1, take the next n
+                                          #          (e.g. 4 -> ranks 4..3+n, "avoid the top")
+                                          #   -1  -> the worst n           (take from the bottom)
+                                          # A list sweeps it as one axis, e.g. [1, 4, -1].
 }
 
 # Strategy-specific overrides. An empty dict {} means "just use DEFAULTS".

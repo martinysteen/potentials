@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.data_loader import load_longi, load_potdat, daynum_to_date
 from shared.report import save_report
+from shared.select import pick_by_rank
 
 STRATEGY_NAME = "Ranknow"
 
@@ -25,6 +26,8 @@ PARAMS: dict = {
     "step": 1,
     "period": 20,           # forward horizon in trading days (20 or 50)
     "No_go_GSPC_rsi": 40,
+    "from_rank": 1,         # where in the ranking to draw from: 1=best n,
+                            # k>1=skip best k-1, -1=worst n. See shared/select.py.
 }
 
 # ---------------------------------------------------------------------------
@@ -32,12 +35,12 @@ PARAMS: dict = {
 # ---------------------------------------------------------------------------
 
 def select_focusset(daynum: int, rank_df: pd.DataFrame, n: int) -> list[str]:
-    """Return the n tickers with the lowest (best) rank value at daynum."""
+    """Return n tickers by rank at daynum, windowed by PARAMS['from_rank']
+    (1=best n, k>1=skip best k-1, -1=worst n)."""
     col = str(daynum)
     if col not in rank_df.columns:
         return []
-    series = rank_df[col].dropna()
-    return series.nsmallest(n).index.tolist()
+    return pick_by_rank(rank_df[col], n, PARAMS.get("from_rank", 1))
 
 
 def get_gains(gain_df: pd.DataFrame, tickers: list[str], daynum: int) -> dict[str, float]:

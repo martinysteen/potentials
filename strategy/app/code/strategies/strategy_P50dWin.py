@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.data_loader import load_longi, load_potdat, daynum_to_date
 from shared.report import save_report
+from shared.select import pick_by_rank
 
 STRATEGY_NAME = "P50dWin"
 
@@ -25,6 +26,8 @@ PARAMS: dict = {
     "period": 20,           # forward horizon in trading days (20 or 50)
     "No_go_GSPC_rsi": 40,
     "p50d_win_min": 0.9,
+    "from_rank": 1,         # where in the ranking to draw from: 1=best n,
+                            # k>1=skip best k-1, -1=worst n. See shared/select.py.
 }
 
 
@@ -34,7 +37,8 @@ PARAMS: dict = {
 
 def select_focusset(daynum: int, p50d_win_df: pd.DataFrame,
                     rank_df: pd.DataFrame, n: int) -> list[str]:
-    """Return the n tickers with P50d_win >= threshold and lowest rank at daynum."""
+    """Return n tickers with P50d_win >= threshold, windowed by PARAMS['from_rank']
+    (1=best n, k>1=skip best k-1, -1=worst n)."""
     col = str(daynum)
     threshold: float = PARAMS["p50d_win_min"]
 
@@ -50,7 +54,7 @@ def select_focusset(daynum: int, p50d_win_df: pd.DataFrame,
     rank_series = rank_df.loc[rank_df.index.isin(qualifying), col].dropna()
     if rank_series.empty:
         return []
-    return rank_series.nsmallest(n).index.tolist()
+    return pick_by_rank(rank_series, n, PARAMS.get("from_rank", 1))
 
 
 def get_gains(gain_df: pd.DataFrame, tickers: list[str], daynum: int) -> dict[str, float]:

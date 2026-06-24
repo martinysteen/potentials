@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.data_loader import load_longi, load_potdat, daynum_to_date
 from shared.report import save_report
+from shared.select import pick_by_rank
 
 STRATEGY_NAME = "P20P50cross2050"
 
@@ -40,6 +41,8 @@ PARAMS: dict = {
     "p20d_win_min": 0.8,
     "p50d_win_min": 0.8,
     "q20_50_min": 1.03,
+    "from_rank": 1,         # where in the ranking to draw from: 1=best n,
+                            # k>1=skip best k-1, -1=worst n. See shared/select.py.
 }
 
 
@@ -92,8 +95,9 @@ def survivors(daynum: int, p20d_win_df: pd.DataFrame, p50d_win_df: pd.DataFrame,
 def select_focusset(daynum: int, p20d_win_df: pd.DataFrame, p50d_win_df: pd.DataFrame,
                     q_df: pd.DataFrame, rank_df: pd.DataFrame, n: int) -> list[str]:
     """
-    Return exactly n tickers that meet both P-win thresholds and the Q20_50 minimum,
-    ranked by lowest rank at daynum. Returns [] if fewer than n survivors qualify.
+    Return n tickers that meet both P-win thresholds and the Q20_50 minimum, drawn
+    from the rank-ordered survivors per PARAMS['from_rank'] (1=best n, k>1=skip best
+    k-1, -1=worst n). Returns [] if the requested window cannot be filled.
     """
     col = str(daynum)
     qualifying = survivors(daynum, p20d_win_df, p50d_win_df, q_df)
@@ -101,9 +105,7 @@ def select_focusset(daynum: int, p20d_win_df: pd.DataFrame, p50d_win_df: pd.Data
         return []
 
     rank_series = rank_df.loc[rank_df.index.isin(qualifying), col].dropna()
-    if len(rank_series) < n:
-        return []
-    return rank_series.nsmallest(n).index.tolist()
+    return pick_by_rank(rank_series, n, PARAMS.get("from_rank", 1))
 
 
 def get_gains(gain_df: pd.DataFrame, tickers: list[str], daynum: int) -> dict[str, float]:
