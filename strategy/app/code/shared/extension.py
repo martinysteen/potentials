@@ -14,7 +14,7 @@ Output: app/report/<strategy>/extension_YYYYMMDD.xlsx
 
 Operational sheet layout (focusset_size = N):
   Row 1      : A1=strategy name      | daynum headers  (blue; step days lighter blue)
-  Row 2      : A2="Size/Step/No_RSI/P20/P50" | date headers (blue; step days lighter blue)
+  Row 2      : A2="Size/Step/No_RSI/P20/P50/Rank" | date headers (blue; step days lighter blue)
   Row 3      : A3=param values string  | (blank)                          (blue)
   Rows 4…N+3 : ticker rows
   Row N+4    : per-column "avg_gainXd" labels                       (light green)
@@ -144,11 +144,12 @@ def _fill_operational(ws, hop_results: list[dict], params: dict,
         v = params.get(key)
         return "-" if v is None else str(v)
 
-    c = ws.cell(1, 1, strategy_name);                c.font, c.fill = _BOLD, _HDR_FILL
-    c = ws.cell(2, 1, "Size/Step/No_RSI/P20/P50");   c.font, c.fill = _PLAIN, _HDR_FILL
+    c = ws.cell(1, 1, strategy_name);                     c.font, c.fill = _BOLD, _HDR_FILL
+    c = ws.cell(2, 1, "Size/Step/No_RSI/P20/P50/Rank");   c.font, c.fill = _PLAIN, _HDR_FILL
     c = ws.cell(3, 1, "/".join([_pv("focusset_size"), _pv("step"),
                                  _pv("No_go_GSPC_rsi"), _pv("p20d_win_min"),
-                                 _pv("p50d_win_min")]));  c.font, c.fill = _PLAIN, _HDR_FILL
+                                 _pv("p50d_win_min"), _pv("from_rank")]))
+    c.font, c.fill = _PLAIN, _HDR_FILL
 
     # ---- daynum (row 1) / date (row 2) headers; strategy-step days in lighter blue ----
     for j, dn in enumerate(daynums, start=2):
