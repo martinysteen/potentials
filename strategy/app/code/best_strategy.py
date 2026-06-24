@@ -63,6 +63,7 @@ _COMMENTS_CHAIN = {     # left table (column B) — plus the shared rows reused 
     "Worst":         "Worst chain lot (gain%)",
     "N_loss":        "Negative lots in chain (of chain_n)",
     "focusset_size": "Number of stocks in each investment lot",
+    "from_rank":     "Rank picked from: 1=best, k>1=skip best k-1, -1=worst",
 }
 _COMMENTS_LADDER = {    # right table (column I) — the ladder_* rows only
     "ladder_cagr":   "Annualized return, laddered always-invested style (diagnostic)",
@@ -87,7 +88,7 @@ _CHAINED_KEYS = [
     "chain_cagr", "chain_ret", "chain_n",
     "avg_gain", "Worst", "N_loss",
     "N_hops", "N_hops_active",
-    "focusset_size", "step", "No_go_GSPC_rsi",
+    "focusset_size", "step", "No_go_GSPC_rsi", "from_rank",
     "source_file",
 ]
 _GAIN_COLS = {"avg_gain", "Worst", "ladder_avg_gain", "ladder_worst"}
@@ -146,7 +147,7 @@ _PARAM_FILL = PatternFill("solid", fgColor="FFFF99")   # yellow for simulation p
 _PCT_FMT    = '+0.00;-0.00;"-"'
 _CTR        = Alignment(horizontal="center")
 
-_PARAM_COLS = {"focusset_size", "step", "period", "No_go_GSPC_rsi",
+_PARAM_COLS = {"focusset_size", "step", "period", "No_go_GSPC_rsi", "from_rank",
                "p20d_win_min", "p50d_win_min", "q10_20_min", "q20_50_min"}
 
 
