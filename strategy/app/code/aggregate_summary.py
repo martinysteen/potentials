@@ -135,7 +135,7 @@ def aggregate_strategy(strategy_name: str) -> Path | None:
             val  = rec.get(col)
             cell = ws_out.cell(i, j, val)
             cell.alignment = _CTR
-            if ("gain" in col or col.startswith(("chain_ret", "chain_cagr"))) and isinstance(val, (int, float)):
+            if ("gain" in col or col.startswith(("chain_ret", "chain_annual"))) and isinstance(val, (int, float)):
                 cell.number_format = _PCT_FMT
                 cell.fill = _GRN_FILL if val >= 0 else _RED_FILL
             elif col == "Worst" and isinstance(val, (int, float)):

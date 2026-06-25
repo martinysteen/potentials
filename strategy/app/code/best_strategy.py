@@ -1,12 +1,15 @@
 """
 Compare strategies side by side — one column per strategy, metrics down the rows.
 
-Each strategy's column is its best run by chain_cagr (phase-averaged and re-clamped
+Each strategy's column is its best run by chain_annual (phase-averaged and re-clamped
 to the span every strategy shares), with chain_ret as tiebreaker. All runs must share
 the same forward horizon (the `period` param); a mismatch is reported and aborts.
 
+Returns are additive (sum of lot gains, no reinvestment); chain_annual is that sum
+divided by the span in years — a simple average annual gain, not a compound CAGR.
+
 Output:
-  app/report/best_strategy.xlsx  — transposed, strategies as columns, sorted by chain_cagr
+  app/report/best_strategy.xlsx  — transposed, strategies as columns, sorted by chain_annual
 
 Usage (from app/code/):
   python best_strategy.py
@@ -23,12 +26,12 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
 from shared.chain import (realizable_chain, laddered_portfolio,
-                          chain_lot_stats, laddered_lot_stats)
+                          chain_lot_stats, laddered_lot_stats, chain_inv_pct)
 from shared.config import REPORT_ROOT
 from shared.data_loader import daynum_to_date
 
-# Decision metric is chain CAGR (phase-averaged, common-span); chain_ret breaks
-# ties. Per-strategy columns are defined by _SUBCOLS near main().
+# Decision metric is chain_annual — the additive average annual gain (phase-averaged,
+# common-span); chain_ret breaks ties. Per-strategy columns are defined near main().
 OUTPUT_XLSX = REPORT_ROOT / "best_strategy.xlsx"
 
 # ===========================================================================
@@ -45,29 +48,33 @@ OUTPUT_XLSX = REPORT_ROOT / "best_strategy.xlsx"
 # column A / H). Shared rows (period, focusset_size, …) live only in
 # _COMMENTS_CHAIN and are reused for column I, so edit them once.
 # ===========================================================================
-_TITLE1 = ("Comparison of strategies all recalculated for performance in period "
-           "daynum {floor} to {cap} ({floor_date} to {cap_date})")
-_TITLE2 = ("Using {period} days as investment horizon, this allows a chain of "
-           "{n_runs} not-overlapping investment runs.")
-_TITLE1_FALLBACK = "Comparison of strategies"    # shown when the common span is unknown
+_TITLE1 = ("Strategy comparison — additive returns, each strategy measured over its OWN usable "
+           "daynum span (see StartDaynum/EndDaynum rows; they differ by ML warm-up). "
+           "Newest daynum {cap} ({cap_date}).")
+_TITLE2 = ("Horizon {period} trading days; ranked by chain_annual (avg annual gain%, additive — "
+           "no compounding). chain_n = non-overlapping lots; lot count and span differ per strategy.")
+_TITLE1_FALLBACK = "Strategy comparison — additive returns"   # shown when the common span is unknown
 _TITLE2_FALLBACK = ""
 
 _LADDER_TITLE = "Ladder investment"              # header of the right-hand table
 
 _COMMENTS_CHAIN = {     # left table (column B) — plus the shared rows reused on the right
     "period":        "Trading days (per investment)",
-    "chain_cagr":    "Annualized return (stacked gain%)",
-    "chain_ret":     "Return of full chain (stacked gain%)",
+    "StartDaynum":   "First usable daynum (oldest; later than series start if ML warm-up applies)",
+    "EndDaynum":     "Last usable daynum (newest)",
+    "chain_annual":  "Avg annual gain% (additive: sum of lot gains / years, no compounding)",
+    "chain_ret":     "Additive return of full chain (sum of lot gains, no reinvestment)",
     "chain_n":       "Number of lots in full chain",
     "avg_gain":      "Average gain% per chain lot",
     "Worst":         "Worst chain lot (gain%)",
     "N_loss":        "Negative lots in chain (of chain_n)",
+    "chain_inv%":    "Share of active span invested (%) — idle when No_go gating / too few survivors block a reinvest",
     "focusset_size": "Number of stocks in each investment lot",
     "from_rank":     "Rank picked from: 1=best, k>1=skip best k-1, -1=worst",
 }
 _COMMENTS_LADDER = {    # right table (column I) — the ladder_* rows only
-    "ladder_cagr":   "Annualized return, laddered always-invested style (diagnostic)",
-    "ladder_ret":    "Total return of laddered portfolio (stacked gain%)",
+    "ladder_annual": "Avg annual gain% (additive), laddered always-invested style (diagnostic)",
+    "ladder_ret":    "Additive return of laddered portfolio (sum of lot gains)",
     "ladder_n":      "Total laddered investments (period/step sleeves, continuous)",
     "ladder_inv%":   "Share of tranches invested vs cash (%)",
     "ladder_avg_gain": "Average gain% per laddered investment",
@@ -84,20 +91,23 @@ _COMMENTS_LADDER = {    # right table (column I) — the ladder_* rows only
 # StrategyName is absent: the strategy name is the column header, so a row would just
 # repeat it. Floor/cap are absent: they are already stated in the title rows.
 _CHAINED_KEYS = [
-    "Run#", "period",
-    "chain_cagr", "chain_ret", "chain_n",
+    "Run#", "period", "StartDaynum", "EndDaynum",
+    "chain_annual", "chain_ret", "chain_n",
     "avg_gain", "Worst", "N_loss",
-    "N_hops", "N_hops_active",
+    "chain_inv%",
     "focusset_size", "step", "No_go_GSPC_rsi", "from_rank",
     "source_file",
 ]
 _GAIN_COLS = {"avg_gain", "Worst", "ladder_avg_gain", "ladder_worst"}
 
 # Never a row of their own: StrategyName (it's the header); floor/cap (they're in the
-# title); the ladder_* metrics (rendered in the right table by mapping their chained
-# twin, not as standalone rows).
+# title); N_hops/N_hops_active (redundant with chain_n on the left and ladder_n on the
+# right — dropped from the comparison); the twinned ladder_* metrics (rendered in the
+# right table by mapping their chained twin, not as standalone rows — ladder_inv% is the
+# right twin of chain_inv%).
 _DROP_ROWS = {"StrategyName", "chain_floor", "chain_cap",
-              "ladder_cagr", "ladder_ret", "ladder_n", "ladder_inv%",
+              "N_hops", "N_hops_active",
+              "ladder_annual", "ladder_ret", "ladder_n", "ladder_inv%",
               "ladder_avg_gain", "ladder_worst", "ladder_n_loss"}
 
 # Chained metric -> its counterpart in the right-hand laddered table. A key not listed
@@ -106,13 +116,13 @@ _DROP_ROWS = {"StrategyName", "chain_floor", "chain_cap",
 # are per-investment dispersion and so are NOT shared — each side gets its own set,
 # computed over its own (chain vs ladder) investment population.
 _CHAIN_TO_LADDER = {
-    "chain_cagr":    "ladder_cagr",
+    "chain_annual":  "ladder_annual",
     "chain_ret":     "ladder_ret",
     "chain_n":       "ladder_n",
     "avg_gain":      "ladder_avg_gain",
     "Worst":         "ladder_worst",
     "N_loss":        "ladder_n_loss",
-    "N_hops_active": "ladder_inv%",
+    "chain_inv%":    "ladder_inv%",
     "source_file":   None,
 }
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -131,7 +141,7 @@ def _fmt_date(daynum: int) -> str:
 
 def _is_gain_col(col: str) -> bool:
     return (col in _GAIN_COLS or "gain" in col
-            or col.startswith(("chain_ret", "chain_cagr", "ladder_ret", "ladder_cagr")))
+            or col.startswith(("chain_ret", "chain_annual", "ladder_ret", "ladder_annual")))
 
 # ---------------------------------------------------------------------------
 # Styles
@@ -179,7 +189,7 @@ def load_all_runs() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Common-span chain reclamp
 # ---------------------------------------------------------------------------
-# chain_ret/cagr/n are written per run over that run's OWN span, so they are not
+# chain_ret/annual/n are written per run over that run's OWN span, so they are not
 # comparable across strategies (a strategy that only covers recent daynums shows a
 # bigger chain return than one spanning a longer, choppier history). Recompute them
 # here over the span every compared strategy shares: [max(EndDaynum), min(StartDaynum)].
@@ -206,39 +216,54 @@ def _load_hopdata(strategy_name, source_file) -> list[tuple[int, float, float]] 
 
 
 def reclamp_chains(df: pd.DataFrame) -> tuple[pd.DataFrame, int | None, int | None]:
-    """Recompute chain_ret/cagr/n over the span shared by every compared run.
+    """Recompute chain_ret/annual/n over the span shared by every compared run.
 
-    Each run's hold horizon is its own `period`; the chain is phase-averaged.
+    The common span is read straight from each run's HopData — floor = the newest of the
+    runs' oldest evaluated hops, cap = the oldest of the runs' newest hops — NOT from the
+    Summary StartDaynum/EndDaynum, which now carry each strategy's *usable* span (and so
+    differ per strategy; clamping on them would wrongly trim a longer-history strategy like
+    Ranknow). Each run's hold horizon is its own `period`; the chain is phase-averaged.
     """
-    needed = {"EndDaynum", "StartDaynum", "StrategyName", "source_file", "period"}
+    needed = {"StrategyName", "source_file", "period"}
     if not needed.issubset(df.columns):
         print("  chain reclamp skipped: missing columns "
               f"{sorted(needed - set(df.columns))}")
         return df, None, None
-    ends   = pd.to_numeric(df["EndDaynum"], errors="coerce").dropna()
-    starts = pd.to_numeric(df["StartDaynum"], errors="coerce").dropna()
-    if ends.empty or starts.empty:
+
+    df = df.copy()
+
+    # First pass: load each run's HopData once and find its evaluated daynum range.
+    hop_cache: dict = {}
+    run_min: list[int] = []
+    run_max: list[int] = []
+    for idx, row in df.iterrows():
+        rows = _load_hopdata(row.get("StrategyName"), row.get("source_file"))
+        hop_cache[idx] = rows
+        if rows:
+            dns = [r[0] for r in rows]
+            run_min.append(min(dns))
+            run_max.append(max(dns))
+    if not run_min:
         return df, None, None
 
-    floor, cap = int(ends.max()), int(starts.min())
-    df = df.copy()
+    floor, cap = max(run_min), min(run_max)   # common evaluated overlap
     df["chain_floor"], df["chain_cap"] = floor, cap
 
     n_done = n_missing = 0
     for idx, row in df.iterrows():
-        rows = _load_hopdata(row.get("StrategyName"), row.get("source_file"))
+        rows = hop_cache.get(idx)
         if rows is None:
             n_missing += 1
             continue
         thr  = row.get("No_go_GSPC_rsi")
         thr  = None if pd.isna(thr) else float(thr)
         hold = int(row["period"])
-        ret, cagr, ntr = realizable_chain(
+        ret, annual, ntr = realizable_chain(
             ((r[0], r[1], r[2]) for r in rows), hold, thr, floor, cap,
             phase_average=True)
-        df.at[idx, "chain_ret"]  = round(ret, 4)  if pd.notna(ret)  else None
-        df.at[idx, "chain_cagr"] = round(cagr, 4) if pd.notna(cagr) else None
-        df.at[idx, "chain_n"]    = ntr
+        df.at[idx, "chain_ret"]    = round(ret, 4)    if pd.notna(ret)    else None
+        df.at[idx, "chain_annual"] = round(annual, 4) if pd.notna(annual) else None
+        df.at[idx, "chain_n"]      = ntr
 
         # Per-lot dispersion of the CHAIN's ~chain_n non-overlapping lots, on the common
         # span — overwrites the run-Summary avg_gain/Worst/N_loss (those were over ALL of
@@ -251,20 +276,25 @@ def reclamp_chains(df: pd.DataFrame) -> tuple[pd.DataFrame, int | None, int | No
         df.at[idx, "Worst"]    = round(cworst, 4) if pd.notna(cworst) else None
         df.at[idx, "N_loss"]   = cnloss
 
+        # Chain's invested share of its active span (%) — idle when No_go gating or too few
+        # survivors leave no usable hop at a reinvest point. The chain twin of ladder_inv%.
+        cinv = chain_inv_pct(((r[0], r[1], r[2]) for r in rows), hold, thr, floor, cap)
+        df.at[idx, "chain_inv%"] = round(cinv, 1) if pd.notna(cinv) else None
+
         # Diagnostic only — laddered (always-invested) estimate over the same span.
-        # Never feeds selection; ranking stays on chain_cagr.
+        # Never feeds selection; ranking stays on chain_annual.
         step_v = row.get("step")
         step_v = int(step_v) if pd.notna(step_v) else None
         if step_v:
-            lret, lcagr, _sleeves, linv = laddered_portfolio(
+            lret, lannual, _sleeves, linv = laddered_portfolio(
                 ((r[0], r[1], r[2]) for r in rows), hold, step_v, thr, floor, cap)
             # The ladder buys at every hop, so its dispersion is over the whole investable
             # population (~chain_n * hold/step investments) — independently computed, NOT
             # copied from the chain. ladder_n is that total investment count.
             lavg, lworst, lnloss, lcount = laddered_lot_stats(
                 ((r[0], r[1], r[2]) for r in rows), thr, floor, cap)
-            df.at[idx, "ladder_ret"]      = round(lret, 4)   if pd.notna(lret)   else None
-            df.at[idx, "ladder_cagr"]     = round(lcagr, 4)  if pd.notna(lcagr)  else None
+            df.at[idx, "ladder_ret"]      = round(lret, 4)    if pd.notna(lret)    else None
+            df.at[idx, "ladder_annual"]   = round(lannual, 4) if pd.notna(lannual) else None
             df.at[idx, "ladder_n"]        = lcount
             df.at[idx, "ladder_inv%"]     = round(linv * 100, 1) if pd.notna(linv) else None
             df.at[idx, "ladder_avg_gain"] = round(lavg, 4)   if pd.notna(lavg)   else None
@@ -326,7 +356,7 @@ def write_xlsx(columns: list[dict], chained_rows: list[str],
     Two side-by-side tables sharing the same strategy columns: a left "chained" table
     and a right "Ladder investment" table, row-aligned. Two title rows above both.
 
-    columns: [{"strategy", "row"}], one per strategy (its best run by chain_cagr).
+    columns: [{"strategy", "row"}], one per strategy (its best run by chain_annual).
     chained_rows: chained metric names in display order; each row's laddered twin is
                   resolved via _CHAIN_TO_LADDER (shared keys repeat in both tables).
     floor/cap/period: common-span bounds + horizon, used to phrase the title rows.
@@ -339,9 +369,8 @@ def write_xlsx(columns: list[dict], chained_rows: list[str],
     # ---- title rows (1-2): plain-language summary for unprepared readers ----
     # (text templates live in the human-facing block at the top of the module)
     if floor is not None and cap is not None and period:
-        title1 = _TITLE1.format(floor=floor, cap=cap,
-                                floor_date=_fmt_date(floor), cap_date=_fmt_date(cap))
-        title2 = _TITLE2.format(period=period, n_runs=(cap - floor) // period)
+        title1 = _TITLE1.format(cap=cap, cap_date=_fmt_date(cap))
+        title2 = _TITLE2.format(period=period)
     else:
         title1, title2 = _TITLE1_FALLBACK, _TITLE2_FALLBACK
     ws.cell(1, 1, title1).font = _BOLD
@@ -381,12 +410,12 @@ def write_xlsx(columns: list[dict], chained_rows: list[str],
             row = col["row"]
             cv = _cell_val(row, metric) if row is not None else None
             cc = ws.cell(i, chain_c0 + j, cv); _style_gain_cell(cc, cv, metric)
-            if metric == "chain_cagr":          # the ranking criterion
+            if metric == "chain_annual":        # the ranking criterion
                 cc.font = _BOLD
             if lad_metric is not None:
                 lv = _cell_val(row, lad_metric) if row is not None else None
                 lc = ws.cell(i, lad_c0 + j, lv); _style_gain_cell(lc, lv, lad_metric)
-                if lad_metric == "ladder_cagr":
+                if lad_metric == "ladder_annual":
                     lc.font = _BOLD
 
     # ---- widths / freeze ----
@@ -412,8 +441,8 @@ def select_best_runs(verbose: bool = False) -> tuple[
     """Load every run, reclamp chains to the common span, and rank strategies.
 
     Returns (columns, all_cols, floor, cap, period):
-      columns  : [{"strategy", "row"}], one per strategy (its best run by chain_cagr,
-                 chain_ret as tiebreaker), strongest chain_cagr first.
+      columns  : [{"strategy", "row"}], one per strategy (its best run by chain_annual,
+                 chain_ret as tiebreaker), strongest chain_annual first.
       all_cols : every column present across the loaded runs (for metric-row order).
       floor/cap: common-span bounds. period: the shared forward horizon.
 
@@ -447,12 +476,12 @@ def select_best_runs(verbose: bool = False) -> tuple[
     groups = {str(name): g for name, g in df.groupby("StrategyName", sort=False)}
 
     def _rank(name: str) -> float:
-        r = best_run(groups[name], "chain_cagr", "chain_ret")
-        v = r.get("chain_cagr") if r is not None else None
+        r = best_run(groups[name], "chain_annual", "chain_ret")
+        v = r.get("chain_annual") if r is not None else None
         return float(v) if v is not None and pd.notna(v) else float("-inf")
-    order = sorted(groups, key=_rank, reverse=True)   # strongest chain_cagr leftmost
+    order = sorted(groups, key=_rank, reverse=True)   # strongest chain_annual leftmost
 
-    columns = [{"strategy": name, "row": best_run(groups[name], "chain_cagr", "chain_ret")}
+    columns = [{"strategy": name, "row": best_run(groups[name], "chain_annual", "chain_ret")}
                for name in order]
     return columns, all_cols, floor, cap, period
 
@@ -471,8 +500,8 @@ def main() -> None:
     chained_rows += [c for c in all_cols if c not in chained_rows and c not in _DROP_ROWS]
 
     for col in columns:
-        c = col["row"].get("chain_cagr") if col["row"] is not None else None
-        print(f"  {col['strategy']:18} best chain_cagr={_fmt(c)}")
+        c = col["row"].get("chain_annual") if col["row"] is not None else None
+        print(f"  {col['strategy']:18} best chain_annual={_fmt(c)}")
     print()
 
     write_xlsx(columns, chained_rows, floor, cap, period)

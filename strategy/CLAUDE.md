@@ -128,13 +128,19 @@ All functions are `@lru_cache`. `load_longi(filename)`, `load_potdat()`, `load_s
 `daynum_to_date(daynum)`.
 
 ### `shared/chain.py`  — the realizable chain (single source of truth)
+**Returns are ADDITIVE, not compounded.** Each lot bets the same fixed capital and the gain is
+withdrawn (not reinvested), so a chain's total return is the simple **sum** of its lot gains
+(`Σ gᵢ`) and the annualized figure is that sum ÷ span-years — a plain **average annual gain**, not
+a compound CAGR. This deliberately avoids the exponential blow-up a compounded backtest produces
+over a long history; the additive total grows only *linearly* with the number of lots.
+
 ```python
 realizable_chain(rows, hold, no_go_threshold=None,
                  floor_daynum=None, cap_daynum=None, phase_average=False)
 ```
 - `rows`: iterable of `(daynum, gain_pct, gspc_rsi_prev)`.
 - Greedily walks hops oldest→newest, taking one only once the previous position has closed
-  (spaced ≥ `hold` daynums) → **non-overlapping** positions.
+  (spaced ≥ `hold` daynums) → **non-overlapping** positions; gains are **summed** (not compounded).
 - `phase_average=True` runs the chain from **every start offset in the first holding window**
   and averages, removing the anchor-sensitivity a single greedy chain has (a ±10-daynum start
   shift could otherwise halve the return). Number of phases ≈ `hold ÷ step`, capped by available
@@ -146,23 +152,24 @@ laddered_portfolio(rows, hold, step, no_go_threshold=None,
                    floor_daynum=None, cap_daynum=None)
 ```
 - A second, economically distinct estimator over the **same** hops — a continuously-invested
-  ladder of `n = hold // step` equal-weight tranches entered `step` daynums apart. Reports the
-  realized CAGR of the **blended portfolio** (value-blend of the staggered sleeves), an
-  always-invested / trend-following style.
+  ladder of `n = hold // step` equal-weight tranches entered `step` daynums apart. Each sleeve
+  **sums** the gains of its slots (additive, no reinvestment) and the book is the equal-weight
+  **mean of the sleeve sums** — an always-invested / trend-following style.
 - Differs from `realizable_chain` in no-go handling: a gated or missing slot is held in **cash
   (0%) on schedule** (no delayed re-entry), so tranches stay rigidly staggered.
 - **Active-window anchored:** the span (years) and `inv%` are measured from the **first to the
   last *invested* hop**, trimming leading/trailing cash (e.g. the pre-signal warm-up daynums a
   win-prob strategy cannot trade). Without this, a late-starting strategy got padded with phantom
-  cash years off the common-span floor, sinking `ladder_cagr` and `inv%` far below reality.
+  cash years off the common-span floor, sinking `ladder_annual` and `inv%` far below reality.
 - **Neither estimator dominates** the other. When `inv%`=100 and hops are uniformly `step`-spaced
-  the sleeves *are* the chain phases, so `ladder_ret == chain_ret` exactly; but `ladder_cagr`
-  usually sits *below* `chain_cagr` (the chain annualizes each phase over its own ragged,
-  ~`hold`-shorter span, lifting the rate-mean), and with interior skips `ladder_ret < chain_ret`
-  too (the ladder eats 0% cash cycles the chain skips). Ladder ≥ chain only for dense, skip-free
-  strategies (e.g. Ranknow). **Diagnostic only** — best_strategy shows `ladder_cagr`/`ladder_ret`/
-  `ladder_n`/`ladder_inv%` as extra rows beside the chain rows, but ranking still keys on
-  `chain_cagr`.
+  the sleeves *are* the chain phases, so `ladder_ret == chain_ret` exactly; but `ladder_annual`
+  usually sits *below* `chain_annual` (the chain divides each phase total by that phase's own
+  ragged, ~`hold`-shorter span — a smaller divisor that lifts the per-phase annual — while the
+  ladder divides by one consistent full-active-window span), and with interior skips
+  `ladder_ret < chain_ret` too (the ladder eats 0% cash cycles the chain skips). Ladder ≥ chain
+  only for dense, skip-free strategies (e.g. Ranknow). **Diagnostic only** — best_strategy shows
+  `ladder_annual`/`ladder_ret`/`ladder_n`/`ladder_inv%` as extra rows beside the chain rows, but
+  ranking still keys on `chain_annual`.
 
 ### `shared/report.py`
 `save_report(strategy_name, params, hop_results, run_num=None)` writes
@@ -188,7 +195,7 @@ calls `run_extension`.
 
 ### `extension_of_best_strategy.py` — extend the winner
 Standalone daily tool (no sweep needed; the sweep is for development). Reuses
-`best_strategy.select_best_runs()` to find the highest-`chain_cagr` strategy, runs that strategy's
+`best_strategy.select_best_runs()` to find the highest-`chain_annual` strategy, runs that strategy's
 `build_extension()` on its winning-run params **in its own folder**, then moves the result up to
 `report/` beside `best_strategy.xlsx` as `extension_<name>_<YYYYMMDD>.xlsx`. `run_sweep.py` also
 calls `run()` after rebuilding `best_strategy.xlsx`.
@@ -242,23 +249,25 @@ one run = one horizon = one set of metrics. Write order:
 
 | Key(s) | Meaning |
 |--------|---------|
-| `StrategyName`, `Run#`, `StartDaynum`, `N_hops`, `N_hops_active`, `EndDaynum` | identity / range |
+| `StrategyName`, `Run#`, `StartDaynum`, `N_hops`, `N_hops_active`, `EndDaynum` | identity / range. **`StartDaynum`/`EndDaynum` = the strategy's *usable* span, chronological (Start = oldest usable daynum, End = newest)** — for win-prob/cross strategies Start is ~1797 (ML warm-up), not the series start, even though empty warm-up hops are still recorded. `N_hops` = all evaluated hops; `N_hops_active` = hops actually invested. |
 | *(PARAMS keys)* | `focusset_size`, `step`, `period`, `No_go_GSPC_rsi`, `p20d_win_min`, … |
 | `avg_gain` | grand average per-hop top-N gain over `period` (No_go-filtered) |
-| `chain_ret`, `chain_cagr`, `chain_n` | realizable chain (phase-averaged; see below) |
+| `chain_ret`, `chain_annual`, `chain_n` | realizable chain (additive, phase-averaged; see below) |
 | `N_loss` | count of active hops with negative avg gain |
 | `Worst` | worst single active-hop avg gain |
 
 ### Averages vs accumulation (why overlap matters)
 With `step < period`, consecutive hops measure **overlapping** forward windows. Overlap does
-**not** bias an *average* (`avg_gain` is valid for comparing configs) but you cannot sum/compound
-overlapping hops without double-counting. The realizable **chain** fixes this.
+**not** bias an *average* (`avg_gain` is valid for comparing configs) but you cannot sum
+overlapping hops without double-counting. The realizable **chain** (non-overlapping) fixes this.
 
-### The realizable chain (`chain_ret`/`chain_cagr`/`chain_n`)
-Non-overlapping compounded backtest (see `shared/chain.py`): hops walked oldest→newest, taken
-only once the previous closed (spaced ≥ `period`), gains compounded, **phase-averaged** over all
-start offsets so the result doesn't swing with the anchor day. `chain_cagr` is annualized
-(`_TRADING_DAYS_YEAR = 252`) and is the **primary decision metric**. Respects `No_go_GSPC_rsi`;
+### The realizable chain (`chain_ret`/`chain_annual`/`chain_n`)
+Non-overlapping **additive** backtest (see `shared/chain.py`): hops walked oldest→newest, taken
+only once the previous closed (spaced ≥ `period`), gains **summed** (fixed capital per lot, gains
+withdrawn — no reinvestment), **phase-averaged** over all start offsets so the result doesn't swing
+with the anchor day. `chain_ret` is `Σ gᵢ`; `chain_annual` is that sum ÷ span-years
+(`_TRADING_DAYS_YEAR = 252`) — a simple average annual gain (not a compound CAGR) and the
+**primary decision metric**. Respects `No_go_GSPC_rsi`;
 NaN-safe.
 
 ### `step` is fixed at 1 (and why)
@@ -273,8 +282,12 @@ sample size and `N_hops`, neither of which is a decision criterion.)
 Each run's Summary chain is over that run's *own* span, so it is **not** comparable across
 strategies (a strategy covering only recent daynums shows a bigger chain return than one spanning
 a longer, choppier history). `best_strategy.py` therefore **recomputes** the chain for every run
-from its HopData over the span all compared strategies share:
-`floor = max(EndDaynum)`, `cap = min(StartDaynum)`, written as `chain_floor`/`chain_cap`.
+from its HopData over the span all compared strategies share. The span is read straight from each
+run's **HopData daynum range** (NOT from the Summary `StartDaynum`/`EndDaynum`, which now carry the
+per-strategy *usable* span and so differ): `floor = max(per-run oldest hop)`,
+`cap = min(per-run newest hop)`, written as `chain_floor`/`chain_cap`. Each strategy's chain still
+effectively starts at its own first *usable* hop within `[floor, cap]` (NaN/gated hops are skipped),
+so the displayed per-strategy `StartDaynum` matches the span its chain actually used.
 
 > Note: win-probability strategies (P*dWin, the cross strategies) cannot backtest before
 > ~daynum 1797 — the ML win/loss model needs feature warm-up (~100d) + 150 per-ticker training
@@ -340,12 +353,25 @@ def main() -> None:
 ## best_strategy.py Output Structure
 
 `app/report/best_strategy.xlsx` — **transposed**: metric names down column A, **one column per
-strategy**, strongest `chain_cagr` leftmost.
+strategy**, strongest `chain_annual` leftmost.
 
-- Each column = that strategy's **best run by `chain_cagr`** (tiebreaker `chain_ret`).
+- Each column = that strategy's **best run by `chain_annual`** (tiebreaker `chain_ret`).
 - The `chain_*` values shown are **re-clamped to the common span** (and phase-averaged); the
   `chain_floor`/`chain_cap` rows state that span. `period` is a row (all columns must match — a
   mixed-period comparison is rejected).
+- Two side-by-side tables share the strategy columns: a left **chained** table and a right
+  **Ladder investment** table, row-aligned via `_CHAINED_KEYS` + `_CHAIN_TO_LADDER`. The two
+  title rows (1–2) are dynamic (newest daynum/date + horizon).
+- `StartDaynum`/`EndDaynum` rows show each strategy's **usable span** (chronological; differ by
+  strategy). **`N_hops`/`N_hops_active` are NOT shown** here (dropped as redundant — `chain_n`
+  on the left and `ladder_n` on the right carry the counts).
+- `chain_inv%` (left) / `ladder_inv%` (right) are a paired row: the share of the **active span**
+  each estimator was actually invested. Both fall below 100% when **No_go gating** *or* **too few
+  survivors to fill `focusset_size`** (→ NaN-gain no-pick day) leave a slot uninvestable. The
+  serial chain only needs one usable day per `hold`, so it shrugs off scattered gating and
+  `chain_inv%` sits **≥** `ladder_inv%` (which buys every slot); they diverge most when gating is
+  scattered, and converge when a dry spell lasts longer than `hold`. Computed in `reclamp_chains`
+  (chain via `shared.chain.chain_inv_pct`), best_strategy-only like the other ladder diagnostics.
 - Adding a strategy to the sweep makes it appear automatically as a new column.
 
 ---

@@ -65,19 +65,20 @@ _GAIN_KEY = "gains"
 
 def _chain_metric_labels() -> list[str]:
     """Realizable-chain summary labels, in write order."""
-    return ["chain_ret", "chain_cagr", "chain_n"]
+    return ["chain_ret", "chain_annual", "chain_n"]
 
 
 def _chain_metrics(hop_results: list[dict], gain_key: str, n: int,
                    hold: int, params: dict) -> tuple[float, float, int]:
     """
-    Realizable non-overlapping compounded chain over this run's full span.
+    Realizable non-overlapping ADDITIVE chain over this run's full span.
 
     Thin wrapper over shared.chain.realizable_chain (the single source of the chain
     math). best_strategy.py re-runs the same function with a common floor/cap so
     cross-strategy chain returns are comparable; see shared/chain.py.
 
-    Returns (total_return_pct, cagr_pct, n_trades).
+    Returns (total_return_pct, annual_pct, n_trades) — additive sum of lot gains and
+    its simple per-year average (not a compound CAGR).
     """
     threshold = params.get("No_go_GSPC_rsi")
     rows = ((h["daynum"], _hop_avg_topn(h, gain_key, n),
@@ -155,6 +156,26 @@ def _active_hop_vals(hop_results: list[dict], gain_key: str, params: dict) -> li
         if pd.notna(v):
             vals.append(v)
     return vals
+
+
+def _usable_daynums(hop_results: list[dict], gain_key: str, params: dict) -> list[int]:
+    """Daynums of hops that actually invest: a real (non-NaN) top-N gain surviving No_go.
+
+    This is the strategy's *usable* span. The cross / win-prob strategies have no real
+    gain before the ML warm-up (~daynum 1797), so their usable range starts later than
+    the full evaluated range — even though the empty warm-up hops are still recorded.
+    """
+    threshold = params.get("No_go_GSPC_rsi")
+    n = params.get("focusset_size", 10)
+    dns: list[int] = []
+    for h in hop_results:
+        if threshold is not None:
+            gspc = h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan"))
+            if not pd.isna(gspc) and gspc < threshold:
+                continue
+        if pd.notna(_hop_avg_topn(h, gain_key, n)):
+            dns.append(int(h["daynum"]))
+    return dns
 
 
 def _count_loss_hops(hop_results: list[dict], gain_key: str, params: dict) -> int:
@@ -343,13 +364,18 @@ def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
     daynums = [h["daynum"] for h in hop_results]
     n       = params.get("focusset_size", 10)
 
+    # StartDaynum/EndDaynum are the strategy's USABLE span, chronological (Start = oldest).
+    usable   = _usable_daynums(hop_results, _GAIN_KEY, params)
+    start_dn = min(usable) if usable else (min(daynums) if daynums else "")
+    end_dn   = max(usable) if usable else (max(daynums) if daynums else "")
+
     rows: list[tuple] = [
         ("StrategyName",  strategy_name),
         ("Run#",          run_num),
-        ("StartDaynum",   daynums[0] if daynums else ""),
+        ("StartDaynum",   start_dn),
         ("N_hops",        len(hop_results)),
         ("N_hops_active", _count_active_hops(hop_results, params)),
-        ("EndDaynum",     daynums[-1] if daynums else ""),
+        ("EndDaynum",     end_dn),
     ]
     for k, v in params.items():
         rows.append((k, v))
@@ -358,12 +384,12 @@ def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
         val = _grand_avg_topn(hop_results, gain_key, top_n, params)
         rows.append((label, round(val, 4) if pd.notna(val) else None))
 
-    # Realizable non-overlapping compounded chain for the active horizon (= period).
+    # Realizable non-overlapping additive chain for the active horizon (= period).
     hold = int(params.get("period", 20))
-    ret, cagr, ntr = _chain_metrics(hop_results, _GAIN_KEY, n, hold, params)
-    rows.append(("chain_ret",  round(ret, 4)  if pd.notna(ret)  else None))
-    rows.append(("chain_cagr", round(cagr, 4) if pd.notna(cagr) else None))
-    rows.append(("chain_n",    ntr))
+    ret, annual, ntr = _chain_metrics(hop_results, _GAIN_KEY, n, hold, params)
+    rows.append(("chain_ret",    round(ret, 4)    if pd.notna(ret)    else None))
+    rows.append(("chain_annual", round(annual, 4) if pd.notna(annual) else None))
+    rows.append(("chain_n",      ntr))
 
     rows.append(("N_loss", _count_loss_hops(hop_results, _GAIN_KEY, params)))
     worst = _worst_hop_gain(hop_results, _GAIN_KEY, params)
@@ -372,7 +398,7 @@ def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
     ws.column_dimensions["A"].width = 24
     ws.column_dimensions["B"].width = 18
 
-    gain_labels = {r[0] for r in _avg_rows(n)} | {"chain_ret", "chain_cagr"}
+    gain_labels = {r[0] for r in _avg_rows(n)} | {"chain_ret", "chain_annual"}
     for i, (k, v) in enumerate(rows, start=1):
         kc = ws.cell(i, 1, k);  kc.font = _BOLD
         vc = ws.cell(i, 2, v)
@@ -434,16 +460,19 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
             w.writerow(all_cols)
         avg_vals   = [_fmt(_grand_avg_topn(hop_results, gk, tn, params)) for _, gk, tn in _avg_rows(n)]
         hold = int(params.get("period", 20))
-        ret, cagr, ntr = _chain_metrics(hop_results, _GAIN_KEY, n, hold, params)
-        chain_vals = [_fmt(ret), _fmt(cagr), str(ntr)]
+        ret, annual, ntr = _chain_metrics(hop_results, _GAIN_KEY, n, hold, params)
+        chain_vals = [_fmt(ret), _fmt(annual), str(ntr)]
         worst = _worst_hop_gain(hop_results, _GAIN_KEY, params)
         extra_vals = [
             _count_loss_hops(hop_results, _GAIN_KEY, params),
             _fmt(worst),
         ]
+        usable   = _usable_daynums(hop_results, _GAIN_KEY, params)
+        start_dn = min(usable) if usable else (min(daynums) if daynums else "")
+        end_dn   = max(usable) if usable else (max(daynums) if daynums else "")
         w.writerow(
-            [strategy_name, run_num, daynums[0], len(hop_results),
-             _count_active_hops(hop_results, params), daynums[-1]]
+            [strategy_name, run_num, start_dn, len(hop_results),
+             _count_active_hops(hop_results, params), end_dn]
             + [params.get(k, "") for k in param_cols]
             + avg_vals + chain_vals + extra_vals
         )

@@ -25,7 +25,7 @@ Operational sheet layout (focusset_size = N):
   ...        : GICS / Sector2 / Zone occurrence counts
 
 Entry points (from app/code/):
-  python extension_of_best_strategy.py   # extend the chain_cagr winner only
+  python extension_of_best_strategy.py   # extend the chain_annual winner only
   <strategy>.build_extension()           # extend one strategy directly
 """
 

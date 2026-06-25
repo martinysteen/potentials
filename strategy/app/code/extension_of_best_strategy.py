@@ -2,7 +2,7 @@
 Extension of the single best strategy.
 
 Flow:
-  1. best_strategy ranks every strategy by chain_cagr (common-span, phase-averaged)
+  1. best_strategy ranks every strategy by chain_annual (common-span, phase-averaged)
      exactly as best_strategy.py does — reusing its select_best_runs().
   2. The winner's name picks its report folder (report/<name>/); the extension is
      computed there, and only there, on that winner's best-run params.
@@ -52,32 +52,32 @@ def run() -> Path | None:
         print("No comparable runs — cannot pick a best strategy.")
         return None
 
-    best = columns[0]                       # strongest chain_cagr is leftmost
+    best = columns[0]                       # strongest chain_annual is leftmost
     name, row = best["strategy"], best["row"]
-    cagr = row.get("chain_cagr") if row is not None else None
-    print(f"\nBest strategy: {name}  (chain_cagr={best_strategy._fmt(cagr)})")
+    annual = row.get("chain_annual") if row is not None else None
+    print(f"\nBest strategy: {name}  (chain_annual={best_strategy._fmt(annual)})")
 
     # --- unambiguous-winner guards ------------------------------------------
-    if cagr is None or pd.isna(cagr):
-        print(f"ERROR: '{name}' has no valid chain_cagr — no clear winner to extend.")
+    if annual is None or pd.isna(annual):
+        print(f"ERROR: '{name}' has no valid chain_annual — no clear winner to extend.")
         return None
     if len(columns) > 1 and columns[1]["row"] is not None:
         runner = columns[1]
-        cagr2  = runner["row"].get("chain_cagr")
+        annual2 = runner["row"].get("chain_annual")
         ret1   = row.get("chain_ret")
         ret2   = runner["row"].get("chain_ret")
-        tie_cagr = cagr2 is not None and not pd.isna(cagr2) and float(cagr2) == float(cagr)
+        tie_annual = annual2 is not None and not pd.isna(annual2) and float(annual2) == float(annual)
         tie_ret  = (ret1 is not None and ret2 is not None
                     and not pd.isna(ret1) and not pd.isna(ret2)
                     and float(ret1) == float(ret2))
-        if tie_cagr and tie_ret:
+        if tie_annual and tie_ret:
             print(f"ERROR: ambiguous winner — '{name}' and '{runner['strategy']}' tie on "
-                  f"both chain_cagr ({best_strategy._fmt(cagr)}) and chain_ret. "
+                  f"both chain_annual ({best_strategy._fmt(annual)}) and chain_ret. "
                   "Resolve before extending.")
             return None
-        if tie_cagr:
-            print(f"  NOTE: '{name}' ties '{runner['strategy']}' on chain_cagr "
-                  f"({best_strategy._fmt(cagr)}); broken by chain_ret "
+        if tie_annual:
+            print(f"  NOTE: '{name}' ties '{runner['strategy']}' on chain_annual "
+                  f"({best_strategy._fmt(annual)}); broken by chain_ret "
                   f"({ret1} vs {ret2}).")
 
     modules = discover_strategies()
