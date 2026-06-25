@@ -433,7 +433,7 @@ def write_xlsx(columns: list[dict], chained_rows: list[str],
 
 
 # ---------------------------------------------------------------------------
-# Ranking (shared by main() and extension_of_best_strategy.py)
+# Ranking (shared by main() and extension.py)
 # ---------------------------------------------------------------------------
 
 def select_best_runs(verbose: bool = False) -> tuple[

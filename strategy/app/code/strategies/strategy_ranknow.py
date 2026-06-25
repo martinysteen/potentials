@@ -175,13 +175,13 @@ def main() -> None:
           f"daynum {hop_results[0]['daynum']} → {hop_results[-1]['daynum']}")
 
 
-def build_extension():
+def build_extension(workbook=None):
     from shared.extension import run_extension
     rank_df = load_longi("longi_rank.csv")
     n: int  = PARAMS["focusset_size"]
     return run_extension(STRATEGY_NAME, PARAMS,
                          lambda d: select_focusset(d, rank_df, n),
-                         get_reference_values)
+                         get_reference_values, workbook=workbook)
 
 
 if __name__ == "__main__":

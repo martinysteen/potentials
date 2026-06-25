@@ -10,7 +10,8 @@ from PotDat. The strategy's own step is NOT used to pick days — it only MARKS 
 strategy's investment days (lighter blue in the daynum/date header rows), anchored
 to today's daynum.
 
-Output: app/report/<strategy>/extension_YYYYMMDD.xlsx
+Output: app/report/<strategy>/extension_YYYYMMDD.xlsx (standalone), or — when a workbook is
+passed to run_extension — one sheet appended to that shared workbook (the all-strategies run).
 
 Operational sheet layout (focusset_size = N):
   Row 1      : A1=strategy name      | daynum headers  (blue; step days lighter blue)
@@ -25,8 +26,8 @@ Operational sheet layout (focusset_size = N):
   ...        : GICS / Sector2 / Zone occurrence counts
 
 Entry points (from app/code/):
-  python extension_of_best_strategy.py   # extend the chain_annual winner only
-  <strategy>.build_extension()           # extend one strategy directly
+  python extension.py                        # extend ALL strategies (one sheet each)
+  <strategy>.build_extension(workbook=None)  # extend one strategy directly (standalone file)
 """
 
 from datetime import date
@@ -249,12 +250,18 @@ def run_extension(
     params: dict,
     get_focusset_fn: Callable[[int], list[str]],
     get_ref_fn: Callable[[int], dict],
-) -> Path | None:
+    workbook=None,
+) -> Path | str | None:
     """
-    Run the extension loop and write extension_YYYYMMDD.xlsx.
+    Run the extension loop and emit the result.
 
-    Returns the path of the written workbook, or None if the extension window was
-    empty (data fully up to date) or no hop produced a focusset.
+    workbook is None (default): write a standalone report/<strategy>/extension_YYYYMMDD.xlsx
+    and return its Path. workbook given: add the content as a NEW SHEET titled after the
+    strategy in that workbook (caller saves it) and return the sheet title — this is how
+    the all-strategies run packs one sheet per strategy into a single combined workbook.
+
+    Returns None if the extension window was empty (data fully up to date) or no hop
+    produced a focusset.
 
     get_focusset_fn(daynum) → list[str]  — strategy selector with pre-bound DataFrames
     get_ref_fn(daynum)      → dict       — market context (same as get_reference_values)
@@ -312,6 +319,12 @@ def run_extension(
     if not hop_results:
         print(f"No valid hops — strategy selected nothing in the extension period.\n")
         return None
+
+    if workbook is not None:
+        ws = workbook.create_sheet(title=strategy_name[:31])   # one sheet per strategy
+        _fill_operational(ws, hop_results, params, strategy_name, mark_step)
+        print(f"Done: {len(hop_results)} extension days (sheet '{ws.title}').\n")
+        return ws.title
 
     xlsx_path = _write_xlsx(strategy_name, params, hop_results, mark_step=mark_step)
     print(f"Done: {len(hop_results)} extension days.\n")

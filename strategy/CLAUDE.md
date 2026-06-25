@@ -22,7 +22,7 @@ strategy/
     │   ├── sweep_config.py               # the single place you edit to decide WHAT runs
     │   ├── aggregate_summary.py          # stacks Summary sheets from all run*.xlsx of a strategy
     │   ├── best_strategy.py              # cross-strategy comparison (transposed, one column per strategy)
-    │   ├── extension_of_best_strategy.py # pick the winner, extend it in its folder, move xlsx to report/
+    │   ├── extension.py                  # extend ALL strategies into one workbook (one sheet each)
     │   ├── shared/
     │   │   ├── config.py                 # path constants
     │   │   ├── data_loader.py            # cached CSV loaders
@@ -188,17 +188,21 @@ legacy `acc_gain*`/`top*` columns from old files.
 Covers the recent days where the strategy's forward horizon isn't fully realized yet. The horizon
 is read from `params["period"]` (loads `future_gain{period}d.csv`, so the window is ~`period`
 trading days). For each entry daynum it computes partial gain `(exit_price-entry_price)/entry_price`
-from PotDat up to the latest available price. `run_extension(...)` writes
-`report/<strategy>/extension_<YYYYMMDD>.xlsx` and **returns its path** (or `None` if the window is
-empty / no hops). Every active strategy exposes a `build_extension()` that binds its selector and
-calls `run_extension`.
+from PotDat up to the latest available price. `run_extension(..., workbook=None)` either writes a
+standalone `report/<strategy>/extension_<YYYYMMDD>.xlsx` (returns its path) or — when given a
+`workbook` — appends the content as **one sheet titled after the strategy** to that shared workbook
+(returns the sheet title); `None` if the window is empty / no hops. Every active strategy exposes a
+`build_extension(workbook=None)` that binds its selector and forwards `workbook` to `run_extension`.
 
-### `extension_of_best_strategy.py` — extend the winner
+### `extension.py` — extend the strategies from best_strategy.xlsx
 Standalone daily tool (no sweep needed; the sweep is for development). Reuses
-`best_strategy.select_best_runs()` to find the highest-`chain_annual` strategy, runs that strategy's
-`build_extension()` on its winning-run params **in its own folder**, then moves the result up to
-`report/` beside `best_strategy.xlsx` as `extension_<name>_<YYYYMMDD>.xlsx`. `run_sweep.py` also
-calls `run()` after rebuilding `best_strategy.xlsx`.
+`best_strategy.select_best_runs()` for the ranking and each strategy's winning-run params.
+`python extension.py` (and the `run_sweep.py` auto-call) extends **every** strategy, best-first,
+into one workbook `report/extension_all_<YYYYMMDD>.xlsx` — **one sheet per strategy**. So a user
+following any strategy, not just the day's top pick, always has its recent "known future" (the
+top-ranked strategy flips as the ranking moves). The prior `report/extension_*.xlsx` is cleared
+**only after** there is new output, so a run that extends nothing never wipes a good existing file.
+(A single strategy can still be extended directly via `<strategy>.build_extension()`.)
 
 ---
 
@@ -416,4 +420,4 @@ in sync when adding a strategy parameter.
 
 - VS Code Remote-SSH from Windows; Danish keyboard. Claude Code: Ctrl+Alt+C, terminal Ctrl+Æ.
 - The chain math (`shared/chain.py`) is shared by generation and comparison so they can't drift.
-- The chain ranking lives once in `best_strategy.select_best_runs()`; `extension_of_best_strategy.py` reuses it so the extended strategy is always the one the comparison crowned.
+- The chain ranking lives once in `best_strategy.select_best_runs()`; `extension.py` reuses it for the ranking order and each strategy's winning-run params (extending all strategies best-first into one workbook).
