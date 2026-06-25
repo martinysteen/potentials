@@ -51,7 +51,7 @@ LINKED: dict[str, list[str]] = {
 # Applied to every strategy below (where the key exists in that strategy's PARAMS).
 # Multiple values offered by list format like "step": [1, 5]
 DEFAULTS: dict = {
-    "focusset_size":  5,
+    "focusset_size":  3,
     "step":           5,            # fixed at 1: finest phase-averaging for the chain;
                                           # step is otherwise second-order for the chain metric.
     "period":         20,           # forward horizon in trading days (20 or 50). Single
@@ -59,7 +59,7 @@ DEFAULTS: dict = {
     "p_win_min":      0.8,         # -> p20d_win_min / p50d_win_min, kept equal
     "No_go_GSPC_rsi": 0,            # 0 = filter off; 40 = typical. Swept so Summary
                                           # metrics (chain_*, avg_gain, N_loss) reflect each.
-    "from_rank":      1,            # WHERE in the rank-ordered survivor set to draw the
+    "from_rank":      1            # WHERE in the rank-ordered survivor set to draw the
                                           # focusset from (smaller longi_rank == better):
                                           #   1   -> the best n            (classic top-pick)
                                           #   k>1 -> skip the best k-1, take the next n
@@ -73,7 +73,7 @@ DEFAULTS: dict = {
 STRATEGIES: dict[str, dict] = {
     # --- have both win-thresholds + the golden-cross quotient ---
     "P20P50cross1020": {"q10_20_min": 1.03},  
-    "P20P50cross2050": {"q20_50_min": 1.03},
+    "P20P50cross2050": {"q20_50_min": 1.05},
 
     # --- have a single win-threshold (p_win_min sets whichever exists) ---
     "P20dWin": {},

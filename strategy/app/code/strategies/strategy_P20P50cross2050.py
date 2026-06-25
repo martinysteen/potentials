@@ -34,10 +34,10 @@ STRATEGY_NAME = "P20P50cross2050"
 VERBOSE = False
 
 PARAMS: dict = {
-    "focusset_size": 3,
+    "focusset_size": 5,
     "step": 1,
     "period": 20,           # forward horizon in trading days (20 or 50)
-    "No_go_GSPC_rsi": 45,
+    "No_go_GSPC_rsi": 0,
     "p20d_win_min": 0.8,
     "p50d_win_min": 0.8,
     "q20_50_min": 1.03,
