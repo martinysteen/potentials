@@ -96,8 +96,8 @@ def realizable_chain(rows: Iterable[Tuple[int, float, float]], hold: int,
     """
     Additively sum the gains of a non-overlapping chain of hops (spaced >= `hold`).
 
-    rows            : iterable of (daynum, gain_pct, gspc_rsi_prev)
-    no_go_threshold : skip a hop when its gspc_rsi_prev is present and < threshold
+    rows            : iterable of (daynum, gain_pct, gspc_rsi)
+    no_go_threshold : skip a hop when its gspc_rsi is present and < threshold
     floor_daynum    : ignore hops older than this (the common comparison floor)
     cap_daynum      : ignore hops newer than this (the common comparison cap)
     phase_average   : average over every start offset in the first holding window,
@@ -162,7 +162,7 @@ def laddered_portfolio(rows: Iterable[Tuple[int, float, float]], hold: int, step
         span. On skip days the ladder additionally holds cash (0%) where the chain
         redeploys, so with interior skips ladder_ret < chain_ret too. (Ladder >= chain
         holds only for dense, skip-free strategies like Ranknow.)
-      * A no-go (gspc_rsi_prev < threshold) or missing-gain slot is held in CASH (0% for
+      * A no-go (gspc_rsi < threshold) or missing-gain slot is held in CASH (0% for
         that cycle) and the tranche stays on schedule — it does NOT delay re-entry the
         way the serial chain does. This is the always-invested, trend-following posture.
 
@@ -175,10 +175,10 @@ def laddered_portfolio(rows: Iterable[Tuple[int, float, float]], hold: int, step
     and inv% would count days the strategy structurally could not act on. Interior cash (genuine
     skip days inside the active window) is kept as 0% so the sleeves stay rigidly staggered.
 
-    rows            : (daynum, gain_pct, gspc_rsi_prev)
+    rows            : (daynum, gain_pct, gspc_rsi)
     hold            : holding horizon (the `period` param); must be a multiple of step
     step            : entry spacing between tranches
-    no_go_threshold : a hop whose gspc_rsi_prev is present and < threshold -> cash (0%)
+    no_go_threshold : a hop whose gspc_rsi is present and < threshold -> cash (0%)
     floor/cap       : restrict to the common comparison span (as in realizable_chain)
 
     Returns (total_return_pct, annual_pct, n_sleeves, invested_frac), where total_return
@@ -288,7 +288,7 @@ def chain_inv_pct(rows: Iterable[Tuple[int, float, float]], hold: int,
     analog of ladder_inv%.
 
     The serial chain takes the next usable hop once the previous lot closes. A slot that
-    is gated (No_go: gspc_rsi_prev < threshold) or unfillable (too few survivors to reach
+    is gated (No_go: gspc_rsi < threshold) or unfillable (too few survivors to reach
     focusset_size -> NaN gain) is dropped by _filter_usable, so when no usable hop exists
     at the reinvest point (prev_lot + hold) the chain idles in cash until a later one
     appears. inv% = invested days / active-span days = chain_n*hold / ((last+hold)-first),

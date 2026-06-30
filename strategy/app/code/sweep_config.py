@@ -29,7 +29,7 @@ Some strategies have two win-thresholds that must stay equal
 also let drift apart — set the single alias `p_win_min`. The driver writes its
 value to whichever of the two a strategy actually has:
     - both present  (cross1020, cross2050) -> both set equal
-    - only one      (P20dWin/P20dZOP -> 20d; P50dWin/P50dZOP -> 50d)
+    - only one      (P20/P20dZOP -> 20d; P50/P50dZOP -> 50d)
     - neither       (ZOP, Ranknow) -> ignored
 `p_win_min` may itself be a list to sweep the threshold as ONE axis (the pair
 stays equal at every value), e.g. "p_win_min": [0.8, 0.9].
@@ -71,13 +71,26 @@ DEFAULTS: dict = {
 # Strategy-specific overrides. An empty dict {} means "just use DEFAULTS".
 # Keys must match each strategy's STRATEGY_NAME (see `python run_sweep.py --list`).
 STRATEGIES: dict[str, dict] = {
-    # --- have both win-thresholds + the golden-cross quotient ---
-    "P20P50cross1020": {"q10_20_min": 1.03},  
+    # --- both win-thresholds + the golden-cross quotient (3-step) ---
+    "P20P50cross1020": {"q10_20_min": 1.03},
     "P20P50cross2050": {"q20_50_min": 1.05},
 
-    # --- have a single win-threshold (p_win_min sets whichever exists) ---
-    "P20dWin": {},
-    "P50dWin": {},
+    # --- both win-thresholds, no cross (2-step) ---
+    "P20P50": {},
+
+    # --- one win-threshold + a cross quotient (2-step) ---
+    "P20cross1020": {"q10_20_min": 1.03},
+    "P20cross2050": {"q20_50_min": 1.05},
+    "P50cross1020": {"q10_20_min": 1.03},
+    "P50cross2050": {"q20_50_min": 1.05},
+
+    # --- a single win-threshold (p_win_min sets whichever exists) ---
+    "P20": {},
+    "P50": {},
+
+    # --- a single cross quotient, no win-threshold (p_win_min ignored) ---
+    "Cross1020": {"q10_20_min": 1.03},
+    "Cross2050": {"q20_50_min": 1.05},
 
     # --- no win-threshold (p_win_min ignored) ---
     "Ranknow": {},

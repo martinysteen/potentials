@@ -2,7 +2,7 @@
 Write reports for strategy runs.
 
 Per run:   app/report/<strategy>/run<N>_<date>.xlsx
-           Sheet "Operational" — ticker rows + avg rows + day-1 ref rows + attribute count rows
+           Sheet "Operational" — ticker rows + avg rows + ref rows + attribute count rows
            Sheet "Summary"     — metadata + avg gains
 
 Master:    app/report/summary.csv  (one appended row per run, all strategies)
@@ -41,7 +41,7 @@ def _grand_avg_topn(hop_results: list[dict], gain_key: str, n: int,
     vals: list[float] = []
     for h in hop_results:
         if threshold is not None:
-            gspc = h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan"))
+            gspc = h.get("ref_values", {}).get("^GSPC_rsi", float("nan"))
             if not pd.isna(gspc) and gspc < threshold:
                 continue
         tickers = h.get("tickers", [])[:n]
@@ -82,7 +82,7 @@ def _chain_metrics(hop_results: list[dict], gain_key: str, n: int,
     """
     threshold = params.get("No_go_GSPC_rsi")
     rows = ((h["daynum"], _hop_avg_topn(h, gain_key, n),
-             h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan")))
+             h.get("ref_values", {}).get("^GSPC_rsi", float("nan")))
             for h in hop_results)
     return realizable_chain(rows, hold, threshold, phase_average=True)
 
@@ -136,7 +136,7 @@ def _count_active_hops(hop_results: list[dict], params: dict) -> int:
     for h in hop_results:
         if not h.get("tickers"):
             continue
-        gspc = h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan"))
+        gspc = h.get("ref_values", {}).get("^GSPC_rsi", float("nan"))
         if threshold is None or pd.isna(gspc) or gspc >= threshold:
             count += 1
     return count
@@ -149,7 +149,7 @@ def _active_hop_vals(hop_results: list[dict], gain_key: str, params: dict) -> li
     vals: list[float] = []
     for h in hop_results:
         if threshold is not None:
-            gspc = h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan"))
+            gspc = h.get("ref_values", {}).get("^GSPC_rsi", float("nan"))
             if not pd.isna(gspc) and gspc < threshold:
                 continue
         v = _hop_avg_topn(h, gain_key, n)
@@ -170,7 +170,7 @@ def _usable_daynums(hop_results: list[dict], gain_key: str, params: dict) -> lis
     dns: list[int] = []
     for h in hop_results:
         if threshold is not None:
-            gspc = h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan"))
+            gspc = h.get("ref_values", {}).get("^GSPC_rsi", float("nan"))
             if not pd.isna(gspc) and gspc < threshold:
                 continue
         if pd.notna(_hop_avg_topn(h, gain_key, n)):
@@ -198,7 +198,7 @@ _GRN_FILL = PatternFill("solid", fgColor="C6EFCE")  # light green
 _RED_FILL = PatternFill("solid", fgColor="FFC7CE")  # light red
 _GRY_FILL = PatternFill("solid", fgColor="EEEEEE")  # gray (n/a)
 _SEP_FILL = PatternFill("solid", fgColor="D9E1F2")  # separator 20d→50d
-_REF_FILL   = PatternFill("solid", fgColor="FFF2CC")  # yellow for day-1 ref rows
+_REF_FILL   = PatternFill("solid", fgColor="FFF2CC")  # yellow for ref rows
 _INPUT_FILL = PatternFill("solid", fgColor="FFE599")  # amber for editable input cells
 _SURV_FILL  = PatternFill("solid", fgColor="DDEBF7")  # pale blue for N_survivors row
 
@@ -228,7 +228,7 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     Row 2   : (blank)  | date1   | date2   | ...
     Rows 3…n+2: (blank) | ticker_rank1 … ticker_rankN
     +2 rows : avg_gain20d / avg_gain50d
-    +4 rows : market context day-1 (^GSPC_rsi, ^STOXX_rsi, ^HSI_rsi, ^VIX)
+    +4 rows : market context (^GSPC_rsi, ^STOXX_rsi, ^HSI_rsi, ^VIX)
     +?? rows: GICS count rows (sorted by frequency)
     +?? rows: Sector2 count rows
     +?? rows: Zone count rows
@@ -242,11 +242,11 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     has_surv = any("n_survivors" in h for h in hop_results)
     surv_off = 1 if has_surv else 0
 
-    # Pre-compute the row where ^GSPC_rsi (day-1) will land, for use in avg formulas.
+    # Pre-compute the row where ^GSPC_rsi will land, for use in avg formulas.
     rows_list    = _avg_rows(n)
     ref_base     = n_tickers + 3 + surv_off + len(rows_list)
-    prev_keys    = list(hop_results[0].get("ref_values_prev", {}).keys()) if hop_results else []
-    gspc_rsi_row = next((ref_base + i for i, k in enumerate(prev_keys) if "GSPC_rsi" in k), None)
+    ref_keys     = list(hop_results[0].get("ref_values", {}).keys()) if hop_results else []
+    gspc_rsi_row = next((ref_base + i for i, k in enumerate(ref_keys) if "GSPC_rsi" in k), None)
 
     # ---- header rows ----
     # A1/A2 hold the No_go label and editable threshold (safe for any focusset size).
@@ -288,7 +288,7 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
             lbl_cell.fill = _SEP_FILL
         for j, h in enumerate(hop_results, start=2):
             val    = _hop_avg_topn(h, gain_key, top_n)
-            gspc_p = h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan"))
+            gspc_p = h.get("ref_values", {}).get("^GSPC_rsi", float("nan"))
             no_go  = threshold is not None and not pd.isna(gspc_p) and gspc_p < threshold
             cell   = ws.cell(row, j)
             cell.font, cell.number_format, cell.alignment = _BOLD, _PCT_FMT, _CTR
@@ -305,7 +305,7 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
                 cell.value = None
                 cell.fill  = PatternFill() if sep else _GRY_FILL
 
-    # ---- day-1 ref rows ----
+    # ---- ref rows ----
     def _write_ref_rows(start_row: int, hop_key: str, label_suffix: str = "") -> int:
         keys = list(hop_results[0].get(hop_key, {}).keys()) if hop_results else []
         for idx, key in enumerate(keys):
@@ -323,11 +323,11 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
         return len(keys)
 
     base   = n_tickers + 3 + surv_off + len(rows_list)
-    n_prev = _write_ref_rows(base, "ref_values_prev", " (day-1)")
+    n_ref = _write_ref_rows(base, "ref_values")
 
     # ---- attribute frequency rows ----
     stamdata = load_stamdata()
-    attr_row = base + n_prev
+    attr_row = base + n_ref
 
     for attr_col in ("GICS", "Sector2", "Zone"):
         fill = _ATTR_FILLS[attr_col]
@@ -418,13 +418,13 @@ def _fill_hopdata(ws, hop_results: list[dict], params: dict) -> None:
     arbitrary daynum window (best_strategy.py clamps to a common floor/cap).
 
     Stored as plain numbers (not Excel formulas) so they read back reliably.
-    Columns: daynum | gain | gspc_rsi_prev  (gain = top-N avg for the active period).
+    Columns: daynum | gain | gspc_rsi  (gain = top-N avg for the active period).
     """
     n = params.get("focusset_size", 10)
-    ws.append(["daynum", "gain", "gspc_rsi_prev"])
+    ws.append(["daynum", "gain", "gspc_rsi"])
     for h in hop_results:
         g    = _hop_avg_topn(h, _GAIN_KEY, n)
-        gspc = h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan"))
+        gspc = h.get("ref_values", {}).get("^GSPC_rsi", float("nan"))
         ws.append([
             int(h["daynum"]),
             None if pd.isna(g)    else round(float(g), 6),
@@ -489,7 +489,7 @@ def save_report(strategy_name: str, params: dict, hop_results: list[dict],
 
     hop_results items contain:
         daynum, tickers (rank-ordered), gains_20d, gains_50d,
-        ref_values_prev (market context at daynum-1)
+        ref_values (market context at daynum)
     """
     folder = REPORT_ROOT / strategy_name
     folder.mkdir(parents=True, exist_ok=True)

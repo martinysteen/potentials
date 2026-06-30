@@ -195,7 +195,7 @@ def load_all_runs() -> pd.DataFrame:
 # here over the span every compared strategy shares: [max(EndDaynum), min(StartDaynum)].
 
 def _load_hopdata(strategy_name, source_file) -> list[tuple[int, float, float]] | None:
-    """Read a run's HopData sheet -> [(daynum, gain, gspc_rsi_prev), ...]."""
+    """Read a run's HopData sheet -> [(daynum, gain, gspc_rsi), ...]."""
     if not strategy_name or not source_file or pd.isna(source_file):
         return None
     path = REPORT_ROOT / str(strategy_name) / str(source_file)
@@ -210,7 +210,7 @@ def _load_hopdata(strategy_name, source_file) -> list[tuple[int, float, float]] 
         out.append((
             int(r["daynum"]),
             float(r["gain"]) if pd.notna(r.get("gain")) else float("nan"),
-            float(r["gspc_rsi_prev"]) if pd.notna(r.get("gspc_rsi_prev")) else float("nan"),
+            float(r["gspc_rsi"]) if pd.notna(r.get("gspc_rsi")) else float("nan"),
         ))
     return out
 

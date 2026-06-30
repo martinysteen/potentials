@@ -26,15 +26,24 @@ strategy/
     │   ├── shared/
     │   │   ├── config.py                 # path constants
     │   │   ├── data_loader.py            # cached CSV loaders
+    │   │   ├── select.py                 # pick_by_rank — the from_rank window
+    │   │   ├── engine.py                 # make_strategy + col_filter/quotient_filter/rank_by
     │   │   ├── chain.py                  # realizable_chain — the one place the chain math lives
     │   │   ├── report.py                 # per-run Excel writer (save_report) + master summary.csv
     │   │   └── extension.py              # partial-gain extension runner (period-driven)
-    │   ├── strategies/
-    │   │   ├── strategy_ranknow.py       # baseline: lowest longi_rank
-    │   │   ├── strategy_P20dWin.py       # longi_P20d_win >= threshold, then lowest rank
-    │   │   ├── strategy_P50dWin.py       # longi_P50d_win >= threshold, then lowest rank
-    │   │   ├── strategy_P20P50cross1020.py # P20d+P50d win AND Q10_20=MA10/MA20 >= min
-    │   │   └── strategy_P20P50cross2050.py # P20d+P50d win AND Q20_50=MA20/MA50 >= min
+    │   ├── strategies/                   # each = ~20-line declaration on shared/engine.py
+    │   │   ├── strategy_ranknow.py       # baseline: lowest longi_rank (standalone, no filters)
+    │   │   ├── strategy_P20.py           # [P20d_win]
+    │   │   ├── strategy_P50.py           # [P50d_win]
+    │   │   ├── strategy_P20P50.py        # [P20d_win, P50d_win]
+    │   │   ├── strategy_Cross1020.py     # [Q10_20=MA10/MA20]
+    │   │   ├── strategy_Cross2050.py     # [Q20_50=MA20/MA50]
+    │   │   ├── strategy_P20cross1020.py  # [P20d_win, Q10_20]
+    │   │   ├── strategy_P20cross2050.py  # [P20d_win, Q20_50]
+    │   │   ├── strategy_P50cross1020.py  # [P50d_win, Q10_20]
+    │   │   ├── strategy_P50cross2050.py  # [P50d_win, Q20_50]
+    │   │   ├── strategy_P20P50cross1020.py # [P20d_win, P50d_win, Q10_20]
+    │   │   └── strategy_P20P50cross2050.py # [P20d_win, P50d_win, Q20_50]
     │   └── _not_used/                    # PARKED, not discovered by the sweep:
     │       ├── strategy_ZOP.py, strategy_P20dZOP.py,
     │       ├── strategy_P50dZOP.py, strategy_P20dP50dZOP.py   # ZOP too volatile intraday
@@ -138,7 +147,7 @@ over a long history; the additive total grows only *linearly* with the number of
 realizable_chain(rows, hold, no_go_threshold=None,
                  floor_daynum=None, cap_daynum=None, phase_average=False)
 ```
-- `rows`: iterable of `(daynum, gain_pct, gspc_rsi_prev)`.
+- `rows`: iterable of `(daynum, gain_pct, gspc_rsi)`.
 - Greedily walks hops oldest→newest, taking one only once the previous position has closed
   (spaced ≥ `hold` daynums) → **non-overlapping** positions; gains are **summed** (not compounded).
 - `phase_average=True` runs the chain from **every start offset in the first holding window**
@@ -174,9 +183,9 @@ laddered_portfolio(rows, hold, step, no_go_threshold=None,
 ### `shared/report.py`
 `save_report(strategy_name, params, hop_results, run_num=None)` writes
 `run<N>_<date>.xlsx` with **three sheets** and appends one row to `app/report/summary.csv`:
-- **Operational** — ticker grid + the single `avg_gain` row + day-1 ref rows + attribute counts.
+- **Operational** — ticker grid + the single `avg_gain` row + ref rows + attribute counts.
 - **Summary** — key/value metrics (see below).
-- **HopData** — machine-readable per-hop `daynum | gain | gspc_rsi_prev` (raw numbers, *not*
+- **HopData** — machine-readable per-hop `daynum | gain | gspc_rsi` (raw numbers, *not*
   Excel formulas), so the chain can be recomputed later over any window. best_strategy reads this.
 
 ### `aggregate_summary.py`
@@ -215,13 +224,13 @@ Each item in the list passed to `save_report`:
     "daynum":          int,               # trading daynum for this hop
     "tickers":         list[str],         # focusset, rank-ordered best→worst
     "gains":           dict[str, float],  # {ticker: realised gain over `period` days, %}
-    "ref_values_prev": dict[str, float],  # market context at daynum-1
+    "ref_values":      dict[str, float],  # market context at daynum
     "n_survivors":     int,               # OPTIONAL — only the cross strategies set it
 }
 ```
 
-`ref_values_prev` keys: `^GSPC_rsi`, `^STOXX_rsi`, `^HSI_rsi` (RSI14) and `^VIX` (raw price),
-all at daynum-1 (the decision day, before investment).
+`ref_values` keys: `^GSPC_rsi`, `^STOXX_rsi`, `^HSI_rsi` (RSI14) and `^VIX` (raw price),
+all at daynum (the investment day).
 
 There is a **single `gains` dict** per hop — the horizon is `period`, not two fixed horizons.
 
@@ -236,7 +245,7 @@ There is a **single `gains` dict** per hop — the horizon is `period`, not two 
 | 3–(N+2) | Ticker names, rank 1→N | — |
 | *(optional)* | `N_survivors` per hop — only when hops carry `"n_survivors"` (cross strategies) | Pale blue |
 | next | `avg_gain` (single row; top-N avg over `period`) | Green/red/grey |
-| next 4 | `^GSPC_rsi (day-1)`, `^STOXX_rsi (day-1)`, `^HSI_rsi (day-1)`, `^VIX (day-1)` | Yellow |
+| next 4 | `^GSPC_rsi`, `^STOXX_rsi`, `^HSI_rsi`, `^VIX` | Yellow |
 | … | GICS / Sector2 / Zone occurrence counts | Purple / peach / teal |
 
 The `avg_gain` cell is an Excel formula `=IF(<gspc_rsi cell> < $A$2, "", value)` — editing the
@@ -311,7 +320,7 @@ PARAMS: dict = {
     "focusset_size": 3,       # N tickers selected per hop
     "step": 1,                # daynum step between hops (sweep fixes this at 1)
     "period": 20,             # forward horizon in trading days (20 or 50)
-    "No_go_GSPC_rsi": 40,     # suppress avg gains / skip chain hops when GSPC RSI (day-1) < this
+    "No_go_GSPC_rsi": 40,     # suppress avg gains / skip chain hops when GSPC RSI (at daynum) < this
     # strategy-specific: p20d_win_min, p50d_win_min, q10_20_min, q20_50_min
 }
 ```
@@ -323,34 +332,45 @@ PARAMS: dict = {
 
 ## Strategy Anatomy
 
-Minimum contract for a new strategy file:
+Filter strategies are **declarations on `shared/engine.py`** — no backtest code per file.
+A strategy = `STRATEGY_NAME` + `PARAMS` (the live dict the sweep overrides in place) + `FILTERS`
++ optional `ranker`. `make_strategy` returns the `(main, build_extension)` the rest of the system
+discovers. The selection pipeline is:
+
+> N filters (any longi CSV, any of `>= > <= <`) → intersect survivors → order by a **ranker**
+> (any longi CSV, ascending=smaller-best or descending=larger-best) → `pick_by_rank` (`from_rank`).
 
 ```python
-STRATEGY_NAME = "My strategy"
-PARAMS = {"focusset_size": 3, "step": 1, "period": 20, "No_go_GSPC_rsi": 40}
+from shared.engine import make_strategy, col_filter, quotient_filter   # + rank_by if reordering
 
-def select_focusset(daynum, <signal_df>, n) -> list[str]:
-    """n tickers ranked best→worst; [] if the daynum/data is unavailable. Never raises."""
-
-def get_reference_values(daynum) -> dict:   # copy verbatim across strategies
-    ...
-
-def main() -> None:
-    period = PARAMS.get("period", 20)
-    gain_df = load_longi(f"future_gain{period}d.csv")
-    # hop loop (step from PARAMS); each hop:
-    #   {"daynum", "tickers", "gains": get_gains(gain_df, tickers, daynum), "ref_values_prev": ...}
-    save_report(STRATEGY_NAME, PARAMS, hop_results)
+STRATEGY_NAME = "P20cross1020"
+PARAMS = {"focusset_size": 3, "step": 1, "period": 20, "No_go_GSPC_rsi": 0,
+          "p20d_win_min": 0.8, "q10_20_min": 1.03, "from_rank": 1}
+FILTERS = [
+    col_filter("longi_P20d_win.csv", "p20d_win_min"),                 # value >= PARAMS[param]
+    quotient_filter("longi_ma10.csv", "longi_ma20.csv", "q10_20_min"),# MA10/MA20 >= PARAMS[param]
+]
+main, build_extension = make_strategy(STRATEGY_NAME, PARAMS, FILTERS)
 ```
 
-**Rules:**
-- One `gains` dict per hop, for `future_gain{period}d.csv` — never compute both horizons.
-- `select_focusset` returns `[]` if a daynum/column is absent; never raises.
-- `str(daynum)` for all DataFrame column lookups.
-- Empty-focusset policy differs by design: Ranknow **breaks** (stops), the filtered strategies
-  **skip** (`continue`) — keep that per-strategy.
-- Cross strategies build an ad-hoc MA-quotient table at runtime (`build_q10_20` / `build_q20_50`,
-  used like a preformed matrix) and record `"n_survivors"` per hop.
+**To add a strategy:** drop a ~20-line file like the above into `strategies/`, then add its
+`STRATEGY_NAME` (+ any non-`p_win_min` threshold override, e.g. `q*_min`) to
+`sweep_config.STRATEGIES`. That's it.
+
+**Engine knobs for future ideas (no engine edit needed):**
+- Other comparison: `col_filter("longi_beta1yr.csv", "beta_max", op="<")` → keeps `beta < max`.
+- Other final priority: `make_strategy(..., ranker=rank_by("longi_FKplus.csv", ascending=False))`
+  → picks the highest-FKplus survivors instead of the lowest rank.
+
+**Rules / invariants the engine already enforces:**
+- One `gains` dict per hop, for `future_gain{period}d.csv` — never both horizons.
+- Selection returns `[]` when a daynum/column is absent; never raises; `str(daynum)` for all lookups.
+- Empty-focusset policy: filter strategies **skip** (record a cash hop and `continue`). `Ranknow` is
+  the lone **standalone** file (no filters, **breaks** on no-pick) — left off the engine by design.
+- `n_survivors` is recorded (→ `N_survivors` report row) automatically when a strategy has **≥2
+  filters**, matching the historical cross-strategy behaviour.
+- `quotient_filter` builds the ad-hoc MA quotient (e.g. MA10/MA20) at runtime, used like a
+  preformed matrix — replacing the old per-file `build_q10_20`/`build_q20_50`.
 
 ---
 

@@ -159,7 +159,7 @@ def main() -> None:
             "daynum": daynum,
             "tickers": tickers,
             "gains": gains,
-            "ref_values_prev": get_reference_values(daynum - 1),
+            "ref_values": get_reference_values(daynum),
         })
         daynum -= step
 

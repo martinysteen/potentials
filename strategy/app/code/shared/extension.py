@@ -22,7 +22,7 @@ Operational sheet layout (focusset_size = N):
   Row N+5    : avg_partial_gain values                              (orange/light-yellow/grey)
   Row N+6    : (reserved — 50d labels)
   Row N+7    : (reserved — 50d results)
-  Row N+8+   : day-1 ref rows (^GSPC_rsi, ^STOXX_rsi, ^HSI_rsi, ^VIX)  (yellow)
+  Row N+8+   : ref rows (^GSPC_rsi, ^STOXX_rsi, ^HSI_rsi, ^VIX)  (yellow)
   ...        : GICS / Sector2 / Zone occurrence counts
 
 Entry points (from app/code/):
@@ -52,7 +52,7 @@ _PLAIN        = Font()                                   # plain — default siz
 _HDR_FILL     = PatternFill("solid", fgColor="BDD7EE")   # blue — headers
 _STEP_FILL    = PatternFill("solid", fgColor="DDEBF7")   # lighter blue — strategy-step days
 _GRY_FILL     = PatternFill("solid", fgColor="EEEEEE")   # grey — suppressed / n/a
-_REF_FILL     = PatternFill("solid", fgColor="FFF2CC")   # yellow — day-1 ref rows
+_REF_FILL     = PatternFill("solid", fgColor="FFF2CC")   # yellow — ref rows
 _LBL_FILL     = PatternFill("solid", fgColor="E2EFDA")   # light green — label row
 _EXT_POS_FILL = PatternFill("solid", fgColor="FFFF99")   # light yellow — positive gain
 _EXT_NEG_FILL = PatternFill("solid", fgColor="FFC000")   # orange — negative gain
@@ -177,7 +177,7 @@ def _fill_operational(ws, hop_results: list[dict], params: dict,
     c = ws.cell(gain_row, 1, "avg_partial_gain"); c.font = _BOLD
     for j, h in enumerate(hop_results, start=2):
         val    = _hop_avg(h["gains_partial"])
-        gspc_p = h.get("ref_values_prev", {}).get("^GSPC_rsi", float("nan"))
+        gspc_p = h.get("ref_values", {}).get("^GSPC_rsi", float("nan"))
         no_go  = threshold is not None and not pd.isna(gspc_p) and gspc_p < threshold
         cell   = ws.cell(gain_row, j)
         cell.font, cell.number_format, cell.alignment = _BOLD, _PCT_FMT, _CTR
@@ -190,14 +190,14 @@ def _fill_operational(ws, hop_results: list[dict], params: dict,
 
     # ---- rows N+6 and N+7 intentionally blank (reserved for 50d labels / results) ----
 
-    # ---- day-1 ref rows (starting at N+8) ----
+    # ---- ref rows (starting at N+8) ----
     gspc_row  = n + 8
-    prev_keys = list(hop_results[0].get("ref_values_prev", {}).keys()) if hop_results else []
-    for idx, key in enumerate(prev_keys):
+    ref_keys = list(hop_results[0].get("ref_values", {}).keys()) if hop_results else []
+    for idx, key in enumerate(ref_keys):
         row = gspc_row + idx
-        c = ws.cell(row, 1, f"{key} (day-1)"); c.font, c.fill = _BOLD, _REF_FILL
+        c = ws.cell(row, 1, f"{key}"); c.font, c.fill = _BOLD, _REF_FILL
         for j, h in enumerate(hop_results, start=2):
-            val  = h.get("ref_values_prev", {}).get(key, float("nan"))
+            val  = h.get("ref_values", {}).get(key, float("nan"))
             cell = ws.cell(row, j)
             cell.fill, cell.alignment = _REF_FILL, _CTR
             if pd.notna(val):
@@ -206,7 +206,7 @@ def _fill_operational(ws, hop_results: list[dict], params: dict,
 
     # ---- attribute frequency rows ----
     stamdata = load_stamdata()
-    attr_row = gspc_row + len(prev_keys)
+    attr_row = gspc_row + len(ref_keys)
     for attr_col in ("GICS", "Sector2", "Zone"):
         fill = _ATTR_FILLS[attr_col]
         sorted_vals, hop_counts = _count_attr(hop_results, stamdata, attr_col)
@@ -312,7 +312,7 @@ def run_extension(
             "tickers":         tickers,
             "gains_partial":   gains_partial,
             "days_realized":   days,
-            "ref_values_prev": get_ref_fn(daynum - 1),
+            "ref_values": get_ref_fn(daynum),
         })
 
     print()
