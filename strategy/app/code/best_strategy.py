@@ -21,7 +21,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pandas as pd
-from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
@@ -32,7 +31,9 @@ from shared.data_loader import daynum_to_date
 
 # Decision metric is chain_annual — the additive average annual gain (phase-averaged,
 # common-span); chain_ret breaks ties. Per-strategy columns are defined near main().
-OUTPUT_XLSX = REPORT_ROOT / "best_strategy.xlsx"
+# Output is the combined workbook built by extension.run() — best_strategy_<date>.xlsx
+# (comparison sheet first, then one extension sheet per strategy). This module no longer
+# writes a file of its own.
 
 # ===========================================================================
 # Human-facing text — EDIT FREELY. Everything a reader sees as prose in the
@@ -349,20 +350,22 @@ def best_run(group: pd.DataFrame, primary: str, tiebreaker: str) -> pd.Series | 
 _HDR_ROW = 3   # the strategy-header row; titles occupy rows 1-2 above it
 
 
-def write_xlsx(columns: list[dict], chained_rows: list[str],
-               floor: int | None = None, cap: int | None = None,
-               period: int | None = None) -> None:
+def fill_best_sheet(ws, columns: list[dict], chained_rows: list[str],
+                    floor: int | None = None, cap: int | None = None,
+                    period: int | None = None) -> None:
     """
-    Two side-by-side tables sharing the same strategy columns: a left "chained" table
-    and a right "Ladder investment" table, row-aligned. Two title rows above both.
+    Write the strategy comparison into the GIVEN worksheet `ws`: two side-by-side tables
+    sharing the same strategy columns — a left "chained" table and a right "Ladder
+    investment" table, row-aligned, with two title rows above both.
+
+    The caller owns the workbook (this is sheet 1 of the combined best_strategy_<date>.xlsx,
+    built by extension.run()); this function only populates and styles the sheet.
 
     columns: [{"strategy", "row"}], one per strategy (its best run by chain_annual).
     chained_rows: chained metric names in display order; each row's laddered twin is
                   resolved via _CHAIN_TO_LADDER (shared keys repeat in both tables).
     floor/cap/period: common-span bounds + horizon, used to phrase the title rows.
     """
-    wb = Workbook()
-    ws = wb.active
     ws.title = "Best Strategy"
     ns = len(columns)
 
@@ -428,9 +431,6 @@ def write_xlsx(columns: list[dict], chained_rows: list[str],
         ws.column_dimensions[get_column_letter(lad_c0 + j)].width = 16
     ws.freeze_panes = f"{get_column_letter(chain_c0)}{_HDR_ROW + 1}"
 
-    wb.save(OUTPUT_XLSX)
-    print(f"Written: {OUTPUT_XLSX}")
-
 
 # ---------------------------------------------------------------------------
 # Ranking (shared by main() and extension.py)
@@ -486,30 +486,24 @@ def select_best_runs(verbose: bool = False) -> tuple[
     return columns, all_cols, floor, cap, period
 
 
+def chained_rows_for(all_cols: list[str]) -> list[str]:
+    """Display order of the LEFT (chained) table's metric rows: the curated _CHAINED_KEYS
+    that are present, then any remaining columns, with _DROP_ROWS excluded throughout."""
+    rows = [c for c in _CHAINED_KEYS if c in all_cols and c not in _DROP_ROWS]
+    rows += [c for c in all_cols if c not in rows and c not in _DROP_ROWS]
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    print("Loading aggregated summaries...")
-    columns, all_cols, floor, cap, period = select_best_runs(verbose=True)
-    if not columns:
-        return
-
-    chained_rows = [c for c in _CHAINED_KEYS if c in all_cols and c not in _DROP_ROWS]
-    chained_rows += [c for c in all_cols if c not in chained_rows and c not in _DROP_ROWS]
-
-    for col in columns:
-        c = col["row"].get("chain_annual") if col["row"] is not None else None
-        print(f"  {col['strategy']:18} best chain_annual={_fmt(c)}")
-    print()
-
-    write_xlsx(columns, chained_rows, floor, cap, period)
-    print("Done.")
-
-
-def _fmt(v) -> str:
-    return "n/a" if v is None or pd.isna(v) else f"{float(v):+.1f}"
+    # Output is the single combined workbook (comparison sheet + one extension sheet per
+    # strategy). Delegate to the combined builder so running this script alone still emits
+    # exactly that one file. Local import avoids the best_strategy <-> extension cycle.
+    import extension
+    extension.run()
 
 
 if __name__ == "__main__":

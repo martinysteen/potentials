@@ -55,7 +55,9 @@ strategy/
         │   ├── aggregated_summary.xlsx   # stacked summary across all runs of this strategy
         │   └── _archive/<timestamp>/     # previous runs, moved aside by run_sweep
         ├── _not_used/                    # archived report folders for the parked ZOP strategies
-        ├── best_strategy.xlsx            # cross-strategy comparison (rebuilt by best_strategy.py)
+        ├── best_strategy_<YYYYMMDD>.xlsx # combined report: sheet 1 = cross-strategy comparison,
+        │                                 #   then one extension sheet per strategy (best-first)
+        ├── _archive/                     # prior dated best_strategy_*.xlsx (overwrite same name)
         └── summary.csv                   # master append-log, one row per run (all strategies)
 ```
 
@@ -87,7 +89,8 @@ python run_sweep.py --list     # list discoverable strategy names
 
 # Standalone pieces (run_sweep already calls these at the end):
 python aggregate_summary.py ["Strategy"]   # re-aggregate one or all strategies
-python best_strategy.py                     # rebuild best_strategy.xlsx only
+python extension.py                         # build the combined best_strategy_<date>.xlsx
+python best_strategy.py                     # same combined file (delegates to extension.run())
 ```
 
 To analyse the **50d** horizon instead of 20d: set `period: 50` in `sweep_config.py` (or a
@@ -203,15 +206,17 @@ standalone `report/<strategy>/extension_<YYYYMMDD>.xlsx` (returns its path) or �
 (returns the sheet title); `None` if the window is empty / no hops. Every active strategy exposes a
 `build_extension(workbook=None)` that binds its selector and forwards `workbook` to `run_extension`.
 
-### `extension.py` — extend the strategies from best_strategy.xlsx
-Standalone daily tool (no sweep needed; the sweep is for development). Reuses
-`best_strategy.select_best_runs()` for the ranking and each strategy's winning-run params.
-`python extension.py` (and the `run_sweep.py` auto-call) extends **every** strategy, best-first,
-into one workbook `report/extension_all_<YYYYMMDD>.xlsx` — **one sheet per strategy**. So a user
-following any strategy, not just the day's top pick, always has its recent "known future" (the
-top-ranked strategy flips as the ranking moves). The prior `report/extension_*.xlsx` is cleared
-**only after** there is new output, so a run that extends nothing never wipes a good existing file.
-(A single strategy can still be extended directly via `<strategy>.build_extension()`.)
+### `extension.py` — build the single combined report
+Standalone daily tool (no sweep needed; the sweep is for development) and the project's one
+output entry point. Reuses `best_strategy.select_best_runs()` for the ranking and each strategy's
+winning-run params. `python extension.py` (and the `run_sweep.py` auto-call) builds **one** workbook
+`report/best_strategy_<YYYYMMDD>.xlsx`: **sheet 1** is the cross-strategy comparison (via
+`best_strategy.fill_best_sheet`), followed by **one extension sheet per strategy, best-first** — so a
+user following any strategy, not just the day's top pick, always has its recent "known future". The
+prior dated workbook is moved to `report/_archive/` **only after** there is new output (same-named
+archived copy overwritten; user-named keepsakes like `best_strategy_top.xlsx` are left untouched).
+`python best_strategy.py` delegates here, producing the same file. (A single strategy can still be
+extended to its own standalone file via `<strategy>.build_extension()`.)
 
 ---
 
@@ -374,9 +379,10 @@ main, build_extension = make_strategy(STRATEGY_NAME, PARAMS, FILTERS)
 
 ---
 
-## best_strategy.py Output Structure
+## Comparison Sheet Structure
 
-`app/report/best_strategy.xlsx` — **transposed**: metric names down column A, **one column per
+Sheet 1 ("Best Strategy") of `app/report/best_strategy_<YYYYMMDD>.xlsx`, written by
+`best_strategy.fill_best_sheet` — **transposed**: metric names down column A, **one column per
 strategy**, strongest `chain_annual` leftmost.
 
 - Each column = that strategy's **best run by `chain_annual`** (tiebreaker `chain_ret`).

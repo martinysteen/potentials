@@ -17,8 +17,8 @@ What it does, in order
    strategy's rows from the master summary.csv.
 4. Run each parameter-set by overriding the module's PARAMS in place and calling
    its main(); run numbering restarts at 1 because the folder was cleared.
-5. Re-aggregate the swept strategies and rebuild best_strategy.xlsx (which still
-   compares against any strategies you did not touch).
+5. Re-aggregate the swept strategies and rebuild the combined best_strategy_<date>.xlsx
+   (comparison + per-strategy extensions; still compares against strategies you did not touch).
 
 Strategies not listed in sweep_config.STRATEGIES are never modified.
 """
@@ -37,7 +37,6 @@ import csv
 
 import strategies as strategies_pkg
 import aggregate_summary
-import best_strategy
 from shared.config import REPORT_ROOT, SUMMARY_CSV
 
 import sweep_config
@@ -238,10 +237,7 @@ def main() -> None:
     for name in plan:
         aggregate_summary.aggregate_strategy(name)
 
-    print("\nRebuilding best_strategy.xlsx ...")
-    best_strategy.main()
-
-    print("\nExtending all strategies ...")
+    print("\nBuilding combined best_strategy_<date>.xlsx (comparison + per-strategy extensions) ...")
     import extension                           # local import avoids an import cycle
     extension.run()
 
