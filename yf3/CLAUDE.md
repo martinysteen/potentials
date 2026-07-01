@@ -12,6 +12,7 @@
 ## Environment
 - **Execution:** Ubuntu server
 - **Development:** Windows 11 connected via SSH
+- **Run Python on the server:** `ssh -p 2222 sm@innovia.dk` then `conda activate potsystem_env` — the Windows host has no usable Python
 - **Conda env:** potsystem_env (shared)
 - **Python:** 3.13
 - **Shared code:** /home/sm/potentials/shared/

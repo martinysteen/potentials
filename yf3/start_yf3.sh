@@ -51,6 +51,12 @@ python3 stackYfinanceData.py
 STACK_EXIT_CODE=$?
 echo "Stack script exit code: $STACK_EXIT_CODE"
 
+# Build the one-row-per-ticker analyst-target snapshot (Yfinance.csv for PotDatML)
+echo "Running makeYfinanceSnapshot.py..."
+python3 makeYfinanceSnapshot.py
+SNAP_EXIT_CODE=$?
+echo "Snapshot script exit code: $SNAP_EXIT_CODE"
+
 echo "Python script exit code: $PYTHON_EXIT_CODE"
 echo "=== start_yf3.sh END: $(date) ==="
 

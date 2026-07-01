@@ -14,9 +14,8 @@ exec >> $LOGFILE 2>&1
 echo "=== updgd_yf3.sh START: $(date) ==="
 
 # Set source and destination
-SOURCE=/home/sm/potentials/yf3/app/output
-RECEIVER=GoogleDrive:PotSystem/PotApps/Yfinance/output
-
+SOURCE=/home/sm/potentials/yf3/app/output_stacked
+RECEIVER=GoogleDrive:PotSystem/repositoryRTBI/Yfinance/
 # Verify source directory exists
 if [ ! -d "$SOURCE" ]; then
     echo "ERROR: Source directory does not exist: $SOURCE"
@@ -28,7 +27,7 @@ echo "Copying from: $SOURCE"
 echo "Copying to: $RECEIVER"
 
 # Run the rclone command
-rclone copy "$SOURCE" "$RECEIVER" --update --verbose --drive-skip-gdocs
+rclone copy "$SOURCE" "$RECEIVER" --update --verbose --drive-skip-gdocs --exclude ".stack_ledger.json"
 
 RCLONE_EXIT_CODE=$?
 echo "rclone exit code: $RCLONE_EXIT_CODE"
