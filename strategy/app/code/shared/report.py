@@ -17,7 +17,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
-from shared.chain import realizable_chain
+from shared.chain import realizable_chain, chain_lot_stats, chain_origin_sensitivity
 from shared.config import REPORT_ROOT, SUMMARY_CSV
 from shared.data_loader import daynum_to_date, load_stamdata
 
@@ -142,22 +142,6 @@ def _count_active_hops(hop_results: list[dict], params: dict) -> int:
     return count
 
 
-def _active_hop_vals(hop_results: list[dict], gain_key: str, params: dict) -> list[float]:
-    """Return per-hop avg gains for all active, non-NaN hops."""
-    threshold = params.get("No_go_GSPC_rsi")
-    n = params.get("focusset_size", 10)
-    vals: list[float] = []
-    for h in hop_results:
-        if threshold is not None:
-            gspc = h.get("ref_values", {}).get("^GSPC_rsi", float("nan"))
-            if not pd.isna(gspc) and gspc < threshold:
-                continue
-        v = _hop_avg_topn(h, gain_key, n)
-        if pd.notna(v):
-            vals.append(v)
-    return vals
-
-
 def _usable_daynums(hop_results: list[dict], gain_key: str, params: dict) -> list[int]:
     """Daynums of hops that actually invest: a real (non-NaN) top-N gain surviving No_go.
 
@@ -178,13 +162,28 @@ def _usable_daynums(hop_results: list[dict], gain_key: str, params: dict) -> lis
     return dns
 
 
-def _count_loss_hops(hop_results: list[dict], gain_key: str, params: dict) -> int:
-    return sum(1 for v in _active_hop_vals(hop_results, gain_key, params) if v < 0)
+def _chain_hop_rows(hop_results: list[dict], n: int) -> list[tuple[int, float, float]]:
+    """(daynum, top-N avg gain, gspc_rsi) per hop — the chain's raw inputs (one span)."""
+    return [(h["daynum"], _hop_avg_topn(h, _GAIN_KEY, n),
+             h.get("ref_values", {}).get("^GSPC_rsi", float("nan")))
+            for h in hop_results]
 
 
-def _worst_hop_gain(hop_results: list[dict], gain_key: str, params: dict) -> float:
-    vals = _active_hop_vals(hop_results, gain_key, params)
-    return min(vals) if vals else float("nan")
+def _chain_dispersion(hop_results: list[dict], n: int, hold: int,
+                      params: dict) -> tuple[float, int, float]:
+    """Chained WORST-CASE dispersion over this run's own span (no floor/cap).
+
+    Returns (worst_lot, n_loss, origin_sens_pct) using the SAME rule best_strategy.py
+    applies on the common span — worst = lowest lot over all start origins, n_loss = most
+    losers in any one origin's chain (worst < 0 <=> n_loss >= 1), sens = annual spread
+    across origins. So the run-file Summary and the comparison sheet reconcile (they differ
+    only by span, exactly as chain_ret does).
+    """
+    thr  = params.get("No_go_GSPC_rsi")
+    rows = _chain_hop_rows(hop_results, n)
+    _avg, worst, n_loss = chain_lot_stats(rows, hold, thr, phase_average=True)
+    sens = chain_origin_sensitivity(rows, hold, thr)
+    return worst, n_loss, sens
 
 
 # ---------------------------------------------------------------------------
@@ -391,8 +390,9 @@ def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
     rows.append(("chain_annual", round(annual, 4) if pd.notna(annual) else None))
     rows.append(("chain_n",      ntr))
 
-    rows.append(("N_loss", _count_loss_hops(hop_results, _GAIN_KEY, params)))
-    worst = _worst_hop_gain(hop_results, _GAIN_KEY, params)
+    worst, n_loss, sens = _chain_dispersion(hop_results, n, hold, params)
+    rows.append(("origin_sens%", round(sens, 1) if pd.notna(sens) else None))
+    rows.append(("N_loss", n_loss))
     rows.append(("Worst", round(worst, 4) if pd.notna(worst) else None))
 
     ws.column_dimensions["A"].width = 24
@@ -447,7 +447,7 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
     param_cols   = list(params.keys())
     avg_labels   = [r[0] for r in _avg_rows(n)]
     chain_labels = _chain_metric_labels()
-    extra_cols   = ["N_loss", "Worst"]
+    extra_cols   = ["origin_sens%", "N_loss", "Worst"]
     all_cols     = (["StrategyName", "Run#", "StartDaynum", "N_hops", "N_hops_active", "EndDaynum"]
                     + param_cols + avg_labels + chain_labels + extra_cols)
 
@@ -462,9 +462,10 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
         hold = int(params.get("period", 20))
         ret, annual, ntr = _chain_metrics(hop_results, _GAIN_KEY, n, hold, params)
         chain_vals = [_fmt(ret), _fmt(annual), str(ntr)]
-        worst = _worst_hop_gain(hop_results, _GAIN_KEY, params)
+        worst, n_loss, sens = _chain_dispersion(hop_results, n, hold, params)
         extra_vals = [
-            _count_loss_hops(hop_results, _GAIN_KEY, params),
+            "" if pd.isna(sens) else f"{sens:.1f}".replace(".", ","),
+            n_loss,
             _fmt(worst),
         ]
         usable   = _usable_daynums(hop_results, _GAIN_KEY, params)

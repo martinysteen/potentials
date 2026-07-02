@@ -271,8 +271,9 @@ one run = one horizon = one set of metrics. Write order:
 | *(PARAMS keys)* | `focusset_size`, `step`, `period`, `No_go_GSPC_rsi`, `p20d_win_min`, … |
 | `avg_gain` | grand average per-hop top-N gain over `period` (No_go-filtered) |
 | `chain_ret`, `chain_annual`, `chain_n` | realizable chain (additive, phase-averaged; see below) |
-| `N_loss` | count of active hops with negative avg gain |
-| `Worst` | worst single active-hop avg gain |
+| `origin_sens%` | spread of `chain_annual` across start origins `(max−min)/avg %` — **lower = more robust** to when you start hopping (diagnostic; never ranks) |
+| `N_loss` | most negative lots in any one origin's realized chain (of `chain_n`) — worst-case count |
+| `Worst` | worst single chain lot (gain%): the lowest lot over all start origins |
 
 ### Averages vs accumulation (why overlap matters)
 With `step < period`, consecutive hops measure **overlapping** forward windows. Overlap does
@@ -287,6 +288,19 @@ with the anchor day. `chain_ret` is `Σ gᵢ`; `chain_annual` is that sum ÷ spa
 (`_TRADING_DAYS_YEAR = 252`) — a simple average annual gain (not a compound CAGR) and the
 **primary decision metric**. Respects `No_go_GSPC_rsi`;
 NaN-safe.
+
+### Dispersion is a coherent worst-case pair (`Worst`/`N_loss`) + `origin_sens%`
+`Worst` and `N_loss` (`shared/chain.chain_lot_stats`) are **not** independent averages — that
+let them contradict (a mean-of-per-origin-minima could read `+0.37` beside an averaged
+`N_loss=1`). They are a **worst-case pair**: `Worst` = the single lowest lot over **all** start
+origins (the worst day any user could hit); `N_loss` = the **most** losers in any one origin's
+chain (max, not mean). This guarantees `Worst < 0 ⇔ N_loss ≥ 1`. `avg_gain` stays the origin-mean
+(a central tendency). `origin_sens%` (`chain_origin_sensitivity`) reports how much `chain_annual`
+swings with the start origin, `(max−min)/|mean|·100`; **lower is better** (robust to when a user
+starts). All three are computed the **same way** in `report.py` (per-run Summary, over the run's
+own span) and in `best_strategy.py` (comparison sheet, over the common span), so the two files
+reconcile — differing only by span, exactly like `chain_ret`. *(Retired: the old all-hops `Worst`/
+`N_loss` over the full overlapping hop population.)*
 
 ### `step` is fixed at 1 (and why)
 A hop's gain depends only on its entry daynum, and the chain enforces ≥`period` spacing
@@ -402,6 +416,17 @@ strategy**, strongest `chain_annual` leftmost.
   `chain_inv%` sits **≥** `ladder_inv%` (which buys every slot); they diverge most when gating is
   scattered, and converge when a dry spell lasts longer than `hold`. Computed in `reclamp_chains`
   (chain via `shared.chain.chain_inv_pct`), best_strategy-only like the other ladder diagnostics.
+- `origin_sens%` is a **chain-only** row (maps to `None` in `_CHAIN_TO_LADDER`, absent from the
+  ladder table). Not because a ladder is inherently origin-free, but because it **diversifies the
+  sensitivity away**: origin-sensitivity is a property of the strategy's phase-set (how differently
+  the `period`-spaced chains perform by start day), and the ladder holds all `n = hold/step` entry
+  origins at once, so its blend is their exact average (`blend = Σ(hops)/n`, independent of the
+  start) → `origin_sens → 0` when `step ≪ period`, returning to the full chain swing only at the
+  `n = 1` edge (`step = period`, ladder ≡ a single serial chain). The serial chain, which picks one
+  origin, is the estimator that actually feels it — so the metric lives on the chain side. (With the
+  sweep's `step = 1`, `n = hold`, so the ladder blend's own `origin_sens%` is ~0 by construction.)
+  `Worst`/`N_loss` are the worst-case pair (see chain section); the ladder side keeps its own
+  independent `ladder_worst`/`ladder_n_loss`.
 - Adding a strategy to the sweep makes it appear automatically as a new column.
 
 ---

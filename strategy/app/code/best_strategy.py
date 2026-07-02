@@ -25,7 +25,8 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
 from shared.chain import (realizable_chain, laddered_portfolio,
-                          chain_lot_stats, laddered_lot_stats, chain_inv_pct)
+                          chain_lot_stats, laddered_lot_stats, chain_inv_pct,
+                          chain_origin_sensitivity)
 from shared.config import REPORT_ROOT
 from shared.data_loader import daynum_to_date
 
@@ -66,9 +67,10 @@ _COMMENTS_CHAIN = {     # left table (column B) — plus the shared rows reused 
     "chain_annual":  "Avg annual gain% (additive: sum of lot gains / years, no compounding)",
     "chain_ret":     "Additive return of full chain (sum of lot gains, no reinvestment)",
     "chain_n":       "Number of lots in full chain",
+    "origin_sens%":  "Spread of chain_annual across start origins (max-min)/avg %; LOWER = more robust to when you start hopping",
     "avg_gain":      "Average gain% per chain lot",
     "Worst":         "Worst chain lot (gain%)",
-    "N_loss":        "Negative lots in chain (of chain_n)",
+    "N_loss":        "Most negative lots in any one realized chain (of chain_n)",
     "chain_inv%":    "Share of active span invested (%) — idle when No_go gating / too few survivors block a reinvest",
     "focusset_size": "Number of stocks in each investment lot",
     "from_rank":     "Rank picked from: 1=best, k>1=skip best k-1, -1=worst",
@@ -93,7 +95,7 @@ _COMMENTS_LADDER = {    # right table (column I) — the ladder_* rows only
 # repeat it. Floor/cap are absent: they are already stated in the title rows.
 _CHAINED_KEYS = [
     "Run#", "period", "StartDaynum", "EndDaynum",
-    "chain_annual", "chain_ret", "chain_n",
+    "chain_annual", "chain_ret", "chain_n", "origin_sens%",
     "avg_gain", "Worst", "N_loss",
     "chain_inv%",
     "focusset_size", "step", "No_go_GSPC_rsi", "from_rank",
@@ -124,6 +126,12 @@ _CHAIN_TO_LADDER = {
     "Worst":         "ladder_worst",
     "N_loss":        "ladder_n_loss",
     "chain_inv%":    "ladder_inv%",
+    # Chain-only, not because a ladder can't be origin-sensitive but because it diversifies it
+    # away: the ladder holds all n=hold/step entry origins at once, so its blend is their exact
+    # average (blend = sum(hops)/n, independent of the start) -> origin_sens -> 0 for step<<period,
+    # returning to the full chain swing only at the n=1 edge (step=period). The serial chain,
+    # picking one origin, is the one that actually feels it.
+    "origin_sens%":  None,
     "source_file":   None,
 }
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -281,6 +289,11 @@ def reclamp_chains(df: pd.DataFrame) -> tuple[pd.DataFrame, int | None, int | No
         # survivors leave no usable hop at a reinvest point. The chain twin of ladder_inv%.
         cinv = chain_inv_pct(((r[0], r[1], r[2]) for r in rows), hold, thr, floor, cap)
         df.at[idx, "chain_inv%"] = round(cinv, 1) if pd.notna(cinv) else None
+
+        # How much the chain's annual swings with the start origin (% of mean). LOWER =
+        # more robust to when a user starts hopping. Diagnostic; never feeds ranking.
+        csens = chain_origin_sensitivity(((r[0], r[1], r[2]) for r in rows), hold, thr, floor, cap)
+        df.at[idx, "origin_sens%"] = round(csens, 1) if pd.notna(csens) else None
 
         # Diagnostic only — laddered (always-invested) estimate over the same span.
         # Never feeds selection; ranking stays on chain_annual.

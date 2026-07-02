@@ -246,10 +246,18 @@ def chain_lot_stats(rows: Iterable[Tuple[int, float, float]], hold: int,
                     phase_average: bool = True) -> Tuple[float, float, int]:
     """Per-lot dispersion of the realizable chain over its non-overlapping lots.
 
-    Phase-averaged like realizable_chain: each start offset yields one chain; we report
-    the mean of per-chain (mean gain), the mean of per-chain (worst lot), and the
-    rounded mean of per-chain (loss count) — i.e. typical behaviour of one realized
-    chain of ~chain_n lots, NOT of the full hop population.
+    Origin-averaged over start offsets like realizable_chain, but `worst` and `n_loss` are a
+    coherent WORST-CASE PAIR, not independent averages. `avg_gain` stays the origin-mean of
+    per-origin mean lot gain (a central tendency, where averaging is meaningful), while:
+      * `worst`  = the single lowest lot across ALL origins — the worst day any user could
+                   hit, whatever day they start hopping;
+      * `n_loss` = the MOST losing lots in any one origin's realized chain (max, not mean).
+
+    Averaging an *extreme* (min) independently from a *count* (loss tally) is what let the two
+    disagree in either direction — the "Worst=+0.37 yet N_loss=1" contradiction (mean-of-minima
+    positive while some origins still lose) and its mirror. Taking worst = min-over-origins and
+    n_loss = max-over-origins makes them a genuine worst case, guaranteeing
+    `worst < 0  <=>  n_loss >= 1` (a losing lot exists iff some origin's chain counts one).
 
     Returns (avg_gain_pct, worst_pct, n_loss). NaN/0 when no hop qualifies.
     """
@@ -275,8 +283,50 @@ def chain_lot_stats(rows: Iterable[Tuple[int, float, float]], hold: int,
     if not means:
         return float("nan"), float("nan"), 0
     return (sum(means) / len(means),
-            sum(worsts) / len(worsts),
-            round(sum(nlosses) / len(nlosses)))
+            min(worsts),      # worst single lot any user could hit, across all origins
+            max(nlosses))     # most losers in any one origin's chain (pairs with worst)
+
+
+def chain_origin_sensitivity(rows: Iterable[Tuple[int, float, float]], hold: int,
+                             no_go_threshold: float | None = None,
+                             floor_daynum: int | None = None,
+                             cap_daynum: int | None = None,
+                             phase_average: bool = True) -> float:
+    """How much the chain's annual return swings with the start origin, as a percentage.
+
+    Origin-averaging (realizable_chain's phase_average) exists precisely because a single
+    greedy chain is anchor-sensitive — the annual return depends on which day you start. This
+    reports that sensitivity directly: run the chain from every start offset in the first
+    holding window (the same origin set realizable_chain averages), take each origin's annual
+    via _additive, and return the spread (max - min) / |mean| * 100.
+
+    LOWER is better: a small spread means the strategy pays about the same regardless of when
+    a user jumps on the hopping — a robust, desirable property. NaN when fewer than two origins
+    exist (spread undefined) or the mean annual is ~0.
+    """
+    usable = _filter_usable(rows, no_go_threshold, floor_daynum, cap_daynum)
+    if not usable:
+        return float("nan")
+    if phase_average:
+        first_dn = usable[0][0]
+        starts = [i for i, (dn, _g) in enumerate(usable) if dn < first_dn + hold]
+    else:
+        starts = [0]
+
+    annuals: List[float] = []
+    for si in starts:
+        chain = _greedy_from(usable, si, hold)
+        if not chain:
+            continue
+        _t, a = _additive(chain, hold)
+        if not pd.isna(a):
+            annuals.append(a)
+    if len(annuals) < 2:
+        return float("nan")
+    mean = sum(annuals) / len(annuals)
+    if abs(mean) < 1e-9:
+        return float("nan")
+    return (max(annuals) - min(annuals)) / abs(mean) * 100.0
 
 
 def chain_inv_pct(rows: Iterable[Tuple[int, float, float]], hold: int,

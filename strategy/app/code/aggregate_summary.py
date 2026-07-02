@@ -102,8 +102,8 @@ def aggregate_strategy(strategy_name: str) -> Path | None:
         cols.remove("N_hops_active")
         cols.insert(cols.index("N_hops") + 1, "N_hops_active")
 
-    # Keep loss/worst columns grouped to the right of the avg_gain columns
-    _trailing = ["N_loss", "Worst"]
+    # Keep the dispersion columns grouped to the right of the avg_gain columns
+    _trailing = ["origin_sens%", "N_loss", "Worst"]
     for _col in _trailing:
         if _col in cols:
             cols.remove(_col)
