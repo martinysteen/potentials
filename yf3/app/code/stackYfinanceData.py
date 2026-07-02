@@ -35,6 +35,12 @@ stays correct even though dedup discards older duplicate fetches. The stacked fi
 the durable accumulation: rows persist even after their source file is later removed
 from ../output/. If the existing stacked file predates the Daynum/Date columns, it is
 migrated on the next run (the one-time conversion of the legacy file).
+
+Stale (all-blank) records -- rows where every column except Symbol/Daynum/Date/
+FetchedDate is blank, i.e. a fetch attempt that returned no data -- are dropped
+after dedup, across the whole table regardless of Daynum. The count removed is
+printed. The final file is written sorted by FetchedDate descending, Symbol
+ascending.
 """
 
 import glob
@@ -148,9 +154,29 @@ def dedupe(df: pd.DataFrame) -> pd.DataFrame:
     """Keep one row per (Symbol, Daynum): the most recent FetchedDate."""
     tmp = df.assign(_ts=parse_fetched(df['FetchedDate'])).sort_values('_ts')
     tmp = tmp.drop_duplicates(subset=['Symbol', 'Daynum'], keep='last')
-    return (tmp.sort_values(['Symbol', 'Daynum'])
-               .drop(columns='_ts')
-               .reset_index(drop=True))
+    return tmp.drop(columns='_ts').reset_index(drop=True)
+
+
+_ID_COLS = ('Symbol', 'Daynum', 'Date', 'FetchedDate')
+
+
+def drop_stale(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Drop rows where every content column (all but Symbol/Daynum/Date/
+    FetchedDate) is blank -- a failed fetch that carries no data. Applies
+    across the whole table regardless of Daynum.
+    """
+    content_cols = [c for c in df.columns if c not in _ID_COLS]
+    stale = df[content_cols].isna().all(axis=1)
+    return df.loc[~stale].reset_index(drop=True), int(stale.sum())
+
+
+def sort_output(df: pd.DataFrame) -> pd.DataFrame:
+    """Final on-disk row order: FetchedDate descending, Symbol ascending."""
+    ts = parse_fetched(df['FetchedDate'])
+    return (df.assign(_ts=ts)
+              .sort_values(['_ts', 'Symbol'], ascending=[False, True])
+              .drop(columns='_ts')
+              .reset_index(drop=True))
 
 
 def load_stacked(cal: tuple) -> tuple[pd.DataFrame | None, bool]:
@@ -224,6 +250,8 @@ def main():
     combined = pd.concat(frames, ignore_index=True)
     before = len(combined)
     result = dedupe(combined)
+    result, n_stale = drop_stale(result)
+    result = sort_output(result)
 
     os.makedirs(os.path.dirname(STACKED_FILE), exist_ok=True)
     result.to_csv(STACKED_FILE, sep=';', decimal=',', index=False, encoding='utf-8')
@@ -232,7 +260,8 @@ def main():
     added = sum(len(f) for f in new_frames)
     print(f'stackYfinanceData: {len(todo)} source file(s), {added} rows; '
           f'combined {before} -> {len(result)} after dedup '
-          f'({before - len(result)} removed)'
+          f'({before - len(result) - n_stale} removed), '
+          f'{n_stale} stale (all-blank) record(s) removed'
           + ('  [legacy file migrated]' if migrated else ''))
 
 
