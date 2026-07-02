@@ -7,7 +7,7 @@
 			"path": "../../logs"
 		},
 		{
-			"path": "../../miniconda3"
+			"path": "../.."
 		}
 	],
 	"settings": {}

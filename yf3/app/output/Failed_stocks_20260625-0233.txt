@@ -1,3 +1,0 @@
-Failed to fetch data for 1 stocks:
-
-CRH.L: Insufficient data returned for ticker CRH.L
