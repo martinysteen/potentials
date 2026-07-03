@@ -329,6 +329,40 @@ def chain_origin_sensitivity(rows: Iterable[Tuple[int, float, float]], hold: int
     return (max(annuals) - min(annuals)) / abs(mean) * 100.0
 
 
+def chain_origin_range(rows: Iterable[Tuple[int, float, float]], hold: int,
+                       no_go_threshold: float | None = None,
+                       floor_daynum: int | None = None,
+                       cap_daynum: int | None = None,
+                       phase_average: bool = True) -> Tuple[float, float]:
+    """Min and max of the chain's annual return across start origins (raw, unrounded).
+
+    Same origin set as chain_origin_sensitivity, but returns the two extremes directly
+    instead of collapsing them into a (max-min)/mean ratio — with few origins, one outlier
+    origin can dominate that ratio and make it read as a symmetric swing around the mean
+    when it isn't. (NaN, NaN) when fewer than two origins exist.
+    """
+    usable = _filter_usable(rows, no_go_threshold, floor_daynum, cap_daynum)
+    if not usable:
+        return float("nan"), float("nan")
+    if phase_average:
+        first_dn = usable[0][0]
+        starts = [i for i, (dn, _g) in enumerate(usable) if dn < first_dn + hold]
+    else:
+        starts = [0]
+
+    annuals: List[float] = []
+    for si in starts:
+        chain = _greedy_from(usable, si, hold)
+        if not chain:
+            continue
+        _t, a = _additive(chain, hold)
+        if not pd.isna(a):
+            annuals.append(a)
+    if len(annuals) < 2:
+        return float("nan"), float("nan")
+    return min(annuals), max(annuals)
+
+
 def chain_inv_pct(rows: Iterable[Tuple[int, float, float]], hold: int,
                   no_go_threshold: float | None = None,
                   floor_daynum: int | None = None,

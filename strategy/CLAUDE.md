@@ -74,6 +74,9 @@ strategies. Move the files back to restore them.
 - **Platform:** Ubuntu server `gandalf` (SSH via `innovia.dk:2222`). The ML/data stack lives here;
   a Windows-side conda env of the same name has only pandas/numpy (no scipy/sklearn).
 - **Development:** VS Code Remote-SSH from Windows
+- **Every `python` invocation goes through SSH — no exceptions:**
+  `ssh -p 2222 sm@innovia.dk` then `conda activate potsystem_env`. Never invoke python directly
+  on the Windows host for this project, even for quick checks.
 
 ---
 

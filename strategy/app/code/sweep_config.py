@@ -48,10 +48,29 @@ LINKED: dict[str, list[str]] = {
     "p_win_min": ["p20d_win_min", "p50d_win_min"],
 }
 
+# Fixed left-to-right column order for best_strategy.xlsx (both the chained and ladder
+# tables). Was previously sorted by chain_annual, but that reshuffles every time a swept
+# parameter changes performance, making the report hard to read run over run. A strategy
+# not listed here is placed after all listed ones (in whatever order pandas/groupby gives).
+STRATEGY_ORDER: list[str] = [
+    "P20P50cross2050",
+    "P20P50cross1020",
+    "P20P50",
+    "P50cross2050",
+    "P50cross1020",
+    "P20cross2050",
+    "P20cross1020",
+    "P50",
+    "P20",
+    "Cross2050",
+    "Cross1020",
+    "Ranknow",
+]
+
 # Applied to every strategy below (where the key exists in that strategy's PARAMS).
 # Multiple values offered by list format like "step": [1, 5]
 DEFAULTS: dict = {
-    "focusset_size":  5,
+    "focusset_size":  3,
     "step":           5,            # fixed at 1: finest phase-averaging for the chain;
                                           # step is otherwise second-order for the chain metric.
     "period":         20,           # forward horizon in trading days (20 or 50). Single
@@ -59,7 +78,7 @@ DEFAULTS: dict = {
     "p_win_min":      0.8,         # -> p20d_win_min / p50d_win_min, kept equal
     "No_go_GSPC_rsi": 0,            # 0 = filter off; 40 = typical. Swept so Summary
                                           # metrics (chain_*, avg_gain, N_loss) reflect each.
-    "from_rank":      [1,-1]          # WHERE in the rank-ordered survivor set to draw the
+    "from_rank":      1          # WHERE in the rank-ordered survivor set to draw the
                                           # focusset from (smaller longi_rank == better):
                                           #   1   -> the best n            (classic top-pick)
                                           #   k>1 -> skip the best k-1, take the next n

@@ -27,7 +27,7 @@ echo "Copying from: $SOURCE"
 echo "Copying to: $RECEIVER"
 
 # Run the rclone command
-rclone copy "$SOURCE" "$RECEIVER" --update --verbose --drive-skip-gdocs --exclude ".stack_ledger.json"
+rclone copy "$SOURCE" "$RECEIVER" --update --verbose --drive-skip-gdocs --exclude ".stack_ledger.json" --exclude ".gitignore"
 
 RCLONE_EXIT_CODE=$?
 echo "rclone exit code: $RCLONE_EXIT_CODE"

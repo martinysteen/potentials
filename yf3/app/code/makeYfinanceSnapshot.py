@@ -25,12 +25,12 @@ CSV_PARAMS = dict(sep=';', decimal=',', encoding='utf-8')
 COLUMNS = {
     'Symbol':              'Ticker',
     'Daynum':              'Daynum',
-    'Target_HighPrice':    'Target_HighPrice',
-    'Target_LowPrice':     'Target_LowPrice',
-    'Target_MeanPrice':    'Target_MeanPrice',
-    'Target_MedianPrice':  'Target_MedianPrice',
-    'Recommendation_Mean': 'Recommendation_Mean',
-    'Recommendation_Key':  'Recommendation_Key',
+    'Target_HighPrice':    'Target_High',
+    'Target_LowPrice':     'Target_Low',
+    'Target_MeanPrice':    'Target_Mean',
+    'Target_MedianPrice':  'Target_Median',
+    'Recommendation_Mean': 'Recomm_Mean',
+    'Recommendation_Key':  'Recomm_Key',
     'NumberOfAnalysts':    'NumberOfAnalysts',
 }
 # Output columns written as plain integers (no European decimal comma).
