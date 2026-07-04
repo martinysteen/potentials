@@ -70,7 +70,7 @@ STRATEGY_ORDER: list[str] = [
 # Applied to every strategy below (where the key exists in that strategy's PARAMS).
 # Multiple values offered by list format like "step": [1, 5]
 DEFAULTS: dict = {
-    "focusset_size":  3,
+    "focusset_size":  5,
     "step":           5,            # fixed at 1: finest phase-averaging for the chain;
                                           # step is otherwise second-order for the chain metric.
     "period":         20,           # forward horizon in trading days (20 or 50). Single
