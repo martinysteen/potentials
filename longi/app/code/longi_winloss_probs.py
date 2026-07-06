@@ -115,16 +115,20 @@ def predict_for_target_day(
     min_stock_samples: int,
     reg_lambda: float,
     max_iter: int,
+    embargo_days: int = 0,
 ) -> Dict[str, Tuple[float, float]]:
     """
     Predict per-ticker win/loss probabilities for one target and one daynum.
+
+    embargo_days excludes training rows whose label window extends into daynum_case
+    (label at daynum X is born at X + embargo_days, so it must resolve before daynum_case).
 
     Returns:
     ticker -> (p_win, p_loss), NaNs for non-calculable rows
     """
     feature_cols = [Path(name).stem for name in FEATURE_FILES]
     x_case = feature_df[feature_df["daynum"] == daynum_case].set_index("ticker")
-    train_all = data[data["daynum"] < daynum_case]
+    train_all = data[data["daynum"] < daynum_case - embargo_days]
     train_by_ticker = {ticker: grp for ticker, grp in train_all.groupby("ticker", sort=False)}
 
     out: Dict[str, Tuple[float, float]] = {}
@@ -398,6 +402,7 @@ def main() -> int:
                 min_stock_samples=int(args.min_stock_samples),
                 reg_lambda=float(args.reg_lambda),
                 max_iter=int(args.max_iter),
+                embargo_days=spec.horizon_days,
             )
 
         # Explicitly clear recomputed column cells so stale values do not survive rewrites.

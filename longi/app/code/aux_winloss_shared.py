@@ -54,16 +54,15 @@ CLASS_TO_INT = {name: idx for idx, name in enumerate(CLASS_NAMES)}
 @dataclass(frozen=True)
 class TargetSpec:
     """Target definition for model training."""
-
     key: str
     target_file: str
     win_threshold: float
     loss_threshold: float = 0.0
-
+    horizon_days: int = 0          # outcome window length; labels born at daynum + horizon_days
 
 TARGET_SPECS: List[TargetSpec] = [
-    TargetSpec(key="20d", target_file="future_gain20d.csv", win_threshold=6.0, loss_threshold=0.0),
-    TargetSpec(key="50d", target_file="future_gain50d.csv", win_threshold=10.0, loss_threshold=0.0),
+    TargetSpec(key="20d", target_file="future_gain20d.csv", win_threshold=6.0, loss_threshold=0.0, horizon_days=20),
+    TargetSpec(key="50d", target_file="future_gain50d.csv", win_threshold=10.0, loss_threshold=0.0, horizon_days=50),
 ]
 
 
