@@ -54,7 +54,7 @@ strategy/
 signal but too volatile intraday; refining it is postponed in favour of the more stable cross
 strategies. Move the file back to restore it. **All probability-based strategies (P20*, P50*,
 P20P50*, P??dZOP) were deleted 2026-07-07** — the win/loss probability model was retired (see
-`longi/expAdviceModel/` for the evidence); their `report/` folders remain as history only.
+`longi/expAdviceModel/` for the evidence); their report folders are archived in `report/_not_used/`.
 
 ---
 
