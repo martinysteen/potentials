@@ -119,6 +119,16 @@ MODULES: Dict[str, Module] = {
         script="longi_PdivMA200.py",
         depends_on=["ma200"],  # Depends on longi_ma200.csv
     ),
+    "quot1020": Module(
+        name="MA10 / MA20 Quotient",
+        script="longi_quot1020.py",
+        depends_on=["ma10", "ma20"],  # Depends on longi_ma10.csv and longi_ma20.csv
+    ),
+    "quot2050": Module(
+        name="MA20 / MA50 Quotient",
+        script="longi_quot2050.py",
+        depends_on=["ma20", "ma50"],  # Depends on longi_ma20.csv and longi_ma50.csv
+    ),
     "grp_GICS_1yr": Module(
         name="GICS Sector-Aggregated 1-Year Growth",
         script="longi_grp_GICS_1yr.py",
@@ -213,7 +223,7 @@ MODULES: Dict[str, Module] = {
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="longi_across.py",
-        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "sh3m", "sh6m", "sh1yr", "grp_GICS_1yr", "grp_Sector2_1yr", "grp_GICS_3m", "grp_Sector2_3m", "coreindex", "coreindexRSI", "beta3m", "beta6m", "beta1yr", "trump", "iran", "winloss_probs"],  # Depends on ALL modules - must run last
+        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "quot1020", "quot2050", "sh3m", "sh6m", "sh1yr", "grp_GICS_1yr", "grp_Sector2_1yr", "grp_GICS_3m", "grp_Sector2_3m", "coreindex", "coreindexRSI", "beta3m", "beta6m", "beta1yr", "trump", "iran", "winloss_probs"],  # Depends on ALL modules - must run last
     ),
     # Add more modules here:
     # "module_name": Module(

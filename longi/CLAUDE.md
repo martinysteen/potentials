@@ -128,6 +128,8 @@ All tables follow PotDat.csv structure (rows=tickers, columns=daynums):
 29. **longi_sh3m.csv** - 3-month Sharpe ratio (return/volatility over 67 days) ✓ IMPLEMENTED
 30. **longi_sh6m.csv** - 6-month Sharpe ratio (return/volatility over 133 days) ✓ IMPLEMENTED
 31. **longi_sh1yr.csv** - 1-year Sharpe ratio (return/volatility over 265 days) ✓ IMPLEMENTED
+32. **longi_quot1020.csv** - MA10/MA20 quotient ×100, momentum speed (>100 = accelerating) ✓ IMPLEMENTED
+33. **longi_quot2050.csv** - MA20/MA50 quotient ×100, momentum speed (>100 = accelerating) ✓ IMPLEMENTED
 
 ### Aggregated Tables (Grouped by Stock Attributes)
 Output directory: `app/output/` (same as individual stock tables)
@@ -256,7 +258,7 @@ Follow the same pattern:
 - ✓ Pipeline orchestrator (longi.py) fully implemented
   - Dependency management working
   - Parallel execution capability ready
-  - 33 modules registered: rsi, macd, macd_Z, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, sh3m, sh6m, sh1yr, grp_GICS_1yr, grp_Sector2_1yr, grp_GICS_3m, grp_Sector2_3m, GICS_3m, Sector2_3m, coreindex, coreindexRSI, beta3m, trump, iran, across
+  - 38 modules registered: rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_GICS_1yr, grp_Sector2_1yr, grp_GICS_3m, grp_Sector2_3m, coreindex, coreindexRSI, beta3m, beta6m, beta1yr, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_gain20d, future_gain50d, winloss_probs, across
 - ✓ longi_rsi.py fully implemented and tested
 - ✓ longi_macd.py fully implemented and tested
 - ✓ longi_macd_Z.py fully implemented and tested
@@ -285,6 +287,10 @@ Follow the same pattern:
   - Sharpe ratio = Period Return / Period Volatility
   - Periods: 67 days (3m), 133 days (6m), 265 days (1yr)
   - Independent modules (read only PotDat.csv)
+- ✓ longi_quot1020.py, longi_quot2050.py fully implemented
+  - MA speed quotients: (fast MA / slow MA) * 100 (>100 = accelerating/bullish)
+  - Dependencies: corresponding MA modules (ma10+ma20 resp. ma20+ma50)
+  - Choosers for the advice strategies (see expAdviceModel/REPORT 6k/6l)
 - ✓ longi_grp_GICS_1yr.py fully implemented
   - Outputs: output/longi_grp_GICS_1yr.csv (GICS sector-aggregated 1-year growth)
   - Aggregates individual stock growth by GICS sector (13 sectors)
