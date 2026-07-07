@@ -1,0 +1,25 @@
+2026-07-07T11:10:50 | exp_shared.py | (self-test) | 0.0s | synthetic
+2026-07-07T11:21:56 | exp_winloss_probs.py | --daynum 2183 | 15.3s | 2183
+2026-07-07T11:24:34 | exp_winloss_probs.py | --daynum 2183 --half-life 63 | 16.7s | 2183
+2026-07-07T11:32:22 | exp_winloss_quality.py | --source prod --source Hnone --source H63 | 4.7s | full-history per source
+2026-07-07T11:41:38 | qa_halflife_grid.py | --tickers 0100.HK,0388.HK,0522.HK,0636.HK,0700.HK --last-daynums 20 | 10.6s | newest 20 scoreable daynums per horizon
+2026-07-07T12:07:57 | qa_halflife_grid.py | --tickers HOOD,OKTA,AFRM,ASX,C,INTC,DUOL,EIF.TO,STX,JEF,APH,PNDORA.CO,TER,KRC,SNDK,HAPN,CAT,UCTT,HUT,CHEMM.CO,RL,0522.HK,HST,BX,AAP,IAG.L,GPC,FTEK.L,COST,BN,VRT,BCIC,PTEC.L,ACN,ABT,BIPC,FLUX,GELYF,TEVA,ABBV,XYF,EOG,PRU,FRES.L,SAF.PA,IBTA.L,1299.HK,DB1.DE,PUB.PA,MFIC,CX,FIVE,MCD,BILL,NUCL.L,BLBD,NCC-B.ST,MO,HLN.L,AHRT,SFM,VFC,CHKP,NTR,AZO,WELL,ITUB,NDIA.L,EMR,ASML.AS,AKER.OL,GAIN,IRM,BA,BMRN,SBRA,NET,DE,NKE,MTX.DE,EXX.JO,HOG,ATD.TO,DLR,UUUU,DEA,SHL.DE,NU,HSBA.L,WNUC.DE,FNV,LONN.SW,AMZN,GBDC,LDOS,PAR,HON,ARIS,FANG,ZM --last-daynums 250 | 868.5s | newest 250 scoreable daynums per horizon
+2026-07-07T12:22:58 | exp_focus_report.py | --tickers-file output/exp_focus_tickers.txt | 1.0s | snapshot + full history
+2026-07-07T12:54:33 | exp_calibration.py | --source prod --tickers-file output/exp_focus_tickers.txt | 1.0s | full-history per source
+2026-07-07T13:02:26 | exp_rank_lift.py | --source prod | 4.4s | full-history per source
+2026-07-07T13:13:07 | exp_ticker_persistence.py | --source prod --focus-file output/exp_focus_tickers.txt | 2.2s | split-half full history per source
+2026-07-07T13:29:28 | exp_indicator_lift.py | (defaults) | 22.1s | full indicator history
+2026-07-07T13:34:51 | exp_joint_strata.py | --ind-a beta3m --ind-b median_30d | 1.8s | full joint history
+2026-07-07T13:34:53 | exp_joint_strata.py | --ind-a vola100d --ind-b median_30d | 1.7s | full joint history
+2026-07-07T13:46:10 | exp_joint_strata.py | --ind-a beta3m --ind-b median_30d --bins 5 | 1.8s | full joint history
+2026-07-07T13:46:13 | exp_joint_strata.py | --ind-a beta3m --ind-b median_30d --bins 5 | 1.8s | full joint history
+2026-07-07T13:46:29 | exp_joint_strata.py | --ind-a beta3m --ind-b median_30d --bins 10 | 2.0s | full joint history
+2026-07-07T13:47:37 | exp_screen_today.py | --focus-file output/exp_focus_tickers.txt | 1.1s | 2183
+2026-07-07T13:56:55 | exp_corner_trim.py | --focus-file output/exp_focus_tickers.txt | 1.1s | full corner history
+2026-07-07T16:46:08 | exp_sector_concentration.py | (defaults) | 1.0s | full history after warm-up
+2026-07-07T17:21:57 | exp_probe_samples.py | (defaults) | 1.7s | 8 probes
+2026-07-07T17:39:45 | exp_probe_samples.py | (defaults) | 1.7s | 8 probes
+2026-07-07T17:56:07 | exp_probe_samples.py | (defaults) | 3.5s | 8 probes
+2026-07-07T18:14:36 | exp_subgroup_pick.py | (defaults) | 1.3s | full survivor history
+2026-07-07T18:30:08 | exp_subgroup_pick.py | (defaults) | 2.1s | full survivor history
+2026-07-07T18:33:25 | exp_subgroup_pick.py | (defaults) | 2.3s | full survivor history
