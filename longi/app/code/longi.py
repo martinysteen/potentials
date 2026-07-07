@@ -214,16 +214,10 @@ MODULES: Dict[str, Module] = {
         script="future_gain50d.py",
         depends_on=[],  # Independent - reads only PotDat.csv
     ),
-    "winloss_probs": Module(
-        name="Win/Loss Probability Matrices (P20d, P50d)",
-        script="longi_winloss_probs.py",
-        depends_on=["rsi", "macd", "performance", "medians", "stepup", "spr100d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "PdivMA50", "sh3m", "coreindex", "coreindexRSI", "beta3m"],
-        timeout=3600,
-    ),
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="longi_across.py",
-        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "quot1020", "quot2050", "sh3m", "sh6m", "sh1yr", "grp_GICS_1yr", "grp_Sector2_1yr", "grp_GICS_3m", "grp_Sector2_3m", "coreindex", "coreindexRSI", "beta3m", "beta6m", "beta1yr", "trump", "iran", "winloss_probs"],  # Depends on ALL modules - must run last
+        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "quot1020", "quot2050", "sh3m", "sh6m", "sh1yr", "grp_GICS_1yr", "grp_Sector2_1yr", "grp_GICS_3m", "grp_Sector2_3m", "coreindex", "coreindexRSI", "beta3m", "beta6m", "beta1yr", "trump", "iran"],  # Depends on ALL modules - must run last
     ),
     # Add more modules here:
     # "module_name": Module(

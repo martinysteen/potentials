@@ -33,21 +33,10 @@ strategy/
     │   │   └── extension.py              # partial-gain extension runner (period-driven)
     │   ├── strategies/                   # each = ~20-line declaration on shared/engine.py
     │   │   ├── strategy_ranknow.py       # baseline: lowest longi_rank (standalone, no filters)
-    │   │   ├── strategy_P20.py           # [P20d_win]
-    │   │   ├── strategy_P50.py           # [P50d_win]
-    │   │   ├── strategy_P20P50.py        # [P20d_win, P50d_win]
     │   │   ├── strategy_Cross1020.py     # [Q10_20=MA10/MA20]
-    │   │   ├── strategy_Cross2050.py     # [Q20_50=MA20/MA50]
-    │   │   ├── strategy_P20cross1020.py  # [P20d_win, Q10_20]
-    │   │   ├── strategy_P20cross2050.py  # [P20d_win, Q20_50]
-    │   │   ├── strategy_P50cross1020.py  # [P50d_win, Q10_20]
-    │   │   ├── strategy_P50cross2050.py  # [P50d_win, Q20_50]
-    │   │   ├── strategy_P20P50cross1020.py # [P20d_win, P50d_win, Q10_20]
-    │   │   └── strategy_P20P50cross2050.py # [P20d_win, P50d_win, Q20_50]
+    │   │   └── strategy_Cross2050.py     # [Q20_50=MA20/MA50]
     │   └── _not_used/                    # PARKED, not discovered by the sweep:
-    │       ├── strategy_ZOP.py, strategy_P20dZOP.py,
-    │       ├── strategy_P50dZOP.py, strategy_P20dP50dZOP.py   # ZOP too volatile intraday
-    │       └── run_extension.py, run_extensions.py            # only drove the ZOP extension
+    │       └── strategy_ZOP.py           # ZOP too volatile intraday
     ├── data/                             # scratch/temp only (not committed)
     └── report/
         ├── <strategy_name>/
@@ -61,9 +50,11 @@ strategy/
         └── summary.csv                   # master append-log, one row per run (all strategies)
 ```
 
-**ZOP strategies are parked** in `code/_not_used/` (reports in `report/_not_used/`). ZOP is a good
+**The ZOP strategy is parked** in `code/_not_used/` (reports in `report/_not_used/`). ZOP is a good
 signal but too volatile intraday; refining it is postponed in favour of the more stable cross
-strategies. Move the files back to restore them.
+strategies. Move the file back to restore it. **All probability-based strategies (P20*, P50*,
+P20P50*, P??dZOP) were deleted 2026-07-07** — the win/loss probability model was retired (see
+`longi/expAdviceModel/` for the evidence); their `report/` folders remain as history only.
 
 ---
 
@@ -121,7 +112,6 @@ All input is read from `DATA_ROOT = /home/sm/potentials/repositoryRTBI/data/` (d
 | `Longi/future_gain20d.csv` | Realised forward gain over next 20 trading days (%) — `period=20` |
 | `Longi/future_gain50d.csv` | Realised forward gain over next 50 trading days (%) — `period=50` |
 | `Longi/longi_rank.csv` | Average rank across all performance periods (1 = best) |
-| `Longi/longi_P20d_win.csv`, `longi_P50d_win.csv` | Per-ticker ML win probabilities (20d/50d) |
 | `Longi/longi_rsi.csv` | RSI14 (Wilder's method) — used for `^GSPC` etc. ref context |
 | `Longi/longi_ma*.csv` | Simple moving averages (cross strategies build MA quotients) |
 | `data/PotDat.csv` | Raw stock prices (incl. `^VIX`) |
@@ -270,8 +260,8 @@ one run = one horizon = one set of metrics. Write order:
 
 | Key(s) | Meaning |
 |--------|---------|
-| `StrategyName`, `Run#`, `StartDaynum`, `N_hops`, `N_hops_active`, `EndDaynum` | identity / range. **`StartDaynum`/`EndDaynum` = the strategy's *usable* span, chronological (Start = oldest usable daynum, End = newest)** — for win-prob/cross strategies Start is ~1797 (ML warm-up), not the series start, even though empty warm-up hops are still recorded. `N_hops` = all evaluated hops; `N_hops_active` = hops actually invested. |
-| *(PARAMS keys)* | `focusset_size`, `step`, `period`, `No_go_GSPC_rsi`, `p20d_win_min`, … |
+| `StrategyName`, `Run#`, `StartDaynum`, `N_hops`, `N_hops_active`, `EndDaynum` | identity / range. **`StartDaynum`/`EndDaynum` = the strategy's *usable* span, chronological (Start = oldest usable daynum, End = newest)** — a strategy starts where its source indicators do (e.g. MA warm-up for the cross quotients), not necessarily at the series start, even though empty warm-up hops are still recorded. `N_hops` = all evaluated hops; `N_hops_active` = hops actually invested. |
+| *(PARAMS keys)* | `focusset_size`, `step`, `period`, `No_go_GSPC_rsi`, `q10_20_min`, … |
 | `avg_gain` | grand average per-hop top-N gain over `period` (No_go-filtered) |
 | `chain_ret`, `chain_annual`, `chain_n` | realizable chain (additive, phase-averaged; see below) |
 | `origin_sens%` | spread of `chain_annual` across start origins `(max−min)/avg %` — **lower = more robust** to when you start hopping (diagnostic; never ranks) |
@@ -324,10 +314,9 @@ per-strategy *usable* span and so differ): `floor = max(per-run oldest hop)`,
 effectively starts at its own first *usable* hop within `[floor, cap]` (NaN/gated hops are skipped),
 so the displayed per-strategy `StartDaynum` matches the span its chain actually used.
 
-> Note: win-probability strategies (P*dWin, the cross strategies) cannot backtest before
-> ~daynum 1797 — the ML win/loss model needs feature warm-up (~100d) + 150 per-ticker training
-> rows. Ranknow uses only `longi_rank` and spans further back, which is exactly why the common-span
-> clamp is needed. (Background lives in the longi project memory.)
+> Note: strategies start where their source indicators do (the cross quotients need MA warm-up).
+> Ranknow uses only `longi_rank` and spans further back, which is exactly why the common-span
+> clamp is needed.
 
 ### Retired
 `acc_gain*` (summed overlapping hops) and `top{k}_gain*` (rank-marginal curve) are gone, plus the
@@ -343,12 +332,12 @@ PARAMS: dict = {
     "step": 1,                # daynum step between hops (sweep fixes this at 1)
     "period": 20,             # forward horizon in trading days (20 or 50)
     "No_go_GSPC_rsi": 40,     # suppress avg gains / skip chain hops when GSPC RSI (at daynum) < this
-    # strategy-specific: p20d_win_min, p50d_win_min, q10_20_min, q20_50_min
+    # strategy-specific: q10_20_min, q20_50_min
 }
 ```
 - `No_go_GSPC_rsi` label → A3/A2 in Operational; avg_gain cells reference it via an IF formula.
-- The sweep (`sweep_config.DEFAULTS`) overlays `step:1`, `period:20`, `No_go_GSPC_rsi:0`,
-  `focusset_size:[3,5]`, and the linked `p_win_min` (writes both `p20d_win_min`/`p50d_win_min`).
+- The sweep (`sweep_config.DEFAULTS`) overlays `step`, `period`, `No_go_GSPC_rsi`,
+  `focusset_size`, `from_rank` (see `sweep_config.py` for current values).
 
 ---
 
@@ -365,18 +354,17 @@ discovers. The selection pipeline is:
 ```python
 from shared.engine import make_strategy, col_filter, quotient_filter   # + rank_by if reordering
 
-STRATEGY_NAME = "P20cross1020"
+STRATEGY_NAME = "Cross1020"
 PARAMS = {"focusset_size": 3, "step": 1, "period": 20, "No_go_GSPC_rsi": 0,
-          "p20d_win_min": 0.8, "q10_20_min": 1.03, "from_rank": 1}
+          "q10_20_min": 1.03, "from_rank": 1}
 FILTERS = [
-    col_filter("longi_P20d_win.csv", "p20d_win_min"),                 # value >= PARAMS[param]
     quotient_filter("longi_ma10.csv", "longi_ma20.csv", "q10_20_min"),# MA10/MA20 >= PARAMS[param]
 ]
 main, build_extension = make_strategy(STRATEGY_NAME, PARAMS, FILTERS)
 ```
 
 **To add a strategy:** drop a ~20-line file like the above into `strategies/`, then add its
-`STRATEGY_NAME` (+ any non-`p_win_min` threshold override, e.g. `q*_min`) to
+`STRATEGY_NAME` (+ any threshold override, e.g. `q*_min`) to
 `sweep_config.STRATEGIES`. That's it.
 
 **Engine knobs for future ideas (no engine edit needed):**
@@ -452,7 +440,7 @@ strategy**, strongest `chain_annual` leftmost.
 |------|-----|----------|
 | Blue | `BDD7EE` | normal headers |
 | Grey-blue | `D6DCE4` | strategy column header (best_strategy) |
-| Yellow | `FFFF99` | parameter headers: `focusset_size`, `step`, `period`, `No_go_GSPC_rsi`, `p20d_win_min`, `p50d_win_min`, `q10_20_min`, `q20_50_min` |
+| Yellow | `FFFF99` | parameter headers: `focusset_size`, `step`, `period`, `No_go_GSPC_rsi`, `q10_20_min`, `q20_50_min` |
 | Amber | `FFE599` | editable No_go cell (Operational) |
 | Green / Red | `C6EFCE` / `FFC7CE` | positive / negative gains |
 | Grey | `EEEEEE` | suppressed / n/a |

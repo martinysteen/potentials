@@ -12,10 +12,9 @@ A strategy is fully described by three things:
 the rest of the system expects, so a strategy file is a ~20-line declaration:
 
     from shared.engine import make_strategy, col_filter, quotient_filter
-    STRATEGY_NAME = "P20cross1020"
+    STRATEGY_NAME = "Cross1020"
     PARAMS = {...}
-    FILTERS = [col_filter("longi_P20d_win.csv", "p20d_win_min"),
-               quotient_filter("longi_ma10.csv", "longi_ma20.csv", "q10_20_min")]
+    FILTERS = [quotient_filter("longi_ma10.csv", "longi_ma20.csv", "q10_20_min")]
     main, build_extension = make_strategy(STRATEGY_NAME, PARAMS, FILTERS)
 
 Selection pipeline (one daynum):
@@ -93,7 +92,7 @@ class _Filter:
 def col_filter(csv_name: str, param: str, op: str = ">=") -> _Filter:
     """Filter on a preformed Longi matrix CSV: keep `value <op> PARAMS[param]`.
 
-    e.g. col_filter("longi_P20d_win.csv", "p20d_win_min")           -> P20d_win >= min
+    e.g. col_filter("longi_rsi.csv", "rsi_min")                     -> RSI >= min
          col_filter("longi_beta1yr.csv", "beta_max", op="<")        -> beta < max
     """
     return _Filter(lambda: load_longi(csv_name), param, op, csv_name)

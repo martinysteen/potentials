@@ -53,10 +53,6 @@
   - Handles dependencies and parallel execution
   - See "Adding New Modules" section below
 - **longi_rsi.py** - RSI14 calculation module ✓ IMPLEMENTED
-- **longi_winloss_probs.py** - Win/Loss probability matrices ✓ IMPLEMENTED
-  - Produces longi_P20d_win.csv, longi_P20d_loss.csv, longi_P50d_win.csv, longi_P50d_loss.csv
-  - Runs daily in pipeline (default: newest daynum only); use --backfill-all for history
-  - Requires future_gain20d.csv and future_gain50d.csv in app/output/ (pre-computed historical outcomes)
 - **longi_upload.py** - Upload results to Google Drive ✓ IMPLEMENTED
   - Syncs output/ directory
   - Uses rclone sync to GoogleDrive:PotSystem/repositoryRTBI/Longi/
@@ -258,7 +254,7 @@ Follow the same pattern:
 - ✓ Pipeline orchestrator (longi.py) fully implemented
   - Dependency management working
   - Parallel execution capability ready
-  - 38 modules registered: rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_GICS_1yr, grp_Sector2_1yr, grp_GICS_3m, grp_Sector2_3m, coreindex, coreindexRSI, beta3m, beta6m, beta1yr, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_gain20d, future_gain50d, winloss_probs, across
+  - 37 modules registered: rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_GICS_1yr, grp_Sector2_1yr, grp_GICS_3m, grp_Sector2_3m, coreindex, coreindexRSI, beta3m, beta6m, beta1yr, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_gain20d, future_gain50d, across
 - ✓ longi_rsi.py fully implemented and tested
 - ✓ longi_macd.py fully implemented and tested
 - ✓ longi_macd_Z.py fully implemented and tested
@@ -318,7 +314,6 @@ Follow the same pattern:
 
 ### Unregistered/Experimental Modules (in code/, not yet in pipeline)
 - **longi_beta1yr.py**, **longi_beta6m.py** - Beta (market sensitivity) over 265/133 days; same pattern as beta3m
-- **longi_winloss_probs.py** - Win/loss probability matrices: longi_P20d_win/loss.csv, longi_P50d_win/loss.csv; uses aux_winloss_shared.py
 
 ## Development Notes
 - VS Code connected via Remote-SSH from Windows

@@ -24,15 +24,11 @@ yields 3 x 2 = 6 runs per strategy (times any other grid axis).
 
 Linked params (LINKED)
 ----------------------
-Some strategies have two win-thresholds that must stay equal
-(p20d_win_min == p50d_win_min). Rather than set them twice — which a grid would
-also let drift apart — set the single alias `p_win_min`. The driver writes its
-value to whichever of the two a strategy actually has:
-    - both present  (cross1020, cross2050) -> both set equal
-    - only one      (P20/P20dZOP -> 20d; P50/P50dZOP -> 50d)
-    - neither       (ZOP, Ranknow) -> ignored
-`p_win_min` may itself be a list to sweep the threshold as ONE axis (the pair
-stays equal at every value), e.g. "p_win_min": [0.8, 0.9].
+Some strategies may define two params that must stay equal. Rather than set
+them twice — which a grid would also let drift apart — declare a single alias
+in LINKED; the driver writes its value to whichever of the real keys a
+strategy actually has. An alias may itself be a list to sweep the pair as ONE
+axis (they stay equal at every value). Currently no aliases are needed.
 
 Only strategies that appear as keys in STRATEGIES are touched. Their existing
 run*.xlsx are archived (moved to <strategy>/_archive/<timestamp>/) and rebuilt
@@ -44,24 +40,13 @@ without touching any files.
 """
 
 # Alias -> the real param keys it fans out to (each strategy gets the ones it has).
-LINKED: dict[str, list[str]] = {
-    "p_win_min": ["p20d_win_min", "p50d_win_min"],
-}
+LINKED: dict[str, list[str]] = {}
 
 # Fixed left-to-right column order for best_strategy.xlsx (both the chained and ladder
 # tables). Was previously sorted by chain_annual, but that reshuffles every time a swept
 # parameter changes performance, making the report hard to read run over run. A strategy
 # not listed here is placed after all listed ones (in whatever order pandas/groupby gives).
 STRATEGY_ORDER: list[str] = [
-    "P20P50cross2050",
-    "P20P50cross1020",
-    "P20P50",
-    "P50cross2050",
-    "P50cross1020",
-    "P20cross2050",
-    "P20cross1020",
-    "P50",
-    "P20",
     "Cross2050",
     "Cross1020",
     "Ranknow",
@@ -75,7 +60,6 @@ DEFAULTS: dict = {
                                           # step is otherwise second-order for the chain metric.
     "period":         20,           # forward horizon in trading days (20 or 50). Single
                                           # value -> one column per strategy in best_strategy.
-    "p_win_min":      0.8,         # -> p20d_win_min / p50d_win_min, kept equal
     "No_go_GSPC_rsi": 0,            # 0 = filter off; 40 = typical. Swept so Summary
                                           # metrics (chain_*, avg_gain, N_loss) reflect each.
     "from_rank":      1          # WHERE in the rank-ordered survivor set to draw the
@@ -90,32 +74,17 @@ DEFAULTS: dict = {
 # Strategy-specific overrides. An empty dict {} means "just use DEFAULTS".
 # Keys must match each strategy's STRATEGY_NAME (see `python run_sweep.py --list`).
 STRATEGIES: dict[str, dict] = {
-    # --- both win-thresholds + the golden-cross quotient (3-step) ---
-    "P20P50cross1020": {"q10_20_min": 1.03},
-    "P20P50cross2050": {"q20_50_min": 1.05},
-
-    # --- both win-thresholds, no cross (2-step) ---
-    "P20P50": {},
-
-    # --- one win-threshold + a cross quotient (2-step) ---
-    "P20cross1020": {"q10_20_min": 1.03},
-    "P20cross2050": {"q20_50_min": 1.05},
-    "P50cross1020": {"q10_20_min": 1.03},
-    "P50cross2050": {"q20_50_min": 1.05},
-
-    # --- a single win-threshold (p_win_min sets whichever exists) ---
-    "P20": {},
-    "P50": {},
-
-    # --- a single cross quotient, no win-threshold (p_win_min ignored) ---
+    # --- a single cross quotient (1-step) ---
     "Cross1020": {"q10_20_min": 1.03},
     "Cross2050": {"q20_50_min": 1.05},
 
-    # --- no win-threshold (p_win_min ignored) ---
+    # --- rank only ---
     "Ranknow": {},
 
-    # NOTE: all ZOP-based strategies (ZOP, P20dZOP, P50dZOP, P20dP50dZOP) are
-    # parked in code/_not_used/ (and their reports in report/_not_used/). ZOP is a
-    # good signal but too volatile intraday; refining it is postponed in favour of
-    # the more stable cross strategies. Move the files back to restore them.
+    # NOTE: the plain ZOP strategy is parked in code/_not_used/ (and its reports
+    # in report/_not_used/). ZOP is a good signal but too volatile intraday;
+    # refining it is postponed in favour of the more stable cross strategies.
+    # Move the files back to restore it. All probability-based strategies
+    # (P20*, P50*, P20P50*, P??dZOP) were DELETED 2026-07-07 — the win/loss
+    # probability model was retired (see longi/expAdviceModel/ report).
 }
