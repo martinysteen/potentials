@@ -18,7 +18,8 @@ the rest of the system expects, so a strategy file is a ~20-line declaration:
     main, build_extension = make_strategy(STRATEGY_NAME, PARAMS, FILTERS)
 
 Selection pipeline (one daynum):
-    N filters (any longi CSV, any of >= > <= <)  →  intersect survivors
+    N filters (threshold, quotient or within-day bin)  →  intersect survivors
+      →  trims (optional, in order: keep a fraction ranked WITHIN the survivor set)
       →  order by ranker (any longi CSV, ascending or descending)
       →  pick_by_rank window (from_rank: 1=best n, k>1=skip top, -1=worst n)
 
@@ -80,6 +81,10 @@ class _Filter:
             self._df = self._build()
         return self._df
 
+    @property
+    def df_list(self) -> list[pd.DataFrame]:
+        return [self.df]
+
     def qualifying(self, daynum: int, params: dict) -> set[str] | None:
         """Tickers passing this filter at daynum, or None if the column is absent."""
         col = str(daynum)
@@ -107,6 +112,160 @@ def quotient_filter(num_csv: str, den_csv: str, param: str, op: str = ">=") -> _
         den = load_longi(den_csv)
         return num.divide(den.replace(0, float("nan")))
     return _Filter(build, param, op, f"{num_csv}/{den_csv}")
+
+
+def _within_day_bin(series: pd.Series, n_bins: int) -> pd.Series:
+    """Equal-count bins 1..n_bins of one day's cross-section (1 = lowest values).
+    Byte-identical to the sandbox binning (longi/app/exp/exp_joint_strata.within_day_bins):
+    rank(method="first") tie-breaking, epsilon so an exact bin edge falls in the lower bin."""
+    pct = series.rank(method="first", pct=True)
+    return ((pct - 1e-12) * n_bins).astype(int).clip(upper=n_bins - 1) + 1
+
+
+class _BinFilter:
+    """One selection step on within-day RELATIVE position instead of a fixed threshold:
+    keep the tickers in the top (or bottom) of `PARAMS[param]` equal-count bins of the
+    day's cross-section — e.g. the top beta3m decile. Days with fewer than `min_day_n`
+    valid values are rejected (the cross-section is too thin for bins to mean anything).
+    """
+
+    def __init__(self, csv_name: str, param: str, top: bool, min_day_n: int):
+        self.csv_name  = csv_name
+        self.param     = param
+        self.top       = top
+        self.min_day_n = min_day_n
+        self.label     = f"{csv_name} ({'top' if top else 'bottom'} bin)"
+        self._df: pd.DataFrame | None = None
+
+    @property
+    def df(self) -> pd.DataFrame:
+        if self._df is None:
+            self._df = load_longi(self.csv_name)
+        return self._df
+
+    @property
+    def df_list(self) -> list[pd.DataFrame]:
+        return [self.df]
+
+    def qualifying(self, daynum: int, params: dict) -> set[str] | None:
+        """Tickers in the wanted bin at daynum; None if the column is absent or too thin."""
+        col = str(daynum)
+        if col not in self.df.columns:
+            return None
+        series = self.df[col].dropna()
+        if len(series) < self.min_day_n:
+            return None
+        n_bins = int(params[self.param])
+        bins   = _within_day_bin(series, n_bins)
+        want   = n_bins if self.top else 1
+        return set(bins[bins == want].index)
+
+
+def bin_filter(csv_name: str, param: str, top: bool = True,
+               min_day_n: int = 100) -> _BinFilter:
+    """Within-day bin-membership filter: `PARAMS[param]` = number of equal-count bins.
+
+    e.g. bin_filter("longi_beta3m.csv", "corner_bins")               -> top bin (highest values)
+         bin_filter("longi_median_30d.csv", "corner_bins", top=False) -> bottom bin (lowest values)
+    With PARAMS["corner_bins"] = 10 the top bin is the within-day top decile.
+
+    NOTE: bins span the CSV's OWN valid tickers that day. Two bin_filters intersected are
+    therefore not identical to binning within the joint valid set — for a two-indicator
+    corner cell use corner_filter, which reproduces the sandbox build exactly.
+    """
+    return _BinFilter(csv_name, param, top, min_day_n)
+
+
+class _CornerFilter:
+    """The two-indicator corner cell in ONE step, binned within the JOINT valid set —
+    byte-identical to the sandbox build (longi/app/exp/exp_joint_strata.build_trimmed_corner
+    steps 1-2): tickers holding BOTH values that day are binned per indicator, and the
+    corner = top bin of csv_top  ∩  bottom bin of csv_bottom. Days with a joint set thinner
+    than `min_day_n` are rejected."""
+
+    def __init__(self, top_csv: str, bottom_csv: str, param: str, min_day_n: int):
+        self.top_csv    = top_csv
+        self.bottom_csv = bottom_csv
+        self.param      = param
+        self.min_day_n  = min_day_n
+        self.label      = f"corner({top_csv} top x {bottom_csv} bottom)"
+        self._dfs: tuple[pd.DataFrame, pd.DataFrame] | None = None
+
+    @property
+    def df_list(self) -> list[pd.DataFrame]:
+        if self._dfs is None:
+            self._dfs = (load_longi(self.top_csv), load_longi(self.bottom_csv))
+        return list(self._dfs)
+
+    def qualifying(self, daynum: int, params: dict) -> set[str] | None:
+        col = str(daynum)
+        df_a, df_b = self.df_list
+        if col not in df_a.columns or col not in df_b.columns:
+            return None
+        a = df_a[col].dropna()
+        b = df_b[col].dropna()
+        common = a.index[a.index.isin(b.index)]   # keeps csv_top's row order (tie-breaks)
+        if len(common) < self.min_day_n:
+            return None
+        n_bins = int(params[self.param])
+        top = _within_day_bin(a.loc[common], n_bins) == n_bins
+        bot = _within_day_bin(b.loc[common], n_bins) == 1
+        return set(common[top & bot])
+
+
+def corner_filter(top_csv: str, bottom_csv: str, param: str,
+                  min_day_n: int = 100) -> _CornerFilter:
+    """Joint two-indicator corner-cell filter (`PARAMS[param]` = number of bins).
+
+    e.g. corner_filter("longi_beta3m.csv", "longi_median_30d.csv", "corner_bins")
+         -> within-day top beta3m bin x bottom median_30d bin, joint valid set.
+    """
+    return _CornerFilter(top_csv, bottom_csv, param, min_day_n)
+
+
+class _Trim:
+    """A step applied AFTER the FILTERS intersection, ranking within the survivor set:
+    keep the lowest (or highest) `PARAMS[param]` fraction of the CSV's values among the
+    survivors — e.g. the lower-vola100d half of the day's corner membership. Survivors
+    with no value in the CSV are dropped (they cannot be ranked)."""
+
+    def __init__(self, csv_name: str, param: str, lowest: bool):
+        self.csv_name = csv_name
+        self.param    = param
+        self.lowest   = lowest
+        self.label    = f"{csv_name} (keep {'lowest' if lowest else 'highest'})"
+        self._df: pd.DataFrame | None = None
+
+    @property
+    def df(self) -> pd.DataFrame:
+        if self._df is None:
+            self._df = load_longi(self.csv_name)
+        return self._df
+
+    @property
+    def df_list(self) -> list[pd.DataFrame]:
+        return [self.df]
+
+    def surviving(self, daynum: int, survivors: set[str], params: dict) -> set[str]:
+        col = str(daynum)
+        if col not in self.df.columns:
+            return set()
+        series = self.df.loc[self.df.index.isin(survivors), col].dropna()
+        if series.empty:
+            return set()
+        pct  = series.rank(method="first", pct=True)
+        frac = float(params[self.param])
+        keep = pct <= frac if self.lowest else pct > 1.0 - frac
+        return set(series[keep].index)
+
+
+def trim_filter(csv_name: str, param: str, lowest: bool = True) -> _Trim:
+    """Survivor-relative trim spec for make_strategy(trims=[...]), applied in list order.
+
+    e.g. trim_filter("longi_vola100d.csv", "vola_keep_frac")  -> keep the lowest
+         PARAMS["vola_keep_frac"] fraction of vola100d within the current survivors.
+    """
+    return _Trim(csv_name, param, lowest)
 
 
 # ---------------------------------------------------------------------------
@@ -209,24 +368,30 @@ def _hop_avg(gains: dict[str, float]) -> float:
 # Strategy factory
 # ---------------------------------------------------------------------------
 
-def make_strategy(strategy_name: str, params: dict, filters: list[_Filter],
-                  ranker: _Ranker | None = None):
+def make_strategy(strategy_name: str, params: dict, filters: list,
+                  ranker: _Ranker | None = None, trims: list[_Trim] | None = None):
     """
     Build the (main, build_extension) callable pair for one filter-based strategy.
 
     `params` MUST be the module-level PARAMS dict (the engine reads it live so the sweep's
-    in-place override is honoured). `filters` is a list of col_filter/quotient_filter specs,
-    intersected as survivors. `ranker` orders the survivors (default longi_rank ascending).
+    in-place override is honoured). `filters` is a list of col_filter/quotient_filter/
+    bin_filter specs, intersected as survivors. `trims` (optional) are trim_filter specs
+    applied afterwards IN ORDER, each ranking within the then-current survivor set.
+    `ranker` orders the final survivors (default longi_rank ascending).
     """
     if ranker is None:
         ranker = rank_by()
+    if trims is None:
+        trims = []
 
     # n_survivors is recorded (and rendered as the N_survivors report row) only when more
-    # than one filter is in play — matching the historical behaviour of the cross strategies.
-    track_survivors = len(filters) >= 2
+    # than one selection step is in play — matching the historical behaviour of the cross
+    # strategies. With trims it reports the POST-trim group size (what a member would buy).
+    track_survivors = len(filters) + len(trims) >= 2
 
     def survivors(daynum: int) -> set[str]:
-        """Tickers passing every filter at daynum. Empty if any source lacks the column."""
+        """Tickers passing every filter, then every trim, at daynum.
+        Empty if any source lacks the column."""
         result: set[str] | None = None
         for f in filters:
             q = f.qualifying(daynum, params)
@@ -235,7 +400,13 @@ def make_strategy(strategy_name: str, params: dict, filters: list[_Filter],
             result = q if result is None else (result & q)
             if not result:
                 return set()
-        return result if result is not None else set()
+        if result is None:
+            return set()
+        for t in trims:
+            result = t.surviving(daynum, result, params)
+            if not result:
+                return set()
+        return result
 
     def select_focusset(daynum: int) -> list[str]:
         """Survivors ordered by the ranker, then the from_rank window applied."""
@@ -249,17 +420,17 @@ def make_strategy(strategy_name: str, params: dict, filters: list[_Filter],
         return pick_by_rank(order, n, params.get("from_rank", 1))
 
     def find_start_daynum(gain_df: pd.DataFrame, min_valid: int = 10) -> int:
-        """First daynum (newest first) where gains, the ranker, and every filter have data."""
+        """First daynum (newest first) where gains, the ranker, and every filter/trim have data."""
         for col in gain_df.columns:
             daynum = int(col)
             scol = str(daynum)
             has_gain = gain_df[col].dropna().size >= min_valid
             has_rank = scol in ranker.df.columns and ranker.df[scol].dropna().size >= min_valid
-            has_filt = all(scol in f.df.columns for f in filters)
+            has_filt = all(scol in d.columns for f in filters + trims for d in f.df_list)
             if has_gain and has_rank and has_filt:
                 return daynum
         sources = ", ".join([gain_df.columns.name or "future_gain", ranker.csv_name]
-                            + [f.label for f in filters])
+                            + [f.label for f in filters + trims])
         raise ValueError(f"No valid starting daynum found — check: {sources}")
 
     def main() -> None:
@@ -272,13 +443,14 @@ def make_strategy(strategy_name: str, params: dict, filters: list[_Filter],
         start_daynum = find_start_daynum(gain_df)
         min_daynum = max(
             [int(gain_df.columns[-1]), int(ranker.df.columns[-1])]
-            + [int(f.df.columns[-1]) for f in filters]
+            + [int(d.columns[-1]) for f in filters + trims for d in f.df_list]
         )
 
         print(f"--- {strategy_name} ---")
         print(f"Start daynum : {start_daynum} ({daynum_to_date(start_daynum)})")
         print(f"Min daynum   : {min_daynum}")
-        print(f"Focusset size: {n}   Step: {step}   Period: {period}d   Filters: {len(filters)}")
+        print(f"Focusset size: {n}   Step: {step}   Period: {period}d   "
+              f"Filters: {len(filters)}   Trims: {len(trims)}")
         print()
 
         hop_results: list[dict] = []

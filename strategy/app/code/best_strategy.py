@@ -2,8 +2,10 @@
 Compare strategies side by side — one column per strategy, metrics down the rows.
 
 Each strategy's column is its best run by chain_annual (phase-averaged and re-clamped
-to the span every strategy shares), with chain_ret as tiebreaker. All runs must share
-the same forward horizon (the `period` param); a mismatch is reported and aborts.
+to the span every strategy shares), with chain_ret as tiebreaker. Runs are grouped by
+forward horizon (the `period` param): each horizon gets its OWN comparison (own common
+span — chains of different hold lengths are never mixed in one table). The smallest
+horizon is the primary sheet; further horizons (e.g. the 50d fallback) get one sheet each.
 
 Returns are additive (sum of lot gains, no reinvestment); chain_annual is that sum
 divided by the span in years — a simple average annual gain, not a compound CAGR.
@@ -145,7 +147,7 @@ _PCT_FMT    = '+0.00;-0.00;"-"'
 _CTR        = Alignment(horizontal="center")
 
 _PARAM_COLS = {"focusset_size", "step", "period", "No_go_GSPC_rsi", "from_rank",
-               "p20d_win_min", "p50d_win_min", "q10_20_min", "q20_50_min"}
+               "corner_bins", "vola_keep_frac", "q10_20_min", "q20_50_min"}
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +351,8 @@ _HDR_ROW = 3   # the strategy-header row; titles occupy rows 1-2 above it
 
 def fill_best_sheet(ws, columns: list[dict], chained_rows: list[str],
                     floor: int | None = None, cap: int | None = None,
-                    period: int | None = None) -> None:
+                    period: int | None = None,
+                    sheet_title: str = "Best Strategy") -> None:
     """
     Write the strategy comparison into the GIVEN worksheet `ws`: two side-by-side tables
     sharing the same strategy columns — a left "Chain investment" table and a right
@@ -364,7 +367,7 @@ def fill_best_sheet(ws, columns: list[dict], chained_rows: list[str],
     floor/cap/period: unused by the title rows now (kept for signature compatibility
                       with the caller in extension.py).
     """
-    ws.title = "Best Strategy"
+    ws.title = sheet_title
     ns = len(columns)
 
     # ---- column geometry: [A]label [B]comment [chained strats] | [H]label [I]comment [overlap strats]
@@ -431,60 +434,64 @@ def fill_best_sheet(ws, columns: list[dict], chained_rows: list[str],
 # Ranking (shared by main() and extension.py)
 # ---------------------------------------------------------------------------
 
-def select_best_runs(verbose: bool = False) -> tuple[
-        list[dict], list[str], int | None, int | None, int | None]:
-    """Load every run, reclamp chains to the common span, and order strategies.
+def _order_key(name: str) -> tuple[int, str]:
+    # Fixed column order from STRATEGY_ORDER (sweep_config.py) so the report doesn't
+    # reshuffle as swept params change which strategy performs best. Unlisted
+    # strategies sort after all listed ones, alphabetically among themselves.
+    try:
+        idx = STRATEGY_ORDER.index(name)
+    except ValueError:
+        idx = len(STRATEGY_ORDER)
+    return (idx, name)
 
-    Returns (columns, all_cols, floor, cap, period):
-      columns  : [{"strategy", "row"}], one per strategy (its best run by chain_annual,
-                 chain_ret as tiebreaker), in the fixed STRATEGY_ORDER column order
-                 (sweep_config.py); unlisted strategies sort last.
+
+def select_best_runs(verbose: bool = False) -> tuple[list[dict], list[str]]:
+    """Load every run, group by forward horizon, reclamp each group to ITS common span,
+    and order strategies.
+
+    Returns (blocks, all_cols):
+      blocks   : one dict per horizon, ordered by period ascending (the smallest —
+                 normally 20d — is the primary): {"period", "floor", "cap", "columns"},
+                 where columns = [{"strategy", "row"}], one per strategy (its best run
+                 by chain_annual, chain_ret as tiebreaker) in STRATEGY_ORDER order.
+                 Chains of different hold lengths are never compared in one block.
       all_cols : every column present across the loaded runs (for metric-row order).
-      floor/cap: common-span bounds. period: the shared forward horizon.
 
-    Returns an empty columns list (never raises) when there is nothing comparable —
-    no StrategyName column, or runs mixing forward horizons.
+    Returns an empty blocks list (never raises) when there is nothing comparable.
     """
     df = load_all_runs()
     if verbose:
         print(f"Total runs across all strategies: {len(df)}")
-    df, floor, cap = reclamp_chains(df)
-    if verbose:
-        print()
 
-    all_cols = list(df.columns)
     if "StrategyName" not in df.columns:
         if verbose:
             print("No StrategyName column — nothing to report.")
-        return [], all_cols, floor, cap, None
+        return [], list(df.columns)
 
-    # Guard: every compared run must share the same forward horizon.
-    period: int | None = None
     if "period" in df.columns:
-        periods = sorted(pd.to_numeric(df["period"], errors="coerce").dropna().unique())
-        if len(periods) > 1:
-            print(f"ERROR: mixed periods across runs {periods} — re-run the sweep at a "
-                  "single period before comparing. Aborting.")
-            return [], all_cols, floor, cap, None
-        if periods:
-            period = int(periods[0])
+        per = pd.to_numeric(df["period"], errors="coerce")
+        period_values: list[int | None] = [int(p) for p in sorted(per.dropna().unique())]
+    else:
+        per = None
+        period_values = [None]
 
-    groups = {str(name): g for name, g in df.groupby("StrategyName", sort=False)}
+    blocks: list[dict] = []
+    all_cols: list[str] = []
+    for pv in period_values:
+        sub = df if pv is None else df[per == pv].copy()
+        if verbose:
+            print(f"\n-- horizon {pv}d: {len(sub)} run(s) --" if pv is not None else "")
+        sub, floor, cap = reclamp_chains(sub)
+        all_cols += [c for c in sub.columns if c not in all_cols]
 
-    def _order_key(name: str) -> tuple[int, str]:
-        # Fixed column order from STRATEGY_ORDER (sweep_config.py) so the report doesn't
-        # reshuffle as swept params change which strategy performs best. Unlisted
-        # strategies sort after all listed ones, alphabetically among themselves.
-        try:
-            idx = STRATEGY_ORDER.index(name)
-        except ValueError:
-            idx = len(STRATEGY_ORDER)
-        return (idx, name)
-    order = sorted(groups, key=_order_key)
+        groups = {str(name): g for name, g in sub.groupby("StrategyName", sort=False)}
+        order = sorted(groups, key=_order_key)
+        columns = [{"strategy": name,
+                    "row": best_run(groups[name], "chain_annual", "chain_ret")}
+                   for name in order]
+        blocks.append({"period": pv, "floor": floor, "cap": cap, "columns": columns})
 
-    columns = [{"strategy": name, "row": best_run(groups[name], "chain_annual", "chain_ret")}
-               for name in order]
-    return columns, all_cols, floor, cap, period
+    return blocks, all_cols
 
 
 def chained_rows_for(all_cols: list[str]) -> list[str]:

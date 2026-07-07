@@ -1,9 +1,13 @@
 """
 Builds the single combined report workbook report/best_strategy_<YYYYMMDD>.xlsx:
 
-  Sheet 1     : the cross-strategy comparison (from best_strategy.fill_best_sheet)
-  Sheets 2…N  : one extension sheet per strategy, best-first — the recent "known future"
-                (partial realised gain) of each strategy's picks.
+  Sheet 1     : the cross-strategy comparison at the PRIMARY horizon — the smallest
+                `period` among the runs, normally 20d (from best_strategy.fill_best_sheet)
+  Then        : one comparison sheet per FURTHER horizon, e.g. "Best Strategy 50d"
+                (the fallback horizon, reported alongside — never mixed into sheet 1)
+  Sheets …N   : one extension sheet per strategy, best-first — the recent "known future"
+                (partial realised gain) of each strategy's picks, on its primary-horizon
+                best-run params.
 
 So the comparison and the extension of whichever strategy you actually follow live in one
 file, not two. Each strategy is extended on ITS OWN best-run params, taken from
@@ -34,8 +38,9 @@ from shared.config import REPORT_ROOT
 
 # Params a run row may carry that a strategy consumes; others keep module defaults.
 # Integer-valued keys are rounded to int; the rest are taken as floats.
-_INT_PARAMS   = {"focusset_size", "step", "period", "No_go_GSPC_rsi", "from_rank"}
-_FLOAT_PARAMS = {"p20d_win_min", "p50d_win_min", "q10_20_min", "q20_50_min"}
+_INT_PARAMS   = {"focusset_size", "step", "period", "No_go_GSPC_rsi", "from_rank",
+                 "corner_bins"}
+_FLOAT_PARAMS = {"vola_keep_frac", "q10_20_min", "q20_50_min"}
 
 
 def _params_from_row(module, row: pd.Series) -> dict:
@@ -89,24 +94,32 @@ def _archive_prior_outputs() -> None:
 
 def run() -> Path | None:
     """Build the single combined workbook report/best_strategy_<date>.xlsx:
-    sheet 1 = the cross-strategy comparison, then one extension sheet per strategy
-    (best-first), each on its own best-run params. The prior workbook is moved to
-    report/_archive/ first. Returns the workbook path, or None when there is nothing
-    comparable to report."""
-    columns, all_cols, floor, cap, period = best_strategy.select_best_runs(verbose=True)
-    if not columns:
+    sheet 1 = the cross-strategy comparison at the primary (smallest) horizon, one more
+    comparison sheet per further horizon, then one extension sheet per strategy
+    (best-first, primary-horizon params). The prior workbook is moved to report/_archive/
+    first. Returns the workbook path, or None when there is nothing comparable to report."""
+    blocks, all_cols = best_strategy.select_best_runs(verbose=True)
+    if not blocks:
         print("No comparable runs — nothing to report.")
         return None
     modules = discover_strategies()
 
-    # Sheet 1: the comparison (created as the active sheet so it stays first; the
-    # per-strategy extension sheets below are appended after it).
+    # Sheet 1: the primary-horizon comparison (created as the active sheet so it stays
+    # first), then one comparison sheet per further horizon; the per-strategy extension
+    # sheets below are appended after them.
     wb = Workbook()
     chained_rows = best_strategy.chained_rows_for(all_cols)
-    best_strategy.fill_best_sheet(wb.active, columns, chained_rows, floor, cap, period)
+    primary = blocks[0]
+    best_strategy.fill_best_sheet(wb.active, primary["columns"], chained_rows,
+                                  primary["floor"], primary["cap"], primary["period"])
+    for blk in blocks[1:]:
+        title = f"Best Strategy {blk['period']}d"
+        best_strategy.fill_best_sheet(wb.create_sheet(), blk["columns"], chained_rows,
+                                      blk["floor"], blk["cap"], blk["period"],
+                                      sheet_title=title)
 
     n_ext = 0
-    for col in columns:
+    for col in primary["columns"]:
         name = col["strategy"]
         print(f"\n=== {name} ===")
         if _extend_one(modules, name, col["row"], wb):

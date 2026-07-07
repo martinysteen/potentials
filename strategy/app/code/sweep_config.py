@@ -47,6 +47,9 @@ LINKED: dict[str, list[str]] = {}
 # parameter changes performance, making the report hard to read run over run. A strategy
 # not listed here is placed after all listed ones (in whatever order pandas/groupby gives).
 STRATEGY_ORDER: list[str] = [
+    "Tally_Rank",
+    "Tally_RSI",
+    "Tally_2050",
     "Cross2050",
     "Cross1020",
     "Ranknow",
@@ -74,6 +77,13 @@ DEFAULTS: dict = {
 # Strategy-specific overrides. An empty dict {} means "just use DEFAULTS".
 # Keys must match each strategy's STRATEGY_NAME (see `python run_sweep.py --list`).
 STRATEGIES: dict[str, dict] = {
+    # --- the Tally advice build (3-step: beta3m top bin x median_30d bottom bin x
+    #     low-vola half), differing only by the chooser; 20d = primary horizon,
+    #     50d = fallback, reported alongside (longi/expAdviceModel report 6l) ---
+    "Tally_Rank": {"period": [20, 50]},
+    "Tally_RSI":  {"period": [20, 50]},
+    "Tally_2050": {"period": [20, 50]},
+
     # --- a single cross quotient (1-step) ---
     "Cross1020": {"q10_20_min": 1.03},
     "Cross2050": {"q20_50_min": 1.05},

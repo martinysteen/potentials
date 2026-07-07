@@ -35,7 +35,7 @@ _PCT_FMT   = '+0.00;-0.00;"-"'
 _CTR       = Alignment(horizontal="center")
 
 _PARAM_COLS = {"focusset_size", "step", "period", "No_go_GSPC_rsi",
-               "p20d_win_min", "p50d_win_min", "q10_20_min", "q20_50_min"}
+               "corner_bins", "vola_keep_frac", "q10_20_min", "q20_50_min"}
 
 
 # ---------------------------------------------------------------------------

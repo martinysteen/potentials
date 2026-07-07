@@ -34,7 +34,10 @@ strategy/
     │   ├── strategies/                   # each = ~20-line declaration on shared/engine.py
     │   │   ├── strategy_ranknow.py       # baseline: lowest longi_rank (standalone, no filters)
     │   │   ├── strategy_Cross1020.py     # [Q10_20=MA10/MA20]
-    │   │   └── strategy_Cross2050.py     # [Q20_50=MA20/MA50]
+    │   │   ├── strategy_Cross2050.py     # [Q20_50=MA20/MA50]
+    │   │   ├── strategy_Tally_Rank.py    # Tally build (see below), chooser = lowest longi_rank
+    │   │   ├── strategy_Tally_RSI.py     # Tally build, chooser = highest RSI14
+    │   │   └── strategy_Tally_2050.py    # Tally build, chooser = highest MA20/MA50 quotient
     │   └── _not_used/                    # PARKED, not discovered by the sweep:
     │       └── strategy_ZOP.py           # ZOP too volatile intraday
     ├── data/                             # scratch/temp only (not committed)
@@ -44,11 +47,23 @@ strategy/
         │   ├── aggregated_summary.xlsx   # stacked summary across all runs of this strategy
         │   └── _archive/<timestamp>/     # previous runs, moved aside by run_sweep
         ├── _not_used/                    # archived report folders for the parked ZOP strategies
-        ├── best_strategy_<YYYYMMDD>.xlsx # combined report: sheet 1 = cross-strategy comparison,
-        │                                 #   then one extension sheet per strategy (best-first)
+        ├── best_strategy_<YYYYMMDD>.xlsx # combined report: sheet 1 = cross-strategy comparison
+        │                                 #   at the primary (smallest) horizon, one more sheet per
+        │                                 #   further horizon (e.g. "Best Strategy 50d"), then one
+        │                                 #   extension sheet per strategy (best-first)
         ├── _archive/                     # prior dated best_strategy_*.xlsx (overwrite same name)
         └── summary.csv                   # master append-log, one row per run (all strategies)
 ```
+
+**The Tally strategies** (Tally_Rank / Tally_RSI / Tally_2050) are the advice product from the
+`longi/expAdviceModel/` sandbox (report sections 6e-6m): the identical 3-step group build —
+within-day top beta3m decile x bottom median_30d decile binned in the JOINT valid set
+(`corner_filter`, `corner_bins`=10), then keep the lower-vola100d half within the survivors
+(`trim_filter`, `vola_keep_frac`=0.5) — differing only by the chooser (= engine ranker): lowest
+longi_rank, highest RSI14, or highest MA20/MA50 quotient. "Tally" = the group's counted
+historical win/loss record (past tense by design — never presented as a forecast). 20d is the
+primary horizon; the sweep also runs them at 50d (the fallback), which gets its own comparison
+sheet. Buy-the-top only; buy-the-dip is out of scope by decision (low-RSI picks measured worst).
 
 **The ZOP strategy is parked** in `code/_not_used/` (reports in `report/_not_used/`). ZOP is a good
 signal but too volatile intraday; refining it is postponed in favour of the more stable cross
@@ -112,8 +127,10 @@ All input is read from `DATA_ROOT = /home/sm/potentials/repositoryRTBI/data/` (d
 | `Longi/future_gain20d.csv` | Realised forward gain over next 20 trading days (%) — `period=20` |
 | `Longi/future_gain50d.csv` | Realised forward gain over next 50 trading days (%) — `period=50` |
 | `Longi/longi_rank.csv` | Average rank across all performance periods (1 = best) |
-| `Longi/longi_rsi.csv` | RSI14 (Wilder's method) — used for `^GSPC` etc. ref context |
+| `Longi/longi_rsi.csv` | RSI14 (Wilder's method) — Tally_RSI chooser + `^GSPC` etc. ref context |
 | `Longi/longi_ma*.csv` | Simple moving averages (cross strategies build MA quotients) |
+| `Longi/longi_beta3m.csv`, `longi_median_30d.csv`, `longi_vola100d.csv` | The Tally group build (corner + trim) |
+| `Longi/longi_quot2050.csv` | MA20/MA50 speed quotient ×100 — Tally_2050 chooser |
 | `data/PotDat.csv` | Raw stock prices (incl. `^VIX`) |
 | `data/Stamdata.csv` | Ticker metadata: Name, Sector, GICS, Sector2, Zone, … |
 | `data/Cal.csv` | daynum → date (index is float, e.g. 2055.0 — use `float(daynum)`) |
@@ -303,6 +320,12 @@ the finest/most reliable; step 5 → `period/5`). `step` is therefore second-ord
 across strategies, so `sweep_config.DEFAULTS["step"] = 1`. (`step` still affects `avg_gain`
 sample size and `N_hops`, neither of which is a decision criterion.)
 
+### Mixed horizons — one comparison sheet per period
+Runs are grouped by `period`; each horizon gets its own comparison sheet with its own common
+span (chains of different hold lengths are never mixed in one table). The smallest horizon is
+the primary "Best Strategy" sheet and drives the extension sheets; further horizons (e.g. the
+Tally strategies' 50d fallback) each get a "Best Strategy <N>d" sheet.
+
 ### Cross-strategy comparability — the common span
 Each run's Summary chain is over that run's *own* span, so it is **not** comparable across
 strategies (a strategy covering only recent daynums shows a bigger chain return than one spanning
@@ -332,7 +355,7 @@ PARAMS: dict = {
     "step": 1,                # daynum step between hops (sweep fixes this at 1)
     "period": 20,             # forward horizon in trading days (20 or 50)
     "No_go_GSPC_rsi": 40,     # suppress avg gains / skip chain hops when GSPC RSI (at daynum) < this
-    # strategy-specific: q10_20_min, q20_50_min
+    # strategy-specific: q10_20_min, q20_50_min, corner_bins, vola_keep_frac
 }
 ```
 - `No_go_GSPC_rsi` label → A3/A2 in Operational; avg_gain cells reference it via an IF formula.
@@ -371,6 +394,13 @@ main, build_extension = make_strategy(STRATEGY_NAME, PARAMS, FILTERS)
 - Other comparison: `col_filter("longi_beta1yr.csv", "beta_max", op="<")` → keeps `beta < max`.
 - Other final priority: `make_strategy(..., ranker=rank_by("longi_FKplus.csv", ascending=False))`
   → picks the highest-FKplus survivors instead of the lowest rank.
+- Within-day relative position instead of a fixed threshold: `bin_filter(csv, "n_bins_param")`
+  (top/bottom of N equal-count bins of the day's own valid set); for a TWO-indicator corner
+  cell use `corner_filter(top_csv, bottom_csv, "n_bins_param")` — binned in the joint valid
+  set, byte-identical to the expAdviceModel sandbox build.
+- Survivor-relative trim: `make_strategy(..., trims=[trim_filter(csv, "frac_param")])` —
+  applied after the FILTERS intersection, in order, each keeping a fraction ranked WITHIN
+  the then-current survivor set (e.g. the Tally low-vola half).
 
 **Rules / invariants the engine already enforces:**
 - One `gains` dict per hop, for `future_gain{period}d.csv` — never both horizons.
@@ -440,7 +470,7 @@ strategy**, strongest `chain_annual` leftmost.
 |------|-----|----------|
 | Blue | `BDD7EE` | normal headers |
 | Grey-blue | `D6DCE4` | strategy column header (best_strategy) |
-| Yellow | `FFFF99` | parameter headers: `focusset_size`, `step`, `period`, `No_go_GSPC_rsi`, `q10_20_min`, `q20_50_min` |
+| Yellow | `FFFF99` | parameter headers: `focusset_size`, `step`, `period`, `No_go_GSPC_rsi`, `q10_20_min`, `q20_50_min`, `corner_bins`, `vola_keep_frac` |
 | Amber | `FFE599` | editable No_go cell (Operational) |
 | Green / Red | `C6EFCE` / `FFC7CE` | positive / negative gains |
 | Grey | `EEEEEE` | suppressed / n/a |
