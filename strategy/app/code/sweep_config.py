@@ -65,7 +65,7 @@ DEFAULTS: dict = {
                                           # value -> one column per strategy in best_strategy.
     "No_go_GSPC_rsi": 0,            # 0 = filter off; 40 = typical. Swept so Summary
                                           # metrics (chain_*, avg_gain, N_loss) reflect each.
-    "from_rank":      1          # WHERE in the rank-ordered survivor set to draw the
+    "from_rank":      1         # WHERE in the rank-ordered survivor set to draw the
                                           # focusset from (smaller longi_rank == better):
                                           #   1   -> the best n            (classic top-pick)
                                           #   k>1 -> skip the best k-1, take the next n
