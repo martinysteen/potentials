@@ -63,7 +63,7 @@ DEFAULTS: dict = {
                                           # step is otherwise second-order for the chain metric.
     "period":         20,           # forward horizon in trading days (20 or 50). Single
                                           # value -> one column per strategy in best_strategy.
-    "No_go_GSPC_rsi": 0,            # 0 = filter off; 40 = typical. Swept so Summary
+    "No_go_GSPC_rsi": 50,            # 0 = filter off; 40 = typical. Swept so Summary
                                           # metrics (chain_*, avg_gain, N_loss) reflect each.
     "from_rank":      1         # WHERE in the rank-ordered survivor set to draw the
                                           # focusset from (smaller longi_rank == better):

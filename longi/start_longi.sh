@@ -67,13 +67,22 @@ if [ $LONGI_EXIT_CODE -ne 0 ]; then
     exit $LONGI_EXIT_CODE
 fi
 
-# Upload output data using external provider
+# Upload output data to Google Drive using external provider
 echo ""
-echo "--- Uploading output data ---"
+echo "--- Uploading output data to Google Drive's repositoryRTBI ---"
 /home/sm/potentials/longi/upload_output.sh
 UPLOAD_EXIT_CODE=$?
 if [ $UPLOAD_EXIT_CODE -ne 0 ]; then
     echo "ERROR: upload_output.sh failed with exit code $UPLOAD_EXIT_CODE"
+fi
+
+# Assure Google Drive consistent with Ubuntu's repositoryRTBI
+echo ""
+echo "--- Synchronize Google Drive-s repositoryRTBI with Ubuntu's mirro ---"
+/home/sm/potentials/repositoryRTBI/sync_rtbi.sh
+UPLOAD_EXIT_CODE=$?
+if [ $UPLOAD_EXIT_CODE -ne 0 ]; then
+    echo "ERROR: sync_rtbi.sh failed with exit code $UPLOAD_EXIT_CODE"
 fi
 
 FINAL_EXIT_CODE=$UPLOAD_EXIT_CODE
