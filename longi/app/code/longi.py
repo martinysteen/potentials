@@ -34,6 +34,11 @@ class Module:
 # Module registry - defines all processing modules and their dependencies
 # Add new modules here as they are developed
 MODULES: Dict[str, Module] = {
+    "price": Module(
+        name="Price Snapshot (exact copy of PotDat.csv)",
+        script="longi_price.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
     "rsi": Module(
         name="RSI14",
         script="longi_rsi.py",

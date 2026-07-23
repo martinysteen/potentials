@@ -93,39 +93,40 @@ All derived tables follow same structure as PotDat.csv:
 ### Derived Tables (Time-Series Format)
 All tables follow PotDat.csv structure (rows=tickers, columns=daynums):
 
-1. **longi_rsi.csv** - RSI14 using Wilder's method ✓ IMPLEMENTED
-2. **longi_macd.csv** - MACD(4,15,9) indicator ✓ IMPLEMENTED
-3. **longi_macd_Z.csv** - MACD histogram zero-crossings (ZOP/ZNED) ✓ IMPLEMENTED
-4. **longi_per1d.csv** - 1-day performance ✓ IMPLEMENTED
-5. **longi_per1w.csv** - 1-week performance ✓ IMPLEMENTED
-6. **longi_per1m.csv** - 1-month performance ✓ IMPLEMENTED
-7. **longi_per3m.csv** - 3-month performance ✓ IMPLEMENTED
-8. **longi_per6m.csv** - 6-month performance ✓ IMPLEMENTED
-9. **longi_per1y.csv** - 1-year performance ✓ IMPLEMENTED
-10. **longi_rank.csv** - Average rank across all performance periods ✓ IMPLEMENTED
-11. **longi_median_10d.csv** - 10-day rolling median of rank ✓ IMPLEMENTED
-12. **longi_median_20d.csv** - 20-day rolling median of rank ✓ IMPLEMENTED
-13. **longi_median_30d.csv** - 30-day rolling median of rank ✓ IMPLEMENTED
-14. **longi_median_40d.csv** - 40-day rolling median of rank ✓ IMPLEMENTED
-15. **longi_median_50d.csv** - 50-day rolling median of rank ✓ IMPLEMENTED
-16. **longi_median_100d.csv** - 100-day rolling median of rank ✓ IMPLEMENTED
-17. **longi_stepup.csv** - Step-up count (0-3) as uptrend measure ✓ IMPLEMENTED
-18. **longi_spr100d.csv** - Spread to 100-day maximum (% growth needed) ✓ IMPLEMENTED
-19. **longi_spr250d.csv** - Spread to 250-day maximum (% growth needed) ✓ IMPLEMENTED
-20. **longi_vola20d.csv** - 20-day volatility (returns-based stdev in %) ✓ IMPLEMENTED
-21. **longi_vola100d.csv** - 100-day volatility (returns-based stdev in %) ✓ IMPLEMENTED
-22. **longi_ma10.csv** - 10-day Simple Moving Average ✓ IMPLEMENTED
-23. **longi_ma20.csv** - 20-day Simple Moving Average ✓ IMPLEMENTED
-24. **longi_ma50.csv** - 50-day Simple Moving Average ✓ IMPLEMENTED
-25. **longi_ma200.csv** - 200-day Simple Moving Average ✓ IMPLEMENTED
-26. **longi_PdivMA20.csv** - Price / MA20 ratio (>100 = bullish) ✓ IMPLEMENTED
-27. **longi_PdivMA50.csv** - Price / MA50 ratio (>100 = bullish) ✓ IMPLEMENTED
-28. **longi_PdivMA200.csv** - Price / MA200 ratio (>100 = bullish) ✓ IMPLEMENTED
-29. **longi_sh3m.csv** - 3-month Sharpe ratio (return/volatility over 67 days) ✓ IMPLEMENTED
-30. **longi_sh6m.csv** - 6-month Sharpe ratio (return/volatility over 133 days) ✓ IMPLEMENTED
-31. **longi_sh1yr.csv** - 1-year Sharpe ratio (return/volatility over 265 days) ✓ IMPLEMENTED
-32. **longi_quot1020.csv** - MA10/MA20 quotient ×100, momentum speed (>100 = accelerating) ✓ IMPLEMENTED
-33. **longi_quot2050.csv** - MA20/MA50 quotient ×100, momentum speed (>100 = accelerating) ✓ IMPLEMENTED
+1. **longi_price.csv** - Exact copy of PotDat.csv (snapshot of prices used for this pipeline run) ✓ IMPLEMENTED
+2. **longi_rsi.csv** - RSI14 using Wilder's method ✓ IMPLEMENTED
+3. **longi_macd.csv** - MACD(4,15,9) indicator ✓ IMPLEMENTED
+4. **longi_macd_Z.csv** - MACD histogram zero-crossings (ZOP/ZNED) ✓ IMPLEMENTED
+5. **longi_per1d.csv** - 1-day performance ✓ IMPLEMENTED
+6. **longi_per1w.csv** - 1-week performance ✓ IMPLEMENTED
+7. **longi_per1m.csv** - 1-month performance ✓ IMPLEMENTED
+8. **longi_per3m.csv** - 3-month performance ✓ IMPLEMENTED
+9. **longi_per6m.csv** - 6-month performance ✓ IMPLEMENTED
+10. **longi_per1y.csv** - 1-year performance ✓ IMPLEMENTED
+11. **longi_rank.csv** - Average rank across all performance periods ✓ IMPLEMENTED
+12. **longi_median_10d.csv** - 10-day rolling median of rank ✓ IMPLEMENTED
+13. **longi_median_20d.csv** - 20-day rolling median of rank ✓ IMPLEMENTED
+14. **longi_median_30d.csv** - 30-day rolling median of rank ✓ IMPLEMENTED
+15. **longi_median_40d.csv** - 40-day rolling median of rank ✓ IMPLEMENTED
+16. **longi_median_50d.csv** - 50-day rolling median of rank ✓ IMPLEMENTED
+17. **longi_median_100d.csv** - 100-day rolling median of rank ✓ IMPLEMENTED
+18. **longi_stepup.csv** - Step-up count (0-3) as uptrend measure ✓ IMPLEMENTED
+19. **longi_spr100d.csv** - Spread to 100-day maximum (% growth needed) ✓ IMPLEMENTED
+20. **longi_spr250d.csv** - Spread to 250-day maximum (% growth needed) ✓ IMPLEMENTED
+21. **longi_vola20d.csv** - 20-day volatility (returns-based stdev in %) ✓ IMPLEMENTED
+22. **longi_vola100d.csv** - 100-day volatility (returns-based stdev in %) ✓ IMPLEMENTED
+23. **longi_ma10.csv** - 10-day Simple Moving Average ✓ IMPLEMENTED
+24. **longi_ma20.csv** - 20-day Simple Moving Average ✓ IMPLEMENTED
+25. **longi_ma50.csv** - 50-day Simple Moving Average ✓ IMPLEMENTED
+26. **longi_ma200.csv** - 200-day Simple Moving Average ✓ IMPLEMENTED
+27. **longi_PdivMA20.csv** - Price / MA20 ratio (>100 = bullish) ✓ IMPLEMENTED
+28. **longi_PdivMA50.csv** - Price / MA50 ratio (>100 = bullish) ✓ IMPLEMENTED
+29. **longi_PdivMA200.csv** - Price / MA200 ratio (>100 = bullish) ✓ IMPLEMENTED
+30. **longi_sh3m.csv** - 3-month Sharpe ratio (return/volatility over 67 days) ✓ IMPLEMENTED
+31. **longi_sh6m.csv** - 6-month Sharpe ratio (return/volatility over 133 days) ✓ IMPLEMENTED
+32. **longi_sh1yr.csv** - 1-year Sharpe ratio (return/volatility over 265 days) ✓ IMPLEMENTED
+33. **longi_quot1020.csv** - MA10/MA20 quotient ×100, momentum speed (>100 = accelerating) ✓ IMPLEMENTED
+34. **longi_quot2050.csv** - MA20/MA50 quotient ×100, momentum speed (>100 = accelerating) ✓ IMPLEMENTED
 
 ### Aggregated Tables (Grouped by Stock Attributes)
 Output directory: `app/output/` (same as individual stock tables)
@@ -254,7 +255,11 @@ Follow the same pattern:
 - ✓ Pipeline orchestrator (longi.py) fully implemented
   - Dependency management working
   - Parallel execution capability ready
-  - 37 modules registered: rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_GICS_1yr, grp_Sector2_1yr, grp_GICS_3m, grp_Sector2_3m, coreindex, coreindexRSI, beta3m, beta6m, beta1yr, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_gain20d, future_gain50d, across
+  - 38 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_GICS_1yr, grp_Sector2_1yr, grp_GICS_3m, grp_Sector2_3m, coreindex, coreindexRSI, beta3m, beta6m, beta1yr, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_gain20d, future_gain50d, across
+- ✓ longi_price.py fully implemented
+  - Outputs: longi_price.csv (byte-exact copy of PotDat.csv via shutil.copyfile, no reformatting)
+  - Purpose: (a) reference raw price data under the longi_ naming convention, (b) record the exact PotDat.csv snapshot used to derive all longi_*.csv outputs for this run, since PotDat.csv is updated asynchronously relative to them
+  - Independent module (no dependencies, nothing else depends on it)
 - ✓ longi_rsi.py fully implemented and tested
 - ✓ longi_macd.py fully implemented and tested
 - ✓ longi_macd_Z.py fully implemented and tested
