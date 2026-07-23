@@ -6,7 +6,7 @@ PARAMS. sweep_config.py is a separate, deliberately independent surface: it deci
 """
 
 # The "classic" backtest knobs, common to every strategy in this project.
-FOCUSSET_SIZE: int = 3               # tickers picked per hop
+FOCUSSET_SIZE: int = 5             # tickers picked per hop
 STEP: int = 5                        # daynum step between hops
 NO_GO_GSPC_RSI: int = 0             # suppress picks / chain hops when GSPC RSI < this
 FROM_RANK: int = 1                   # which end of the info_attribute ranking to draw
