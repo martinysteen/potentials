@@ -39,6 +39,7 @@ import strategies as strategies_pkg
 import aggregate_summary
 from shared.config import REPORT_ROOT, SUMMARY_CSV
 
+import run_config
 import sweep_config
 
 
@@ -74,10 +75,42 @@ def expand_runs(base_params: dict, spec: dict, linked: dict) -> list[dict]:
 
     List-valued params (and list-valued aliases) become grid axes; all axes are
     cartesian-producted. Keys the strategy doesn't define are ignored.
+
+    priority_attribute is special-cased: sweeping it derives priority_ascending from
+    run_config.PRIORITY_ATTRIBUTE_DIRECTIONS for each value, rather than letting it be
+    swept as an independent axis — a plain cartesian product could pair an attribute
+    with the wrong direction, and that mismatch is silent (see run_config.py). Setting
+    priority_ascending directly in spec while priority_attribute is also swept is a
+    hard error, as is sweeping a name absent from that directions dict.
     """
     spec = dict(spec)
     axes: list[list[dict]] = []   # each axis is a list of partial-assignment fragments
     consumed: set[str] = set()    # base keys governed by an active alias
+
+    # priority_attribute/priority_ascending: derive the direction, never sweep it
+    # independently — see run_config.PRIORITY_ATTRIBUTE_DIRECTIONS.
+    if "priority_attribute" in spec and "priority_attribute" in base_params:
+        values = spec.pop("priority_attribute")
+        if not isinstance(values, list):
+            values = [values]
+        if "priority_ascending" in spec:
+            raise SystemExit(
+                "sweep_config: priority_ascending must not be set while priority_attribute "
+                "is being swept — its direction is derived from "
+                "run_config.PRIORITY_ATTRIBUTE_DIRECTIONS for each swept name."
+            )
+        missing = [v for v in values if v not in run_config.PRIORITY_ATTRIBUTE_DIRECTIONS]
+        if missing:
+            raise SystemExit(
+                f"sweep_config: priority_attribute value(s) {missing} have no entry in "
+                "run_config.PRIORITY_ATTRIBUTE_DIRECTIONS — add their direction "
+                "(True = smaller wins, False = bigger wins) before sweeping them."
+            )
+        frags = [{"priority_attribute": v}
+                 | ({"priority_ascending": run_config.PRIORITY_ATTRIBUTE_DIRECTIONS[v]}
+                    if "priority_ascending" in base_params else {})
+                 for v in values]
+        axes.append(frags)
 
     # Linked aliases first — each writes one value to all present target keys.
     for alias, targets in linked.items():
@@ -125,8 +158,16 @@ def build_plan(modules: dict[str, object]) -> dict[str, list[dict]]:
             + ", ".join(unknown)
             + "\nRun `python run_sweep.py --list` to see valid names."
         )
+    non_sweepable = getattr(sweep_config, "NON_SWEEPABLE", set())
     for name, overrides in sweep_config.STRATEGIES.items():
         spec = {**defaults, **overrides}
+        bad = non_sweepable & spec.keys()
+        if bad:
+            raise SystemExit(
+                f"{name}: {sorted(bad)} must not be swept — expand_runs() would misread a "
+                "fixed multi-value list as a grid axis and split it into separate runs. "
+                "Remove from sweep_config.DEFAULTS/STRATEGIES; set via run_config.py instead."
+            )
         plan[name] = expand_runs(dict(modules[name].PARAMS), spec, linked)
     return plan
 

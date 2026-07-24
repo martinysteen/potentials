@@ -20,12 +20,12 @@ Operational sheet layout (focusset_size = N):
   Rows 4…N+3 : ticker rows
   Row N+4    : per-column "avg_gainXd" labels                       (light green)
   Row N+5    : avg_partial_gain values                              (orange/light-yellow/grey)
-  Row N+6/7  : "<info_attribute>_min"/"_max" of that day's picked tickers — only present
-               when params["info_attribute"] is set (the DomGICS family); absent otherwise,
-               in which case everything below shifts up by 2
-  Row N+6/8  : (reserved — 50d labels)   [N+8 when the info rows above are present]
-  Row N+7/9  : (reserved — 50d results)  [N+9 when the info rows above are present]
-  Row N+8/10+: ref rows (^GSPC_rsi, ^STOXX_rsi, ^HSI_rsi, ^VIX)  (yellow)
+  +2 rows per info_attribute (only for strategies that expose one, e.g. DomGICS):
+               "<attr>_min"/"<attr>_max" of that day's picked tickers — one pair per name
+               in params["info_attribute"] (a single name or a list of several); absent
+               entirely when the param is unset, in which case everything below shifts up
+  +2 rows    : (reserved — 50d labels/results)
+  ...        : ref rows (^GSPC_rsi, ^STOXX_rsi, ^HSI_rsi, ^VIX)  (yellow)
   ...        : GICS / Sector2 / Zone occurrence counts
 
 Entry points (from app/code/):
@@ -44,6 +44,7 @@ from openpyxl.utils import get_column_letter
 
 from shared.config import REPORT_ROOT
 from shared.data_loader import load_longi, load_potdat, load_stamdata, daynum_to_date
+from shared.dominance import info_attr_list
 
 
 # ---------------------------------------------------------------------------
@@ -190,14 +191,14 @@ def _fill_operational(ws, hop_results: list[dict], params: dict,
             cell.value = None
             cell.fill  = _GRY_FILL
 
-    # ---- info_attribute min/max rows — only for strategies that expose one (DomGICS) ----
+    # ---- info_attribute min/max rows — one pair per name (only for strategies that
+    # expose one, e.g. DomGICS); row-dynamic so more names never collide with what follows ----
     next_row = gain_row + 1
-    info_attr = params.get("info_attribute")
-    if info_attr:
-        info_df = load_longi(f"longi_{info_attr}.csv")
+    for attr in info_attr_list(params.get("info_attribute")):
+        info_df = load_longi(f"longi_{attr}.csv")
         min_row, max_row = next_row, next_row + 1
-        c = ws.cell(min_row, 1, f"{info_attr}_min"); c.font = _BOLD
-        c = ws.cell(max_row, 1, f"{info_attr}_max"); c.font = _BOLD
+        c = ws.cell(min_row, 1, f"{attr}_min"); c.font = _BOLD
+        c = ws.cell(max_row, 1, f"{attr}_max"); c.font = _BOLD
         for j, h in enumerate(hop_results, start=2):
             col = str(h["daynum"])
             vals = [float(info_df.at[t, col]) for t in h.get("tickers", [])

@@ -78,7 +78,7 @@ strategy_grp/
 - **Development:** VS Code Remote-SSH from Windows
 - **Every `python` invocation goes through SSH — no exceptions:**
   `ssh -p 2222 sm@innovia.dk` then `conda activate potsystem_env`. Never invoke python directly
-  on the Windows host for this project, even for quick checks.
+  on the Windows host for this project, even for quick checks, because python is not installed there.
 
 ---
 
@@ -150,8 +150,7 @@ identical to `../strategy/shared/` — copied verbatim; keep in sync manually if
 `dominance.py` is new to this project — see below.)
 
 ### `shared/config.py`
-Constants: `DATA_ROOT`, `DATA_LONGI`, `POTDAT_PATH`, `STAMDATA_PATH`, `CAL_PATH`,
-`APP_ROOT`, `REPORT_ROOT`, `SUMMARY_CSV`.
+Constants: `DATA_ROOT`, `DATA_LONGI`, `POTDAT_PATH`, `STAMDATA_PATH`, `CAL_PATH`, `APP_ROOT`, `REPORT_ROOT`, `SUMMARY_CSV`.
 
 ### `shared/data_loader.py`
 All functions are `@lru_cache`. `load_longi(filename)`, `load_potdat()`, `load_stamdata()`,

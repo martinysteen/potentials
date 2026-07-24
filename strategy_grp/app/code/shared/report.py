@@ -19,7 +19,7 @@ from openpyxl.utils import get_column_letter
 
 from shared.chain import realizable_chain, chain_lot_stats, chain_origin_sensitivity
 from shared.config import REPORT_ROOT, SUMMARY_CSV
-from shared.data_loader import daynum_to_date, load_stamdata
+from shared.data_loader import daynum_to_date, load_longi, load_stamdata
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +111,41 @@ def _count_attr(hop_results: list[dict], stamdata: pd.DataFrame,
     totals = {v: sum(hc.get(v, 0) for hc in hop_counts) for v in all_vals}
     sorted_vals = sorted(all_vals, key=lambda v: -totals[v])
     return sorted_vals, hop_counts
+
+
+def _info_attr_names(params: dict) -> list[str]:
+    """params['info_attribute'] normalized to a list of longi factor short names — []
+    when absent (plain filter strategies). Deferred import: shared.dominance imports
+    this module at load time, so importing it back at module level here would cycle;
+    by the time this function actually runs, both modules are fully initialized.
+    """
+    from shared.dominance import info_attr_list
+    return info_attr_list(params.get("info_attribute"))
+
+
+def _write_info_attr_row(ws, hop_results: list[dict], row: int, attr: str, agg) -> None:
+    """One row of per-hop agg(longi_{attr}) over that hop's focusset tickers (min/max)."""
+    info_df  = load_longi(f"longi_{attr}.csv")
+    lbl_cell = ws.cell(row, 1, f"{attr}_{agg.__name__}")
+    lbl_cell.font = _BOLD
+    for j, h in enumerate(hop_results, start=2):
+        col  = str(h["daynum"])
+        vals = [float(info_df.at[t, col]) for t in h.get("tickers", [])
+                if t in info_df.index and col in info_df.columns
+                and pd.notna(info_df.at[t, col])]
+        cell = ws.cell(row, j)
+        cell.alignment = _CTR
+        cell.value = round(agg(vals), 2) if vals else None
+
+
+def _param_cell(v):
+    """Excel/CSV-safe representation of a param value.
+
+    openpyxl rejects a raw list as a cell value, and a bare list also reads ugly in
+    the CSV — so a list param (e.g. multiple info_attribute names) is joined into one
+    comma-separated string; everything else passes through unchanged.
+    """
+    return ",".join(v) if isinstance(v, list) else v
 
 
 def _next_run_num(folder: Path) -> int:
@@ -226,7 +261,10 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     Row 1   : (blank)  | daynum1 | daynum2 | ...
     Row 2   : (blank)  | date1   | date2   | ...
     Rows 3…n+2: (blank) | ticker_rank1 … ticker_rankN
-    +2 rows : avg_gain20d / avg_gain50d
+    +1 row  : avg_gain
+    +2 rows per info_attribute (only for strategies that expose one, e.g. DomGICS):
+              <attr>_min / <attr>_max of that hop's focusset — absent otherwise, in
+              which case everything below shifts up accordingly
     +4 rows : market context (^GSPC_rsi, ^STOXX_rsi, ^HSI_rsi, ^VIX)
     +?? rows: GICS count rows (sorted by frequency)
     +?? rows: Sector2 count rows
@@ -241,9 +279,15 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     has_surv = any("n_survivors" in h for h in hop_results)
     surv_off = 1 if has_surv else 0
 
+    # Optional info_attribute min/max rows (one pair per attribute), inserted below the
+    # avg rows — row-dynamic so a bigger focusset_size (more ticker rows) or more
+    # attributes never collide with what follows.
+    info_attrs = _info_attr_names(params)
+    n_info     = 2 * len(info_attrs)
+
     # Pre-compute the row where ^GSPC_rsi will land, for use in avg formulas.
     rows_list    = _avg_rows(n)
-    ref_base     = n_tickers + 3 + surv_off + len(rows_list)
+    ref_base     = n_tickers + 3 + surv_off + len(rows_list) + n_info
     ref_keys     = list(hop_results[0].get("ref_values", {}).keys()) if hop_results else []
     gspc_rsi_row = next((ref_base + i for i, k in enumerate(ref_keys) if "GSPC_rsi" in k), None)
 
@@ -304,6 +348,12 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
                 cell.value = None
                 cell.fill  = PatternFill() if sep else _GRY_FILL
 
+    # ---- info_attribute min/max rows (optional — only strategies that expose one) ----
+    info_start = n_tickers + 3 + surv_off + len(rows_list)
+    for k, attr in enumerate(info_attrs):
+        _write_info_attr_row(ws, hop_results, info_start + 2 * k,     attr, min)
+        _write_info_attr_row(ws, hop_results, info_start + 2 * k + 1, attr, max)
+
     # ---- ref rows ----
     def _write_ref_rows(start_row: int, hop_key: str, label_suffix: str = "") -> int:
         keys = list(hop_results[0].get(hop_key, {}).keys()) if hop_results else []
@@ -321,7 +371,7 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
                     cell.value = None
         return len(keys)
 
-    base   = n_tickers + 3 + surv_off + len(rows_list)
+    base   = n_tickers + 3 + surv_off + len(rows_list) + n_info
     n_ref = _write_ref_rows(base, "ref_values")
 
     # ---- attribute frequency rows ----
@@ -377,7 +427,7 @@ def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
         ("EndDaynum",     end_dn),
     ]
     for k, v in params.items():
-        rows.append((k, v))
+        rows.append((k, _param_cell(v)))
 
     for label, gain_key, top_n in _avg_rows(n):
         val = _grand_avg_topn(hop_results, gain_key, top_n, params)
@@ -474,7 +524,7 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
         w.writerow(
             [strategy_name, run_num, start_dn, len(hop_results),
              _count_active_hops(hop_results, params), end_dn]
-            + [params.get(k, "") for k in param_cols]
+            + [_param_cell(params.get(k, "")) for k in param_cols]
             + avg_vals + chain_vals + extra_vals
         )
 

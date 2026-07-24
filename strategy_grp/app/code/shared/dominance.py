@@ -21,10 +21,12 @@ Pipeline (one daynum):
        candidates are then re-ranked globally by the same value and pick_by_rank's
        from_rank window applied (1=best n, -1=worst n) — same "smaller is better" trick
        shared.engine's rank_by uses (negate a bigger-is-better series before handing it
-       to pick_by_rank).
+       to pick_by_rank). info_attribute may be a list of several factor names — only
+       the first drives selection; the rest are informational-only (see info_attr_list).
 
 priority_attribute/priority_ascending default to run_config.PRIORITY_ATTRIBUTE/
-PRIORITY_ASCENDING; info_attribute defaults to run_config.INFO_ATTRIBUTE.
+PRIORITY_ASCENDING; info_attribute defaults to run_config.INFO_ATTRIBUTE (a name or a
+list of names — see info_attr_list).
 """
 
 import sys
@@ -90,9 +92,23 @@ def dominance_tables(rank_threshold: float, dom_count_threshold: int,
 # Ticker selection
 # ---------------------------------------------------------------------------
 
+def info_attr_list(value: str | list[str] | None) -> list[str]:
+    """Normalize an info_attribute param to a list of longi factor short names.
+
+    Accepts a single name (e.g. "per1d", the long-standing single-attribute
+    convention) or a list of several (e.g. ["per1d", "macd_histogram"]); [] when the
+    value is falsy. select_focusset uses only the first entry to actually select
+    tickers; shared/report.py and shared/extension.py display min/max rows for every
+    entry in the list.
+    """
+    if not value:
+        return []
+    return [value] if isinstance(value, str) else list(value)
+
+
 def select_focusset(daynum: int, dom_wide: pd.DataFrame, tickers_per_gics: int,
                     focusset_size: int, from_rank: int = 1,
-                    info_attribute: str = "per1d") -> list[str]:
+                    info_attribute: str | list[str] = "per1d") -> list[str]:
     """Tickers for one daynum: each GICS dominating on `dom_wide` at this daynum
     contributes its tickers_per_gics BEST tickers by longi_{info_attribute}.csv (bigger
     always wins) when from_rank=1, or its tickers_per_gics WORST when from_rank=-1 — the
@@ -100,7 +116,13 @@ def select_focusset(daynum: int, dom_wide: pd.DataFrame, tickers_per_gics: int,
     bottom-pick reaches genuinely weak tickers rather than the weakest of an already-
     best-biased pool. The pooled candidates are then re-ranked globally by the same
     value and the focusset_size/from_rank window applied. [] if the daynum has no data
-    or no dominating GICS — a clean no-pick (cash) hop, never an error."""
+    or no dominating GICS — a clean no-pick (cash) hop, never an error.
+
+    info_attribute may be a single longi factor name or a list of several — selection
+    always ranks by the FIRST name only (a deterministic pick needs one unambiguous
+    ordering key, same reasoning PRIORITY_ATTRIBUTE relies on); any further names carry
+    no weight here and are purely informational (see shared/report.py, shared/extension.py).
+    """
     col = str(daynum)
     if col not in dom_wide.columns:
         return []
@@ -108,7 +130,9 @@ def select_focusset(daynum: int, dom_wide: pd.DataFrame, tickers_per_gics: int,
     if len(dominant) == 0:
         return []
 
-    info = load_longi(f"longi_{info_attribute}.csv")
+    attrs   = info_attr_list(info_attribute)
+    primary = attrs[0] if attrs else "per1d"
+    info    = load_longi(f"longi_{primary}.csv")
     if col not in info.columns:
         return []
     gics = load_stamdata()["GICS"]

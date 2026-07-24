@@ -30,6 +30,22 @@ in LINKED; the driver writes its value to whichever of the real keys a
 strategy actually has. An alias may itself be a list to sweep the pair as ONE
 axis (they stay equal at every value). Currently no aliases are needed.
 
+Sweeping priority_attribute
+----------------------------
+priority_attribute is NOT a plain grid axis like the ones above, because it is
+paired with priority_ascending (True = smaller wins, False = bigger wins) —
+and getting that pairing wrong silently inverts the "dominating" selection (see
+run_config.py). So:
+
+    DEFAULTS = {"priority_attribute": ["rank", "beta3m", "vola100d"]}
+
+tries each name in its own run, deriving priority_ascending for each from
+run_config.PRIORITY_ATTRIBUTE_DIRECTIONS — it is never read from DEFAULTS/
+STRATEGIES directly while priority_attribute is being swept (setting it there
+too is a hard error), and sweeping a name absent from that dict is also a hard
+error rather than a silent wrong default. Add the name's direction to
+PRIORITY_ATTRIBUTE_DIRECTIONS in run_config.py before adding it here.
+
 Only strategies that appear as keys in STRATEGIES are touched. Their existing
 run*.xlsx are archived (moved to <strategy>/_archive/<timestamp>/) and rebuilt
 fresh; strategies not listed here are left completely alone.
@@ -40,6 +56,15 @@ without touching any files.
 """
 
 import run_config as cfg
+
+# Params whose value is a fixed multi-item list, never a sweep grid — do NOT add these
+# to DEFAULTS or a STRATEGIES override entry. expand_runs() can't tell "list = grid axis"
+# from "list = one run's fixed multi-value param" by looking at the value alone, so
+# run_sweep.build_plan() hard-fails if one of these ever shows up in a sweep spec.
+# info_attribute: a list here means several informational factors shown in ONE run's
+# report (see shared/report.py / shared/extension.py) — only the first drives selection
+# (shared/dominance.select_focusset); it is set once via run_config.py, not swept.
+NON_SWEEPABLE: set[str] = {"info_attribute"}
 
 # Alias -> the real param keys it fans out to (each strategy gets the ones it has).
 LINKED: dict[str, list[str]] = {}
@@ -67,6 +92,11 @@ DEFAULTS: dict = {
                                           #   1   -> the best n            (classic top-pick)
                                           #   -1  -> the worst n           (take from the bottom)
                                           # A list sweeps it as one axis, e.g. [1, -1].
+    "priority_attribute": list(cfg.PRIORITY_ATTRIBUTE_DIRECTIONS),  # try every registered
+                                          # name, one run each — direction is derived per
+                                          # name from cfg.PRIORITY_ATTRIBUTE_DIRECTIONS (see
+                                          # "Sweeping priority_attribute" above). Trim this
+                                          # list to test fewer of them.
 }
 
 # Strategy-specific overrides. An empty dict {} means "just use DEFAULTS".
