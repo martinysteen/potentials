@@ -20,10 +20,11 @@ Operational sheet layout (focusset_size = N):
   Rows 4…N+3 : ticker rows
   Row N+4    : per-column "avg_gainXd" labels                       (light green)
   Row N+5    : avg_partial_gain values                              (orange/light-yellow/grey)
-  +2 rows per info_attribute (only for strategies that expose one, e.g. DomGICS):
-               "<attr>_min"/"<attr>_max" of that day's picked tickers — one pair per name
-               in params["info_attribute"] (a single name or a list of several); absent
-               entirely when the param is unset, in which case everything below shifts up
+  +2 rows per informational_attributes entry (only for strategies that expose one, e.g.
+               DomGICS): "<attr>_min"/"<attr>_max" of that day's picked tickers — one pair
+               per name in params["informational_attributes"] (a single name or a list of
+               several); absent entirely when the param is unset, in which case everything
+               below shifts up
   +2 rows    : (reserved — 50d labels/results)
   ...        : ref rows (^GSPC_rsi, ^STOXX_rsi, ^HSI_rsi, ^VIX)  (yellow)
   ...        : GICS / Sector2 / Zone occurrence counts
@@ -44,7 +45,7 @@ from openpyxl.utils import get_column_letter
 
 from shared.config import REPORT_ROOT
 from shared.data_loader import load_longi, load_potdat, load_stamdata, daynum_to_date
-from shared.dominance import info_attr_list
+from shared.dominance import informational_attr_list
 
 
 # ---------------------------------------------------------------------------
@@ -191,10 +192,11 @@ def _fill_operational(ws, hop_results: list[dict], params: dict,
             cell.value = None
             cell.fill  = _GRY_FILL
 
-    # ---- info_attribute min/max rows — one pair per name (only for strategies that
-    # expose one, e.g. DomGICS); row-dynamic so more names never collide with what follows ----
+    # ---- informational_attributes min/max rows — one pair per name (only for
+    # strategies that expose one, e.g. DomGICS); row-dynamic so more names never
+    # collide with what follows ----
     next_row = gain_row + 1
-    for attr in info_attr_list(params.get("info_attribute")):
+    for attr in informational_attr_list(params.get("informational_attributes")):
         info_df = load_longi(f"longi_{attr}.csv")
         min_row, max_row = next_row, next_row + 1
         c = ws.cell(min_row, 1, f"{attr}_min"); c.font = _BOLD

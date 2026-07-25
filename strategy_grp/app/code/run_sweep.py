@@ -76,39 +76,40 @@ def expand_runs(base_params: dict, spec: dict, linked: dict) -> list[dict]:
     List-valued params (and list-valued aliases) become grid axes; all axes are
     cartesian-producted. Keys the strategy doesn't define are ignored.
 
-    priority_attribute is special-cased: sweeping it derives priority_ascending from
-    run_config.PRIORITY_ATTRIBUTE_DIRECTIONS for each value, rather than letting it be
+    priority_attribute (the Step-2 test-set-construction attribute — see run_config.py)
+    is special-cased: sweeping it derives priority_attribute_direction from
+    run_config.PRIORITY_ATTRIBUTE_DICTIONARY for each value, rather than letting it be
     swept as an independent axis — a plain cartesian product could pair an attribute
     with the wrong direction, and that mismatch is silent (see run_config.py). Setting
-    priority_ascending directly in spec while priority_attribute is also swept is a
-    hard error, as is sweeping a name absent from that directions dict.
+    priority_attribute_direction directly in spec while priority_attribute is also swept
+    is a hard error, as is sweeping a name absent from that dictionary.
     """
     spec = dict(spec)
     axes: list[list[dict]] = []   # each axis is a list of partial-assignment fragments
     consumed: set[str] = set()    # base keys governed by an active alias
 
-    # priority_attribute/priority_ascending: derive the direction, never sweep it
-    # independently — see run_config.PRIORITY_ATTRIBUTE_DIRECTIONS.
+    # priority_attribute/priority_attribute_direction: derive the direction, never sweep
+    # it independently — see run_config.PRIORITY_ATTRIBUTE_DICTIONARY.
     if "priority_attribute" in spec and "priority_attribute" in base_params:
         values = spec.pop("priority_attribute")
         if not isinstance(values, list):
             values = [values]
-        if "priority_ascending" in spec:
+        if "priority_attribute_direction" in spec:
             raise SystemExit(
-                "sweep_config: priority_ascending must not be set while priority_attribute "
-                "is being swept — its direction is derived from "
-                "run_config.PRIORITY_ATTRIBUTE_DIRECTIONS for each swept name."
+                "sweep_config: priority_attribute_direction must not be set while "
+                "priority_attribute is being swept — its direction is derived from "
+                "run_config.PRIORITY_ATTRIBUTE_DICTIONARY for each swept name."
             )
-        missing = [v for v in values if v not in run_config.PRIORITY_ATTRIBUTE_DIRECTIONS]
+        missing = [v for v in values if v not in run_config.PRIORITY_ATTRIBUTE_DICTIONARY]
         if missing:
             raise SystemExit(
                 f"sweep_config: priority_attribute value(s) {missing} have no entry in "
-                "run_config.PRIORITY_ATTRIBUTE_DIRECTIONS — add their direction "
+                "run_config.PRIORITY_ATTRIBUTE_DICTIONARY — add their direction "
                 "(True = smaller wins, False = bigger wins) before sweeping them."
             )
         frags = [{"priority_attribute": v}
-                 | ({"priority_ascending": run_config.PRIORITY_ATTRIBUTE_DIRECTIONS[v]}
-                    if "priority_ascending" in base_params else {})
+                 | ({"priority_attribute_direction": run_config.PRIORITY_ATTRIBUTE_DICTIONARY[v]}
+                    if "priority_attribute_direction" in base_params else {})
                  for v in values]
         axes.append(frags)
 

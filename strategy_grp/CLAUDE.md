@@ -403,35 +403,52 @@ per-ticker filters have no group-by-sector aggregation or trailing-window primit
 is built on a separate pipeline, `shared/dominance.py`. It still produces the exact same `hop_results`
 shape (see below), so reporting/aggregation/comparison all work unmodified.
 
+**Three distinct attribute roles — three different names. This distinction has been a recurring
+source of confusion (a prior stranded rename broke the sweep entirely); it is now load-bearing
+naming, not just documentation:**
+
 **Selection logic, per daynum:**
-1. **Dominance (`gics_dominance_now`)**: count tickers per `GICS` (from `Stamdata.csv`) that
-   "beat" `rank_threshold` (default 100) on `longi_{priority_attribute}.csv` — below the
-   threshold when `priority_ascending` (smaller wins, e.g. rank, the default), above it
-   otherwise (bigger wins). A GICS with `>= dom_count_threshold` (default 10) such tickers is
-   "dominating" **that daynum** — `dom_now`.
+1. **Step 1 — GICS elevation, "dominance" (`gics_dominance_now`)**: count tickers per `GICS`
+   (from `Stamdata.csv`) that "beat" `dominance_threshold` (default 100) on
+   `longi_{dominance_attribute}.csv` — below the threshold when `dominance_attribute_direction`
+   (smaller wins, e.g. rank, the default), above it otherwise (bigger wins). A GICS with
+   `>= dom_count_threshold` (default 10) such tickers is "dominating" **that daynum** — `dom_now`.
+   `dominance_attribute` is a **single fixed value, never swept**: `dominance_threshold`'s scale
+   (default 100) is only meaningful for a rank-like attribute (1..N in the hundreds) — it doesn't
+   transfer to another attribute's scale (rsi tops out at 100, beta3m rarely exceeds 5).
 2. **Persistence (`add_persistence`)**: `dom_20d`/`dom_50d` additionally require `dom_now` to have
    held on at least `persistence_frac` (default 2/3) of the trailing 20/50 daynums (inclusive of
    the current one). `DomGICS_now`/`_20d`/`_50d` each key off one of `dom_now`/`dom_20d`/`dom_50d`.
-3. **Ticker selection (`select_focusset`)**: each dominating GICS contributes its `tickers_per_gics`
-   (default 3) **best** tickers by `longi_{info_attribute}.csv` (bigger always wins — a fixed
-   convention, unlike `priority_attribute`'s configurable direction, since it's a soft comparative
-   pick rather than a threshold decision) — or its **worst** `tickers_per_gics` when `from_rank=-1`,
-   so a bottom-pick draws from genuinely weak tickers rather than the weakest of an already-best-
-   biased pool. The pooled candidates across all dominating GICS sectors are then re-ranked
-   **globally** by that same value and `focusset_size`/`from_rank` applied via
+3. **Step 2 — test-set construction, ticker selection (`select_focusset`)**: each dominating GICS
+   contributes its `tickers_per_gics` (default 3) **best** tickers by
+   `longi_{priority_attribute}.csv` (direction-aware: smaller wins when
+   `priority_attribute_direction`, bigger otherwise) — or its **worst** `tickers_per_gics` when
+   `from_rank=-1`, so a bottom-pick draws from genuinely weak tickers rather than the weakest of
+   an already-best-biased pool. The pooled candidates across all dominating GICS sectors are then
+   re-ranked **globally** by that same value and `focusset_size`/`from_rank` applied via
    `shared.select.pick_by_rank` (`from_rank`: `1`=best n, `-1`=worst n) — same "smaller is better"
-   convention `rank_by(..., ascending=False)` uses (negate before ranking).
+   convention `rank_by(..., ascending=False)` uses (negate a bigger-wins series before ranking).
+   Unlike Step 1, it's genuinely unclear which attribute makes the best selection criterion, so
+   `run_config.PRIORITY_ATTRIBUTE_DICTIONARY` (`dict[attribute, direction]`) enumerates every
+   candidate worth testing; `sweep_config.py` sweeps across **all** of them, one independent
+   test-set (run) per entry, deriving each run's direction from the dictionary so a name can never
+   be paired with the wrong direction (see `sweep_config.py`'s "Sweeping priority_attribute").
+4. **Step 3 — informational only (display)**: `informational_attributes` (default
+   `["per1d", "macd_histogram"]`) never affects dominance, test-set construction, or selection —
+   it only adds `<attr>_min`/`<attr>_max` rows to `run*.xlsx`/extension sheets for insight into
+   what's going on along the timeline. May be a single Longi factor short name or a list.
 
-**`priority_attribute`/`info_attribute`** are Longi factor **short names** (the
-`longi_<name>.csv` part only, e.g. `"rank"`, `"per1d"`, `"rsi"`, `"beta3m"`) — set them via
-`run_config.PRIORITY_ATTRIBUTE`/`run_config.INFO_ATTRIBUTE`, which each `strategy_DomGICS_*.py`
-copies into its own `PARAMS` the same way it does `RANK_THRESHOLD` etc. No edit to
-`shared/dominance.py` is needed to retarget either role to a different indicator — **but**
-swapping `priority_attribute` must be paired with the matching `priority_ascending` flag
-(`run_config.PRIORITY_ASCENDING`, bool): `True` = smaller value wins (e.g. rank), `False` = bigger
-value wins. Get the direction wrong and the "dominating" selection silently inverts — there is no
-way to detect the mismatch from the data alone. `info_attribute` has no equivalent flag: ticker
-selection is always "bigger wins", by design (see above).
+**`dominance_attribute`/`priority_attribute`/`informational_attributes`** are Longi factor **short
+names** (the `longi_<name>.csv` part only, e.g. `"rank"`, `"per1d"`, `"rsi"`, `"beta3m"`) — set
+them via `run_config.DOMINANCE_ATTRIBUTE`/`run_config.PRIORITY_ATTRIBUTE`/
+`run_config.INFORMATIONAL_ATTRIBUTES`, which each `strategy_DomGICS_*.py` copies into its own
+`PARAMS` the same way it does `DOMINANCE_THRESHOLD` etc. No edit to `shared/dominance.py` is needed
+to retarget any role to a different indicator — **but** swapping `dominance_attribute` or
+`priority_attribute` must be paired with its matching direction flag
+(`dominance_attribute_direction` / `priority_attribute_direction`, bool): `True` = smaller value
+wins (e.g. rank), `False` = bigger value wins. Get the direction wrong and the "dominating"/
+ticker-selection choice silently inverts — there is no way to detect the mismatch from the data
+alone. `informational_attributes` has no direction flag — display only, direction is irrelevant.
 
 `make_dom_strategy(strategy_name, params, dom_col)` (in `shared/dominance.py`) is the
 `make_strategy()` analog: it returns the same `(main, build_extension)` pair, so each strategy
@@ -445,20 +462,26 @@ STRATEGY_NAME = "DomGICS_now"
 PARAMS = {
     "focusset_size": cfg.FOCUSSET_SIZE, "step": cfg.STEP, "period": 20,
     "No_go_GSPC_rsi": cfg.NO_GO_GSPC_RSI, "from_rank": cfg.FROM_RANK,
-    "rank_threshold": cfg.RANK_THRESHOLD, "dom_count_threshold": cfg.DOM_COUNT_THRESHOLD,
+    "dominance_threshold": cfg.DOMINANCE_THRESHOLD, "dom_count_threshold": cfg.DOM_COUNT_THRESHOLD,
     "persistence_frac": cfg.PERSISTENCE_FRAC, "tickers_per_gics": cfg.TICKERS_PER_GICS,
-    "priority_attribute": cfg.PRIORITY_ATTRIBUTE, "priority_ascending": cfg.PRIORITY_ASCENDING,
-    "info_attribute": cfg.INFO_ATTRIBUTE,
+    "dominance_attribute": cfg.DOMINANCE_ATTRIBUTE,
+    "dominance_attribute_direction": cfg.DOMINANCE_ATTRIBUTE_DIRECTION,
+    "priority_attribute": cfg.PRIORITY_ATTRIBUTE,
+    "priority_attribute_direction": cfg.PRIORITY_ATTRIBUTE_DIRECTION,
+    "informational_attributes": cfg.INFORMATIONAL_ATTRIBUTES,
 }
 main, build_extension = make_dom_strategy(STRATEGY_NAME, PARAMS, "dom_now")
 ```
 
 **`run_config.py`** is the single place to see and change every default each `strategy_DomGICS_*.py`
-copies into its own `PARAMS` — both the "classic" backtest knobs (`FOCUSSET_SIZE`, `STEP`,
-`NO_GO_GSPC_RSI`, `FROM_RANK`) and the family-specific ones (`RANK_THRESHOLD`,
-`DOM_COUNT_THRESHOLD`, `PERSISTENCE_FRAC`, `TICKERS_PER_GICS`, `PRIORITY_ATTRIBUTE`,
-`PRIORITY_ASCENDING`, `INFO_ATTRIBUTE`) — kept separate from `sweep_config.py`, which decides
-*what runs* (which strategies, which grid of overrides for a sweep), not these defaults.
+copies into its own `PARAMS` — the "classic" backtest knobs (`FOCUSSET_SIZE`, `STEP`,
+`NO_GO_GSPC_RSI`, `FROM_RANK`), the Step-1 dominance knobs (`DOMINANCE_ATTRIBUTE`,
+`DOMINANCE_ATTRIBUTE_DIRECTION`, `DOMINANCE_THRESHOLD`, `DOM_COUNT_THRESHOLD`,
+`PERSISTENCE_FRAC`), the Step-2 test-set knobs (`PRIORITY_ATTRIBUTE_DICTIONARY`,
+`PRIORITY_ATTRIBUTE`/`PRIORITY_ATTRIBUTE_DIRECTION` — the resting default, derived from the
+dictionary's first entry — and `TICKERS_PER_GICS`), and the Step-3 display knob
+(`INFORMATIONAL_ATTRIBUTES`) — kept separate from `sweep_config.py`, which decides *what runs*
+(which strategies, which grid of overrides for a sweep), not these defaults.
 
 **Data-format gotcha:** Longi columns are newest-left (highest daynum first); "N days backwards"
 means *older* daynums (smaller integers), the opposite of the column reading direction.

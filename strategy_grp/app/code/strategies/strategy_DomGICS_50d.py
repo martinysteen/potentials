@@ -21,13 +21,15 @@ PARAMS: dict = {
     "period": 20,               # forward horizon in trading days (20 or 50)
     "No_go_GSPC_rsi": cfg.NO_GO_GSPC_RSI,
     "from_rank": cfg.FROM_RANK,
-    "rank_threshold": cfg.RANK_THRESHOLD,
+    "dominance_threshold": cfg.DOMINANCE_THRESHOLD,
     "dom_count_threshold": cfg.DOM_COUNT_THRESHOLD,
     "persistence_frac": cfg.PERSISTENCE_FRAC,
     "tickers_per_gics": cfg.TICKERS_PER_GICS,
+    "dominance_attribute": cfg.DOMINANCE_ATTRIBUTE,
+    "dominance_attribute_direction": cfg.DOMINANCE_ATTRIBUTE_DIRECTION,
     "priority_attribute": cfg.PRIORITY_ATTRIBUTE,
-    "priority_ascending": cfg.PRIORITY_ASCENDING,
-    "info_attribute": cfg.INFO_ATTRIBUTE,
+    "priority_attribute_direction": cfg.PRIORITY_ATTRIBUTE_DIRECTION,
+    "informational_attributes": cfg.INFORMATIONAL_ATTRIBUTES,
 }
 
 main, build_extension = make_dom_strategy(STRATEGY_NAME, PARAMS, "dom_50d")

@@ -113,17 +113,18 @@ def _count_attr(hop_results: list[dict], stamdata: pd.DataFrame,
     return sorted_vals, hop_counts
 
 
-def _info_attr_names(params: dict) -> list[str]:
-    """params['info_attribute'] normalized to a list of longi factor short names — []
-    when absent (plain filter strategies). Deferred import: shared.dominance imports
-    this module at load time, so importing it back at module level here would cycle;
-    by the time this function actually runs, both modules are fully initialized.
+def _informational_attr_names(params: dict) -> list[str]:
+    """params['informational_attributes'] (Step 3 — display only) normalized to a list
+    of longi factor short names — [] when absent (plain filter strategies). Deferred
+    import: shared.dominance imports this module at load time, so importing it back at
+    module level here would cycle; by the time this function actually runs, both
+    modules are fully initialized.
     """
-    from shared.dominance import info_attr_list
-    return info_attr_list(params.get("info_attribute"))
+    from shared.dominance import informational_attr_list
+    return informational_attr_list(params.get("informational_attributes"))
 
 
-def _write_info_attr_row(ws, hop_results: list[dict], row: int, attr: str, agg) -> None:
+def _write_informational_attr_row(ws, hop_results: list[dict], row: int, attr: str, agg) -> None:
     """One row of per-hop agg(longi_{attr}) over that hop's focusset tickers (min/max)."""
     info_df  = load_longi(f"longi_{attr}.csv")
     lbl_cell = ws.cell(row, 1, f"{attr}_{agg.__name__}")
@@ -142,7 +143,7 @@ def _param_cell(v):
     """Excel/CSV-safe representation of a param value.
 
     openpyxl rejects a raw list as a cell value, and a bare list also reads ugly in
-    the CSV — so a list param (e.g. multiple info_attribute names) is joined into one
+    the CSV — so a list param (e.g. multiple informational_attributes names) is joined into one
     comma-separated string; everything else passes through unchanged.
     """
     return ",".join(v) if isinstance(v, list) else v
@@ -262,9 +263,9 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     Row 2   : (blank)  | date1   | date2   | ...
     Rows 3…n+2: (blank) | ticker_rank1 … ticker_rankN
     +1 row  : avg_gain
-    +2 rows per info_attribute (only for strategies that expose one, e.g. DomGICS):
-              <attr>_min / <attr>_max of that hop's focusset — absent otherwise, in
-              which case everything below shifts up accordingly
+    +2 rows per informational_attributes entry (only for strategies that expose one,
+              e.g. DomGICS): <attr>_min / <attr>_max of that hop's focusset — absent
+              otherwise, in which case everything below shifts up accordingly
     +4 rows : market context (^GSPC_rsi, ^STOXX_rsi, ^HSI_rsi, ^VIX)
     +?? rows: GICS count rows (sorted by frequency)
     +?? rows: Sector2 count rows
@@ -279,10 +280,10 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     has_surv = any("n_survivors" in h for h in hop_results)
     surv_off = 1 if has_surv else 0
 
-    # Optional info_attribute min/max rows (one pair per attribute), inserted below the
-    # avg rows — row-dynamic so a bigger focusset_size (more ticker rows) or more
-    # attributes never collide with what follows.
-    info_attrs = _info_attr_names(params)
+    # Optional informational_attributes min/max rows (one pair per attribute), inserted
+    # below the avg rows — row-dynamic so a bigger focusset_size (more ticker rows) or
+    # more attributes never collide with what follows.
+    info_attrs = _informational_attr_names(params)
     n_info     = 2 * len(info_attrs)
 
     # Pre-compute the row where ^GSPC_rsi will land, for use in avg formulas.
@@ -348,11 +349,12 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
                 cell.value = None
                 cell.fill  = PatternFill() if sep else _GRY_FILL
 
-    # ---- info_attribute min/max rows (optional — only strategies that expose one) ----
+    # ---- informational_attributes min/max rows (optional — only strategies that expose
+    # one) ----
     info_start = n_tickers + 3 + surv_off + len(rows_list)
     for k, attr in enumerate(info_attrs):
-        _write_info_attr_row(ws, hop_results, info_start + 2 * k,     attr, min)
-        _write_info_attr_row(ws, hop_results, info_start + 2 * k + 1, attr, max)
+        _write_informational_attr_row(ws, hop_results, info_start + 2 * k,     attr, min)
+        _write_informational_attr_row(ws, hop_results, info_start + 2 * k + 1, attr, max)
 
     # ---- ref rows ----
     def _write_ref_rows(start_row: int, hop_key: str, label_suffix: str = "") -> int:

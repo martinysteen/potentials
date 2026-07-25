@@ -6,27 +6,33 @@ aggregation and no trailing-window primitive — but produces the exact same hop
 shape make_strategy().main() does, so shared.report.save_report and shared.extension
 apply unchanged.
 
-Pipeline (one daynum):
-    1. gics_dominance_now: count tickers per GICS that "beat" rank_threshold on
-       longi_{priority_attribute}.csv — below it when priority_ascending (smaller wins,
-       e.g. rank, the default), above it otherwise (bigger wins). A GICS with
-       >= dom_count_threshold such tickers is "dominating" that daynum.
+Pipeline (one daynum) — three distinct attribute roles, see run_config.py:
+    1. gics_dominance_now (Step 1 — elevation): count tickers per GICS that "beat"
+       dominance_threshold on longi_{dominance_attribute}.csv — below it when
+       dominance_attribute_direction (smaller wins, e.g. rank, the default), above it
+       otherwise (bigger wins). A GICS with >= dom_count_threshold such tickers is
+       "dominating" that daynum.
     2. add_persistence: a GICS is also dom_20d/dom_50d when it held dom_now on at least
        persistence_frac of the trailing 20/50 daynums (inclusive of the daynum itself).
-    3. select_focusset: each dominating GICS contributes its BEST tickers_per_gics
-       tickers by longi_{info_attribute}.csv (bigger always wins — a fixed convention,
-       not configurable like priority_attribute's direction) — or its WORST
-       tickers_per_gics when from_rank=-1, so a bottom-pick draws from genuinely weak
-       tickers rather than the weakest of an already-best-biased pool. The pooled
-       candidates are then re-ranked globally by the same value and pick_by_rank's
-       from_rank window applied (1=best n, -1=worst n) — same "smaller is better" trick
-       shared.engine's rank_by uses (negate a bigger-is-better series before handing it
-       to pick_by_rank). info_attribute may be a list of several factor names — only
-       the first drives selection; the rest are informational-only (see info_attr_list).
+    3. select_focusset (Step 2 — test-set construction): each dominating GICS
+       contributes its BEST tickers_per_gics tickers by longi_{priority_attribute}.csv
+       (direction-aware: smaller wins when priority_attribute_direction, bigger
+       otherwise) — or its WORST tickers_per_gics when from_rank=-1, so a bottom-pick
+       draws from genuinely weak tickers rather than the weakest of an already-best-
+       biased pool. The pooled candidates are then re-ranked globally by the same value
+       and pick_by_rank's from_rank window applied (1=best n, -1=worst n) — same
+       "smaller is better" trick shared.engine's rank_by uses (negate a bigger-is-better
+       series before handing it to pick_by_rank).
 
-priority_attribute/priority_ascending default to run_config.PRIORITY_ATTRIBUTE/
-PRIORITY_ASCENDING; info_attribute defaults to run_config.INFO_ATTRIBUTE (a name or a
-list of names — see info_attr_list).
+dominance_attribute/dominance_attribute_direction default to run_config.DOMINANCE_ATTRIBUTE/
+DOMINANCE_ATTRIBUTE_DIRECTION; priority_attribute/priority_attribute_direction default to
+run_config.PRIORITY_ATTRIBUTE/PRIORITY_ATTRIBUTE_DIRECTION (one attribute at a time — the
+candidates worth testing are enumerated in run_config.PRIORITY_ATTRIBUTE_DICTIONARY and
+swept by sweep_config.py, each defining an independent test-set/run).
+
+informational_attr_list (Step 3 — display only, see run_config.INFORMATIONAL_ATTRIBUTES)
+normalizes a name-or-list param for shared/report.py and shared/extension.py; it never
+feeds selection.
 """
 
 import sys
@@ -46,17 +52,19 @@ from shared.select import pick_by_rank
 # Dominance computation
 # ---------------------------------------------------------------------------
 
-def gics_dominance_now(rank_threshold: float, dom_count_threshold: int,
-                       priority_attribute: str = "rank",
-                       priority_ascending: bool = True) -> pd.DataFrame:
+def gics_dominance_now(dominance_threshold: float, dom_count_threshold: int,
+                       dominance_attribute: str = "rank",
+                       dominance_attribute_direction: bool = True) -> pd.DataFrame:
     """GICS x daynum boolean: True where >= dom_count_threshold tickers of that GICS
-    beat rank_threshold on longi_{priority_attribute}.csv on that daynum — "beat" means
-    below the threshold when priority_ascending (smaller wins), above it otherwise."""
-    signal = load_longi(f"longi_{priority_attribute}.csv")
+    beat dominance_threshold on longi_{dominance_attribute}.csv on that daynum — "beat"
+    means below the threshold when dominance_attribute_direction (smaller wins), above
+    it otherwise."""
+    signal = load_longi(f"longi_{dominance_attribute}.csv")
     gics = load_stamdata()["GICS"].dropna()
     common = signal.index.intersection(gics.index)
     vals = signal.loc[common]
-    qualifying = vals < rank_threshold if priority_ascending else vals > rank_threshold
+    qualifying = (vals < dominance_threshold if dominance_attribute_direction
+                  else vals > dominance_threshold)
     counts = qualifying.groupby(gics.loc[common]).sum()
     return counts >= dom_count_threshold
 
@@ -74,13 +82,13 @@ def add_persistence(dom_now: pd.DataFrame, window: int, frac_threshold: float) -
     return (frac >= frac_threshold)[dom_now.columns]
 
 
-def dominance_tables(rank_threshold: float, dom_count_threshold: int,
+def dominance_tables(dominance_threshold: float, dom_count_threshold: int,
                      persistence_frac: float,
-                     priority_attribute: str = "rank",
-                     priority_ascending: bool = True) -> dict[str, pd.DataFrame]:
+                     dominance_attribute: str = "rank",
+                     dominance_attribute_direction: bool = True) -> dict[str, pd.DataFrame]:
     """{'dom_now', 'dom_20d', 'dom_50d'} -> GICS x daynum boolean matrices."""
-    dom_now = gics_dominance_now(rank_threshold, dom_count_threshold,
-                                 priority_attribute, priority_ascending)
+    dom_now = gics_dominance_now(dominance_threshold, dom_count_threshold,
+                                 dominance_attribute, dominance_attribute_direction)
     return {
         "dom_now": dom_now,
         "dom_20d": add_persistence(dom_now, 20, persistence_frac),
@@ -92,14 +100,11 @@ def dominance_tables(rank_threshold: float, dom_count_threshold: int,
 # Ticker selection
 # ---------------------------------------------------------------------------
 
-def info_attr_list(value: str | list[str] | None) -> list[str]:
-    """Normalize an info_attribute param to a list of longi factor short names.
-
-    Accepts a single name (e.g. "per1d", the long-standing single-attribute
-    convention) or a list of several (e.g. ["per1d", "macd_histogram"]); [] when the
-    value is falsy. select_focusset uses only the first entry to actually select
-    tickers; shared/report.py and shared/extension.py display min/max rows for every
-    entry in the list.
+def informational_attr_list(value: str | list[str] | None) -> list[str]:
+    """Normalize a Step-3 informational_attributes param to a list of longi factor short
+    names. Accepts a single name or a list of several (e.g. ["per1d", "macd_histogram"]);
+    [] when the value is falsy. Display only (shared/report.py, shared/extension.py show
+    min/max rows for every entry) — never feeds selection; see select_focusset for that.
     """
     if not value:
         return []
@@ -108,20 +113,17 @@ def info_attr_list(value: str | list[str] | None) -> list[str]:
 
 def select_focusset(daynum: int, dom_wide: pd.DataFrame, tickers_per_gics: int,
                     focusset_size: int, from_rank: int = 1,
-                    info_attribute: str | list[str] = "per1d") -> list[str]:
+                    priority_attribute: str = "rank",
+                    priority_attribute_direction: bool = True) -> list[str]:
     """Tickers for one daynum: each GICS dominating on `dom_wide` at this daynum
-    contributes its tickers_per_gics BEST tickers by longi_{info_attribute}.csv (bigger
-    always wins) when from_rank=1, or its tickers_per_gics WORST when from_rank=-1 — the
-    per-sector pool tracks the same end of the ranking the final pick draws from, so a
-    bottom-pick reaches genuinely weak tickers rather than the weakest of an already-
-    best-biased pool. The pooled candidates are then re-ranked globally by the same
-    value and the focusset_size/from_rank window applied. [] if the daynum has no data
-    or no dominating GICS — a clean no-pick (cash) hop, never an error.
-
-    info_attribute may be a single longi factor name or a list of several — selection
-    always ranks by the FIRST name only (a deterministic pick needs one unambiguous
-    ordering key, same reasoning PRIORITY_ATTRIBUTE relies on); any further names carry
-    no weight here and are purely informational (see shared/report.py, shared/extension.py).
+    contributes its tickers_per_gics BEST tickers by longi_{priority_attribute}.csv
+    (direction-aware: smaller wins when priority_attribute_direction, bigger otherwise)
+    when from_rank=1, or its tickers_per_gics WORST when from_rank=-1 — the per-sector
+    pool tracks the same end of the ranking the final pick draws from, so a bottom-pick
+    reaches genuinely weak tickers rather than the weakest of an already-best-biased
+    pool. The pooled candidates are then re-ranked globally by the same value and the
+    focusset_size/from_rank window applied. [] if the daynum has no data or no
+    dominating GICS — a clean no-pick (cash) hop, never an error.
     """
     col = str(daynum)
     if col not in dom_wide.columns:
@@ -130,16 +132,16 @@ def select_focusset(daynum: int, dom_wide: pd.DataFrame, tickers_per_gics: int,
     if len(dominant) == 0:
         return []
 
-    attrs   = info_attr_list(info_attribute)
-    primary = attrs[0] if attrs else "per1d"
-    info    = load_longi(f"longi_{primary}.csv")
+    info = load_longi(f"longi_{priority_attribute}.csv")
     if col not in info.columns:
         return []
     gics = load_stamdata()["GICS"]
 
-    # Which end of the ranking each sector's pool should draw from: the best (highest)
-    # values for from_rank=1, the worst (lowest) for from_rank=-1.
-    pool_ascending = from_rank != 1
+    # Best-first sort order for this attribute: ascending when smaller wins, descending
+    # when bigger wins. from_rank=1 draws each sector's pool from the best end;
+    # from_rank=-1 draws from the worst end (the reverse order).
+    best_first_ascending = priority_attribute_direction
+    pool_ascending = best_first_ascending if from_rank == 1 else not best_first_ascending
 
     pools: list[pd.Series] = []
     for sector in dominant:
@@ -152,7 +154,10 @@ def select_focusset(daynum: int, dom_wide: pd.DataFrame, tickers_per_gics: int,
     if not pools:
         return []
     pooled = pd.concat(pools)
-    return pick_by_rank(-pooled, focusset_size, from_rank)   # pick_by_rank: smaller == better
+    # pick_by_rank expects smaller == better; negate a bigger-wins series so its
+    # convention still applies (same trick shared.engine.rank_by uses).
+    signed = pooled if priority_attribute_direction else -pooled
+    return pick_by_rank(signed, focusset_size, from_rank)
 
 
 # ---------------------------------------------------------------------------
@@ -179,15 +184,16 @@ def make_dom_strategy(strategy_name: str, params: dict, dom_col: str):
     """
 
     def _dom_wide() -> pd.DataFrame:
-        return dominance_tables(params["rank_threshold"], params["dom_count_threshold"],
+        return dominance_tables(params["dominance_threshold"], params["dom_count_threshold"],
                                 params["persistence_frac"],
-                                params.get("priority_attribute", "rank"),
-                                params.get("priority_ascending", True))[dom_col]
+                                params.get("dominance_attribute", "rank"),
+                                params.get("dominance_attribute_direction", True))[dom_col]
 
     def _selector(daynum: int, dom_wide: pd.DataFrame) -> list[str]:
         return select_focusset(daynum, dom_wide, params["tickers_per_gics"],
                                params["focusset_size"], params.get("from_rank", 1),
-                               params.get("info_attribute", "per1d"))
+                               params.get("priority_attribute", "rank"),
+                               params.get("priority_attribute_direction", True))
 
     def main() -> None:
         period: int = params.get("period", 20)

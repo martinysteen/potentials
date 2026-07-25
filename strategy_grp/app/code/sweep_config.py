@@ -32,19 +32,20 @@ axis (they stay equal at every value). Currently no aliases are needed.
 
 Sweeping priority_attribute
 ----------------------------
-priority_attribute is NOT a plain grid axis like the ones above, because it is
-paired with priority_ascending (True = smaller wins, False = bigger wins) —
-and getting that pairing wrong silently inverts the "dominating" selection (see
-run_config.py). So:
+priority_attribute is the Step-2 test-set-construction attribute (see run_config.py) —
+it is NOT a plain grid axis like the ones above, because it is paired with
+priority_attribute_direction (True = smaller wins, False = bigger wins), and getting
+that pairing wrong silently inverts which tickers are "best" within each dominating
+GICS. So:
 
     DEFAULTS = {"priority_attribute": ["rank", "beta3m", "vola100d"]}
 
-tries each name in its own run, deriving priority_ascending for each from
-run_config.PRIORITY_ATTRIBUTE_DIRECTIONS — it is never read from DEFAULTS/
+tries each name in its own run, deriving priority_attribute_direction for each from
+run_config.PRIORITY_ATTRIBUTE_DICTIONARY — it is never read from DEFAULTS/
 STRATEGIES directly while priority_attribute is being swept (setting it there
 too is a hard error), and sweeping a name absent from that dict is also a hard
 error rather than a silent wrong default. Add the name's direction to
-PRIORITY_ATTRIBUTE_DIRECTIONS in run_config.py before adding it here.
+PRIORITY_ATTRIBUTE_DICTIONARY in run_config.py before adding it here.
 
 Only strategies that appear as keys in STRATEGIES are touched. Their existing
 run*.xlsx are archived (moved to <strategy>/_archive/<timestamp>/) and rebuilt
@@ -61,10 +62,10 @@ import run_config as cfg
 # to DEFAULTS or a STRATEGIES override entry. expand_runs() can't tell "list = grid axis"
 # from "list = one run's fixed multi-value param" by looking at the value alone, so
 # run_sweep.build_plan() hard-fails if one of these ever shows up in a sweep spec.
-# info_attribute: a list here means several informational factors shown in ONE run's
-# report (see shared/report.py / shared/extension.py) — only the first drives selection
-# (shared/dominance.select_focusset); it is set once via run_config.py, not swept.
-NON_SWEEPABLE: set[str] = {"info_attribute"}
+# informational_attributes: a list here means several Step-3 display-only factors shown
+# in ONE run's report (see shared/report.py / shared/extension.py) — never feeds
+# selection (shared/dominance.select_focusset); it is set once via run_config.py, not swept.
+NON_SWEEPABLE: set[str] = {"informational_attributes"}
 
 # Alias -> the real param keys it fans out to (each strategy gets the ones it has).
 LINKED: dict[str, list[str]] = {}
@@ -87,14 +88,15 @@ DEFAULTS: dict = {
     "period":         20,           # forward horizon in trading days (20 or 50). Single
                                           # value -> one column per strategy in best_strategy.
     "No_go_GSPC_rsi": cfg.NO_GO_GSPC_RSI,  # 0 = filter off; 40-50 = typical.
-    "from_rank":      cfg.FROM_RANK,  # Which end of the info_attribute ranking to draw the
-                                          # focusset from (info_attribute is always "bigger wins"):
+    "from_rank":      cfg.FROM_RANK,  # Which end of the priority_attribute ranking to draw
+                                          # the focusset from (direction-aware — see
+                                          # PRIORITY_ATTRIBUTE_DICTIONARY):
                                           #   1   -> the best n            (classic top-pick)
                                           #   -1  -> the worst n           (take from the bottom)
                                           # A list sweeps it as one axis, e.g. [1, -1].
-    "priority_attribute": list(cfg.PRIORITY_ATTRIBUTE_DIRECTIONS),  # try every registered
+    "priority_attribute": list(cfg.PRIORITY_ATTRIBUTE_DICTIONARY),  # try every registered
                                           # name, one run each — direction is derived per
-                                          # name from cfg.PRIORITY_ATTRIBUTE_DIRECTIONS (see
+                                          # name from cfg.PRIORITY_ATTRIBUTE_DICTIONARY (see
                                           # "Sweeping priority_attribute" above). Trim this
                                           # list to test fewer of them.
 }
