@@ -7,10 +7,14 @@ shape make_strategy().main() does, so shared.report.save_report and shared.exten
 apply unchanged.
 
 Pipeline (one daynum) — three distinct attribute roles, see run_config.py:
-    1. gics_dominance_now (Step 1 — elevation): count tickers per GICS that "beat"
-       dominance_threshold on longi_{dominance_attribute}.csv — below it when
+    1. gics_dominance_now (Step 1 — elevation): count tickers per GICS that "beat" the
+       GLOBAL best-decile cutoff of longi_{dominance_attribute}.csv — the value at the
+       dominance_threshold quantile of that attribute's full historical distribution (all
+       tickers, all daynums; not per-day), direction-aware: below the cutoff when
        dominance_attribute_direction (smaller wins, e.g. rank, the default), above it
-       otherwise (bigger wins). A GICS with >= dom_count_threshold such tickers is
+       otherwise (bigger wins). Scale-free by construction, so dominance_threshold (a
+       fraction, default 0.10 = best decile) means the same thing for any attribute — see
+       _global_decile_cutoff. A GICS with >= dom_count_threshold such tickers is
        "dominating" that daynum.
     2. add_persistence: a GICS is also dom_20d/dom_50d when it held dom_now on at least
        persistence_frac of the trailing 20/50 daynums (inclusive of the daynum itself).
@@ -52,19 +56,41 @@ from shared.select import pick_by_rank
 # Dominance computation
 # ---------------------------------------------------------------------------
 
+def _global_decile_cutoff(signal: pd.DataFrame, decile: float,
+                          dominance_attribute_direction: bool) -> float:
+    """Value at the `decile` quantile of signal's FULL historical distribution (every
+    ticker, every daynum, NaN dropped — not per-day) — the boundary of the global best
+    decile for this attribute. Scale-free: the same `decile` fraction (e.g. 0.10) means
+    "best 10%" for any attribute, whatever its raw range (rank 1..~1200, rsi 0..100,
+    beta3m usually <5, ...), so dominance_attribute can be swapped without recalibrating
+    a raw-value threshold by hand.
+
+    direction=True  (smaller wins, e.g. rank): boundary of the SMALLEST `decile` fraction
+                     -> low quantile (e.g. 0.10 -> 10th percentile).
+    direction=False (bigger wins):             boundary of the LARGEST `decile` fraction
+                     -> high quantile (e.g. 0.10 -> 90th percentile, i.e. 1 - decile).
+    """
+    flat = signal.to_numpy().ravel()
+    flat = flat[~pd.isna(flat)]
+    q = decile if dominance_attribute_direction else 1 - decile
+    return float(pd.Series(flat).quantile(q))
+
+
 def gics_dominance_now(dominance_threshold: float, dom_count_threshold: int,
                        dominance_attribute: str = "rank",
                        dominance_attribute_direction: bool = True) -> pd.DataFrame:
     """GICS x daynum boolean: True where >= dom_count_threshold tickers of that GICS
-    beat dominance_threshold on longi_{dominance_attribute}.csv on that daynum — "beat"
-    means below the threshold when dominance_attribute_direction (smaller wins), above
-    it otherwise."""
+    beat the GLOBAL best-decile cutoff of longi_{dominance_attribute}.csv (see
+    _global_decile_cutoff — dominance_threshold is a fraction, e.g. 0.10 = best decile,
+    not a raw value) on that daynum — "beat" means below the cutoff when
+    dominance_attribute_direction (smaller wins), above it otherwise."""
     signal = load_longi(f"longi_{dominance_attribute}.csv")
+    cutoff = _global_decile_cutoff(signal, dominance_threshold, dominance_attribute_direction)
     gics = load_stamdata()["GICS"].dropna()
     common = signal.index.intersection(gics.index)
     vals = signal.loc[common]
-    qualifying = (vals < dominance_threshold if dominance_attribute_direction
-                  else vals > dominance_threshold)
+    qualifying = (vals < cutoff if dominance_attribute_direction
+                  else vals > cutoff)
     counts = qualifying.groupby(gics.loc[common]).sum()
     return counts >= dom_count_threshold
 
@@ -104,7 +130,7 @@ def informational_attr_list(value: str | list[str] | None) -> list[str]:
     """Normalize a Step-3 informational_attributes param to a list of longi factor short
     names. Accepts a single name or a list of several (e.g. ["per1d", "macd_histogram"]);
     [] when the value is falsy. Display only (shared/report.py, shared/extension.py show
-    min/max rows for every entry) — never feeds selection; see select_focusset for that.
+    mean/median rows for every entry) — never feeds selection; see select_focusset for that.
     """
     if not value:
         return []

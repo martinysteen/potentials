@@ -409,13 +409,18 @@ naming, not just documentation:**
 
 **Selection logic, per daynum:**
 1. **Step 1 — GICS elevation, "dominance" (`gics_dominance_now`)**: count tickers per `GICS`
-   (from `Stamdata.csv`) that "beat" `dominance_threshold` (default 100) on
-   `longi_{dominance_attribute}.csv` — below the threshold when `dominance_attribute_direction`
-   (smaller wins, e.g. rank, the default), above it otherwise (bigger wins). A GICS with
-   `>= dom_count_threshold` (default 10) such tickers is "dominating" **that daynum** — `dom_now`.
-   `dominance_attribute` is a **single fixed value, never swept**: `dominance_threshold`'s scale
-   (default 100) is only meaningful for a rank-like attribute (1..N in the hundreds) — it doesn't
-   transfer to another attribute's scale (rsi tops out at 100, beta3m rarely exceeds 5).
+   (from `Stamdata.csv`) that "beat" the **global best-decile cutoff** of
+   `longi_{dominance_attribute}.csv` — below the cutoff when `dominance_attribute_direction`
+   (smaller wins, e.g. rank, the default), above it otherwise (bigger wins). `dominance_threshold`
+   (default `0.10`) is a **fraction, not a raw value**: `shared.dominance._global_decile_cutoff`
+   computes the value at that quantile of the attribute's *full historical distribution* (every
+   ticker, every daynum — not per-day) once per run, so the same fraction means "best 10%" for any
+   attribute regardless of its raw scale (rank 1..~1200, rsi 0..100, beta3m usually <5, ...). A GICS
+   with `>= dom_count_threshold` (default 10) such tickers is "dominating" **that daynum** —
+   `dom_now`. `dominance_attribute` is still a **single fixed value, never swept** by
+   `sweep_config.py` — not because of a scale mismatch anymore (the decile cutoff fixed that), but
+   because each candidate attribute is meant to be tried as its own independent run, one at a time,
+   with results compared and noted outside the system.
 2. **Persistence (`add_persistence`)**: `dom_20d`/`dom_50d` additionally require `dom_now` to have
    held on at least `persistence_frac` (default 2/3) of the trailing 20/50 daynums (inclusive of
    the current one). `DomGICS_now`/`_20d`/`_50d` each key off one of `dom_now`/`dom_20d`/`dom_50d`.
@@ -450,6 +455,19 @@ wins (e.g. rank), `False` = bigger value wins. Get the direction wrong and the "
 ticker-selection choice silently inverts — there is no way to detect the mismatch from the data
 alone. `informational_attributes` has no direction flag — display only, direction is irrelevant.
 
+**Per-strategy `dominance_attribute` override (`DOMINANCE_ATTRIBUTE_OVERRIDES`)**: the three
+strategies (`DomGICS_now`/`_20d`/`_50d`) normally all share the one global
+`DOMINANCE_ATTRIBUTE`/`DOMINANCE_ATTRIBUTE_DIRECTION` pair, but per-attribute testing showed the
+"now" (no persistence) and persistence tiers (`_20d`/`_50d`) don't always agree on which attribute
+helps — e.g. `rsi` improved `DomGICS_now` on *both* `chain_annual` (119→184) and `Worst`
+(−52→−32) at once, while the persistence tiers did better staying on `rank`. Rather than force one
+global value, `run_config.DOMINANCE_ATTRIBUTE_OVERRIDES` (`dict[STRATEGY_NAME, (attribute,
+direction)]`) lets one strategy diverge; each `strategy_DomGICS_*.py` resolves its own pair via
+`cfg.dominance_attribute_for(STRATEGY_NAME)` instead of reading `cfg.DOMINANCE_ATTRIBUTE` directly
+— a strategy absent from the dict falls through to the shared global default. Like the global pair,
+`DOMINANCE_ATTRIBUTE` is still never swept by `sweep_config.py` — one attribute per strategy, tried
+as an independent run, results compared and noted outside the system.
+
 `make_dom_strategy(strategy_name, params, dom_col)` (in `shared/dominance.py`) is the
 `make_strategy()` analog: it returns the same `(main, build_extension)` pair, so each strategy
 file is still a short declaration:
@@ -459,13 +477,14 @@ from shared.dominance import make_dom_strategy
 import run_config as cfg
 
 STRATEGY_NAME = "DomGICS_now"
+_dom_attr, _dom_dir = cfg.dominance_attribute_for(STRATEGY_NAME)
 PARAMS = {
     "focusset_size": cfg.FOCUSSET_SIZE, "step": cfg.STEP, "period": 20,
     "No_go_GSPC_rsi": cfg.NO_GO_GSPC_RSI, "from_rank": cfg.FROM_RANK,
     "dominance_threshold": cfg.DOMINANCE_THRESHOLD, "dom_count_threshold": cfg.DOM_COUNT_THRESHOLD,
     "persistence_frac": cfg.PERSISTENCE_FRAC, "tickers_per_gics": cfg.TICKERS_PER_GICS,
-    "dominance_attribute": cfg.DOMINANCE_ATTRIBUTE,
-    "dominance_attribute_direction": cfg.DOMINANCE_ATTRIBUTE_DIRECTION,
+    "dominance_attribute": _dom_attr,
+    "dominance_attribute_direction": _dom_dir,
     "priority_attribute": cfg.PRIORITY_ATTRIBUTE,
     "priority_attribute_direction": cfg.PRIORITY_ATTRIBUTE_DIRECTION,
     "informational_attributes": cfg.INFORMATIONAL_ATTRIBUTES,
@@ -477,11 +496,11 @@ main, build_extension = make_dom_strategy(STRATEGY_NAME, PARAMS, "dom_now")
 copies into its own `PARAMS` — the "classic" backtest knobs (`FOCUSSET_SIZE`, `STEP`,
 `NO_GO_GSPC_RSI`, `FROM_RANK`), the Step-1 dominance knobs (`DOMINANCE_ATTRIBUTE`,
 `DOMINANCE_ATTRIBUTE_DIRECTION`, `DOMINANCE_THRESHOLD`, `DOM_COUNT_THRESHOLD`,
-`PERSISTENCE_FRAC`), the Step-2 test-set knobs (`PRIORITY_ATTRIBUTE_DICTIONARY`,
-`PRIORITY_ATTRIBUTE`/`PRIORITY_ATTRIBUTE_DIRECTION` — the resting default, derived from the
-dictionary's first entry — and `TICKERS_PER_GICS`), and the Step-3 display knob
-(`INFORMATIONAL_ATTRIBUTES`) — kept separate from `sweep_config.py`, which decides *what runs*
-(which strategies, which grid of overrides for a sweep), not these defaults.
+`PERSISTENCE_FRAC`, `DOMINANCE_ATTRIBUTE_OVERRIDES`), the Step-2 test-set knobs
+(`PRIORITY_ATTRIBUTE_DICTIONARY`, `PRIORITY_ATTRIBUTE`/`PRIORITY_ATTRIBUTE_DIRECTION` — the
+resting default, derived from the dictionary's first entry — and `TICKERS_PER_GICS`), and the
+Step-3 display knob (`INFORMATIONAL_ATTRIBUTES`) — kept separate from `sweep_config.py`, which
+decides *what runs* (which strategies, which grid of overrides for a sweep), not these defaults.
 
 **Data-format gotcha:** Longi columns are newest-left (highest daynum first); "N days backwards"
 means *older* daynums (smaller integers), the opposite of the column reading direction.

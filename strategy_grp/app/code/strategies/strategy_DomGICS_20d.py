@@ -15,6 +15,8 @@ import run_config as cfg
 
 STRATEGY_NAME = "DomGICS_20d"
 
+_dom_attr, _dom_dir = cfg.dominance_attribute_for(STRATEGY_NAME)
+
 PARAMS: dict = {
     "focusset_size": cfg.FOCUSSET_SIZE,
     "step": cfg.STEP,
@@ -25,8 +27,8 @@ PARAMS: dict = {
     "dom_count_threshold": cfg.DOM_COUNT_THRESHOLD,
     "persistence_frac": cfg.PERSISTENCE_FRAC,
     "tickers_per_gics": cfg.TICKERS_PER_GICS,
-    "dominance_attribute": cfg.DOMINANCE_ATTRIBUTE,
-    "dominance_attribute_direction": cfg.DOMINANCE_ATTRIBUTE_DIRECTION,
+    "dominance_attribute": _dom_attr,
+    "dominance_attribute_direction": _dom_dir,
     "priority_attribute": cfg.PRIORITY_ATTRIBUTE,
     "priority_attribute_direction": cfg.PRIORITY_ATTRIBUTE_DIRECTION,
     "informational_attributes": cfg.INFORMATIONAL_ATTRIBUTES,

@@ -39,8 +39,9 @@ from shared.config import REPORT_ROOT
 # Params a run row may carry that a strategy consumes; others keep module defaults.
 # Integer-valued keys are rounded to int; the rest are taken as floats.
 _INT_PARAMS   = {"focusset_size", "step", "period", "No_go_GSPC_rsi", "from_rank",
-                 "corner_bins", "dominance_threshold", "dom_count_threshold", "tickers_per_gics"}
-_FLOAT_PARAMS = {"vola_keep_frac", "q10_20_min", "q20_50_min", "persistence_frac"}
+                 "corner_bins", "dom_count_threshold", "tickers_per_gics"}
+_FLOAT_PARAMS = {"vola_keep_frac", "q10_20_min", "q20_50_min", "persistence_frac",
+                 "dominance_threshold"}
 
 
 def _params_from_row(module, row: pd.Series) -> dict:

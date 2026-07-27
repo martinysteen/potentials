@@ -25,13 +25,16 @@ FROM_RANK: int = 1                   # which end of the (already directionally-g
 # ---------------------------------------------------------------------------
 # Step 1 — GICS elevation ("dominance"): a GICS sector is elevated to "dominating"
 # status on a daynum when at least DOM_COUNT_THRESHOLD of its (up to ~250) tickers beat
-# DOMINANCE_THRESHOLD on DOMINANCE_ATTRIBUTE (direction-aware: below the threshold when
-# DOMINANCE_ATTRIBUTE_DIRECTION is True, above it otherwise). DOMINANCE_THRESHOLD=100 is
-# only a meaningful cutoff for a rank-like attribute (1..N, N in the hundreds) — a raw
-# value threshold doesn't transfer to another attribute's scale (e.g. rsi tops out at
-# 100, beta3m rarely exceeds 5) — a percentile-based cutoff would be needed to make this
-# scale-free (not implemented) — so DOMINANCE_ATTRIBUTE is a single fixed value, never
-# swept (contrast with Step 2's PRIORITY_ATTRIBUTE_DICTIONARY below).
+# the GLOBAL best-decile cutoff of DOMINANCE_ATTRIBUTE (direction-aware: below the cutoff
+# when DOMINANCE_ATTRIBUTE_DIRECTION is True, above it otherwise). DOMINANCE_THRESHOLD is
+# a FRACTION (0.10 = best decile), not a raw value — shared.dominance._global_decile_cutoff
+# computes the value at that quantile of DOMINANCE_ATTRIBUTE's full historical distribution
+# (every ticker, every daynum) once per run, so the cutoff is scale-free and the same
+# fraction means "best 10%" whichever attribute is chosen (rank 1..~1200, rsi 0..100,
+# beta3m usually <5, ...). DOMINANCE_ATTRIBUTE is still a single fixed value, never swept
+# by sweep_config.py (contrast with Step 2's PRIORITY_ATTRIBUTE_DICTIONARY below) — not
+# because of a scale mismatch anymore, but because each candidate is meant to be tried as
+# its own independent run, one at a time.
 # ---------------------------------------------------------------------------
 DOMINANCE_ATTRIBUTE: str = "rank"            # Longi factor short name (longi_<name>.csv)
                                               # deciding which GICS counts as "dominating".
@@ -41,13 +44,33 @@ DOMINANCE_ATTRIBUTE_DIRECTION: bool = True   # True = smaller value wins (e.g. r
                                               # inverts (picks the weakest GICS instead of
                                               # the strongest) — no way to detect the
                                               # mismatch from the data alone.
-DOMINANCE_THRESHOLD: float = 100             # DOMINANCE_ATTRIBUTE cutoff a ticker must
-                                              # beat to qualify (see scale note above).
+DOMINANCE_THRESHOLD: float = 0.10            # Best-decile fraction of DOMINANCE_ATTRIBUTE's
+                                              # global distribution a ticker must be within
+                                              # to qualify (see scale note above).
 DOM_COUNT_THRESHOLD: int = 10                # qualifying tickers a GICS needs to count as
                                               # "dominating" — Step 1 only; distinct from
                                               # Step 2's TICKERS_PER_GICS below.
 PERSISTENCE_FRAC: float = 2 / 3              # trailing-window fraction of dominating days
                                               # required for dom_20d/dom_50d persistence.
+
+# Per-strategy override: DomGICS_now/_20d/_50d normally all share DOMINANCE_ATTRIBUTE /
+# DOMINANCE_ATTRIBUTE_DIRECTION above. An entry here, keyed by STRATEGY_NAME, overrides
+# just that one strategy's pair — e.g. running DomGICS_now on a different dominance
+# attribute than the persistence tiers (DomGICS_20d/_50d) without touching the shared
+# default. Direction still must match the overriding attribute (same silent-inversion
+# risk as the global pair above).
+DOMINANCE_ATTRIBUTE_OVERRIDES: dict[str, tuple[str, bool]] = {
+    "DomGICS_now": ("rsi", False),   # chain_annual 119->184, Worst -52->-32 vs rank
+                                      # (both improve at once) — see CLAUDE.md commit history.
+}
+
+
+def dominance_attribute_for(strategy_name: str) -> tuple[str, bool]:
+    """(dominance_attribute, dominance_attribute_direction) for one strategy: the
+    DOMINANCE_ATTRIBUTE_OVERRIDES entry if present, else the shared DOMINANCE_ATTRIBUTE /
+    DOMINANCE_ATTRIBUTE_DIRECTION default."""
+    return DOMINANCE_ATTRIBUTE_OVERRIDES.get(
+        strategy_name, (DOMINANCE_ATTRIBUTE, DOMINANCE_ATTRIBUTE_DIRECTION))
 
 # ---------------------------------------------------------------------------
 # Step 2 — test-set construction: within each dominating GICS, PRIORITY_ATTRIBUTE ranks
@@ -82,7 +105,7 @@ TICKERS_PER_GICS: int = 3   # top candidates (by PRIORITY_ATTRIBUTE) drawn from 
                             # distinct from Step 1's DOM_COUNT_THRESHOLD above.
 
 # ---------------------------------------------------------------------------
-# Step 3 — informational only: shown alongside the picks (min/max per day in run*.xlsx
+# Step 3 — informational only: shown alongside the picks (mean/median per day in run*.xlsx
 # and the extension tabs) purely for insight into what's going on along the timeline.
 # Never affects which tickers get selected, how test-sets are built, or anything else.
 # May be a single Longi factor short name or a list of several.
