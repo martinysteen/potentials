@@ -21,7 +21,7 @@ Operational sheet layout (focusset_size = N):
   Row N+4    : per-column "avg_gainXd" labels                       (light green)
   Row N+5    : avg_partial_gain values                              (orange/light-yellow/grey)
   +2 rows per informational_attributes entry (only for strategies that expose one, e.g.
-               DomGICS): "<attr>_min"/"<attr>_max" of that day's picked tickers — one pair
+               DomGICS): "<attr>_mean"/"<attr>_median" of that day's picked tickers — one pair
                per name in params["informational_attributes"] (a single name or a list of
                several); absent entirely when the param is unset, in which case everything
                below shifts up
@@ -34,6 +34,7 @@ Entry points (from app/code/):
   <strategy>.build_extension(workbook=None)  # extend one strategy directly (standalone file)
 """
 
+import statistics
 from datetime import date
 from pathlib import Path
 from typing import Callable
@@ -192,25 +193,25 @@ def _fill_operational(ws, hop_results: list[dict], params: dict,
             cell.value = None
             cell.fill  = _GRY_FILL
 
-    # ---- informational_attributes min/max rows — one pair per name (only for
+    # ---- informational_attributes mean/median rows — one pair per name (only for
     # strategies that expose one, e.g. DomGICS); row-dynamic so more names never
     # collide with what follows ----
     next_row = gain_row + 1
     for attr in informational_attr_list(params.get("informational_attributes")):
         info_df = load_longi(f"longi_{attr}.csv")
-        min_row, max_row = next_row, next_row + 1
-        c = ws.cell(min_row, 1, f"{attr}_min"); c.font = _BOLD
-        c = ws.cell(max_row, 1, f"{attr}_max"); c.font = _BOLD
+        mean_row, median_row = next_row, next_row + 1
+        c = ws.cell(mean_row, 1, f"{attr}_mean"); c.font = _BOLD
+        c = ws.cell(median_row, 1, f"{attr}_median"); c.font = _BOLD
         for j, h in enumerate(hop_results, start=2):
             col = str(h["daynum"])
             vals = [float(info_df.at[t, col]) for t in h.get("tickers", [])
                     if t in info_df.index and col in info_df.columns
                     and pd.notna(info_df.at[t, col])]
-            cmin, cmax = ws.cell(min_row, j), ws.cell(max_row, j)
-            cmin.alignment = cmax.alignment = _CTR
+            cmean, cmedian = ws.cell(mean_row, j), ws.cell(median_row, j)
+            cmean.alignment = cmedian.alignment = _CTR
             if vals:
-                cmin.value, cmax.value = round(min(vals), 2), round(max(vals), 2)
-        next_row = max_row + 1
+                cmean.value, cmedian.value = round(statistics.mean(vals), 2), round(statistics.median(vals), 2)
+        next_row = median_row + 1
 
     # ---- next 2 rows intentionally blank (reserved for 50d labels / results) ----
 

@@ -9,6 +9,7 @@ Master:    app/report/summary.csv  (one appended row per run, all strategies)
 """
 
 import csv
+import statistics
 from datetime import date
 from pathlib import Path
 
@@ -125,7 +126,7 @@ def _informational_attr_names(params: dict) -> list[str]:
 
 
 def _write_informational_attr_row(ws, hop_results: list[dict], row: int, attr: str, agg) -> None:
-    """One row of per-hop agg(longi_{attr}) over that hop's focusset tickers (min/max)."""
+    """One row of per-hop agg(longi_{attr}) over that hop's focusset tickers (mean/median)."""
     info_df  = load_longi(f"longi_{attr}.csv")
     lbl_cell = ws.cell(row, 1, f"{attr}_{agg.__name__}")
     lbl_cell.font = _BOLD
@@ -264,7 +265,7 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     Rows 3…n+2: (blank) | ticker_rank1 … ticker_rankN
     +1 row  : avg_gain
     +2 rows per informational_attributes entry (only for strategies that expose one,
-              e.g. DomGICS): <attr>_min / <attr>_max of that hop's focusset — absent
+              e.g. DomGICS): <attr>_mean / <attr>_median of that hop's focusset — absent
               otherwise, in which case everything below shifts up accordingly
     +4 rows : market context (^GSPC_rsi, ^STOXX_rsi, ^HSI_rsi, ^VIX)
     +?? rows: GICS count rows (sorted by frequency)
@@ -349,12 +350,12 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
                 cell.value = None
                 cell.fill  = PatternFill() if sep else _GRY_FILL
 
-    # ---- informational_attributes min/max rows (optional — only strategies that expose
-    # one) ----
+    # ---- informational_attributes mean/median rows (optional — only strategies that
+    # expose one) ----
     info_start = n_tickers + 3 + surv_off + len(rows_list)
     for k, attr in enumerate(info_attrs):
-        _write_informational_attr_row(ws, hop_results, info_start + 2 * k,     attr, min)
-        _write_informational_attr_row(ws, hop_results, info_start + 2 * k + 1, attr, max)
+        _write_informational_attr_row(ws, hop_results, info_start + 2 * k,     attr, statistics.mean)
+        _write_informational_attr_row(ws, hop_results, info_start + 2 * k + 1, attr, statistics.median)
 
     # ---- ref rows ----
     def _write_ref_rows(start_row: int, hop_key: str, label_suffix: str = "") -> int:

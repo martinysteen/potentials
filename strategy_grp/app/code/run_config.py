@@ -60,18 +60,16 @@ PERSISTENCE_FRAC: float = 2 / 3              # trailing-window fraction of domin
 # run's direction from this dict so a name can never be paired with the wrong direction.
 # ---------------------------------------------------------------------------
 PRIORITY_ATTRIBUTE_DICTIONARY: dict[str, bool] = {
-    "beta3m":         False,
-    "iran":           False,
-    "macd_histogram": False,
-    "median_30d":     True,
-    "PdivMA20":       False,
-    "per1m":          False,
+    #"beta3m":         False,
+    #"macd_histogram": False,
+    #"median_30d":     True,
+    #"PdivMA20":       False,
+    #"per1m":          False,
     "quot1020":       False,
-    "quot2050":       False,
-    "rsi":            False,
-    "sh3m":           False,
-    "spr100d":        True,
-    "trump":          False,
+    #"quot2050":       False,
+    #"rsi":            False,
+    #"sh3m":           False,
+    #"spr100d":        True,
     "vola20d":        False,
 }
 # Resting (non-swept) default: the first entry above, derived (never hand-duplicated) so
@@ -89,4 +87,4 @@ TICKERS_PER_GICS: int = 3   # top candidates (by PRIORITY_ATTRIBUTE) drawn from 
 # Never affects which tickers get selected, how test-sets are built, or anything else.
 # May be a single Longi factor short name or a list of several.
 # ---------------------------------------------------------------------------
-INFORMATIONAL_ATTRIBUTES: list[str] = ["per1d", "macd_histogram"]
+INFORMATIONAL_ATTRIBUTES: list[str] = ["rsi","macd_histogram", "macd_signal", "macd_line", "stepup40", "median_30d"]

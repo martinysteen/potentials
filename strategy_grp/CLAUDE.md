@@ -435,7 +435,7 @@ naming, not just documentation:**
    be paired with the wrong direction (see `sweep_config.py`'s "Sweeping priority_attribute").
 4. **Step 3 — informational only (display)**: `informational_attributes` (default
    `["per1d", "macd_histogram"]`) never affects dominance, test-set construction, or selection —
-   it only adds `<attr>_min`/`<attr>_max` rows to `run*.xlsx`/extension sheets for insight into
+   it only adds `<attr>_mean`/`<attr>_median` rows to `run*.xlsx`/extension sheets for insight into
    what's going on along the timeline. May be a single Longi factor short name or a list.
 
 **`dominance_attribute`/`priority_attribute`/`informational_attributes`** are Longi factor **short
