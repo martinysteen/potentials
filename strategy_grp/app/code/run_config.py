@@ -7,7 +7,7 @@ PARAMS. sweep_config.py is a separate, deliberately independent surface: it deci
 Three-step pipeline, three distinct attribute roles — do not conflate them (this has
 happened before and broken the sweep; see shared/dominance.py for the pipeline itself):
   Step 1 — GICS elevation ("dominance"):  DOMINANCE_ATTRIBUTE / DOMINANCE_ATTRIBUTE_DIRECTION /
-                                           DOMINANCE_THRESHOLD / DOM_COUNT_THRESHOLD
+                                           DOMINANCE_THRESHOLD_DECILE / DOM_COUNT_THRESHOLD
   Step 2 — test-set construction:         PRIORITY_ATTRIBUTE / PRIORITY_ATTRIBUTE_DICTIONARY /
                                            TICKERS_PER_GICS
   Step 3 — informational only (display):  INFORMATIONAL_ATTRIBUTES — never affects
@@ -21,18 +21,35 @@ NO_GO_GSPC_RSI: int = 0             # suppress picks / chain hops when GSPC RSI 
 FROM_RANK: int = 1                   # which end of the (already directionally-graded)
                                       # priority_attribute pool to draw the focusset from:
                                       # 1=best n, -1=worst n. See shared/select.py.
+MIN_CHAIN_LOTS: int = 4              # lots a run's chain must realize before it may
+                                      # REPRESENT its strategy in best_strategy.xlsx.
+                                      # A reporting rule, not a sweep decision: nothing is
+                                      # skipped or refused, every run still produces its
+                                      # run*.xlsx and its aggregated_summary.xlsx row. It
+                                      # exists because chain_annual divides an additive sum
+                                      # by the chain's OWN span (shared/chain.py::_additive),
+                                      # so a config sparse enough to realize one lucky lot
+                                      # annualizes it over ~one holding window and posts a
+                                      # headline in the hundreds — which then wins
+                                      # best_strategy.py's ranking and displaces a healthy
+                                      # 20-lot run from the comparison. Seen for real: a
+                                      # dominance_threshold_decile=0.05 / tickers_per_gics=2
+                                      # run scored 445 on a single lot. Note chain_inv% does
+                                      # NOT catch this — it is measured over the ACTIVE
+                                      # window, so two adjacent lots read as 100%.
 
 # ---------------------------------------------------------------------------
 # Step 1 — GICS elevation ("dominance"): a GICS sector is elevated to "dominating"
 # status on a daynum when at least DOM_COUNT_THRESHOLD of its (up to ~250) tickers beat
-# the GLOBAL best-decile cutoff of DOMINANCE_ATTRIBUTE (direction-aware: below the cutoff
-# when DOMINANCE_ATTRIBUTE_DIRECTION is True, above it otherwise). DOMINANCE_THRESHOLD is
-# a FRACTION (0.10 = best decile), not a raw value — shared.dominance._global_decile_cutoff
-# computes the value at that quantile of DOMINANCE_ATTRIBUTE's full historical distribution
-# (every ticker, every daynum) once per run, so the cutoff is scale-free and the same
-# fraction means "best 10%" whichever attribute is chosen (rank 1..~1200, rsi 0..100,
-# beta3m usually <5, ...). DOMINANCE_ATTRIBUTE is still a single fixed value, never swept
-# by sweep_config.py (contrast with Step 2's PRIORITY_ATTRIBUTE_DICTIONARY below) — not
+# THAT DAY's own best-decile cutoff of DOMINANCE_ATTRIBUTE (direction-aware: below the
+# cutoff when DOMINANCE_ATTRIBUTE_DIRECTION is True, above it otherwise). DOMINANCE_THRESHOLD_DECILE
+# is a FRACTION (0.10 = best decile), not a raw value — shared.dominance._daily_decile_cutoff
+# computes the value at that quantile of DOMINANCE_ATTRIBUTE's cross-sectional distribution
+# on that one daynum (every ticker, that day only — independently per day, not across
+# history), so the cutoff is scale-free and the same fraction means "best 10%" whichever
+# attribute is chosen (rank 1..~1200, rsi 0..100, beta3m usually <5, ...), on every
+# individual day. DOMINANCE_ATTRIBUTE is still a single fixed value, never swept by
+# sweep_config.py (contrast with Step 2's PRIORITY_ATTRIBUTE_DICTIONARY below) — not
 # because of a scale mismatch anymore, but because each candidate is meant to be tried as
 # its own independent run, one at a time.
 # ---------------------------------------------------------------------------
@@ -44,8 +61,8 @@ DOMINANCE_ATTRIBUTE_DIRECTION: bool = True   # True = smaller value wins (e.g. r
                                               # inverts (picks the weakest GICS instead of
                                               # the strongest) — no way to detect the
                                               # mismatch from the data alone.
-DOMINANCE_THRESHOLD: float = 0.10            # Best-decile fraction of DOMINANCE_ATTRIBUTE's
-                                              # global distribution a ticker must be within
+DOMINANCE_THRESHOLD_DECILE: float = 0.10     # Best-decile fraction of DOMINANCE_ATTRIBUTE's
+                                              # that day's distribution a ticker must be within
                                               # to qualify (see scale note above).
 DOM_COUNT_THRESHOLD: int = 10                # qualifying tickers a GICS needs to count as
                                               # "dominating" — Step 1 only; distinct from

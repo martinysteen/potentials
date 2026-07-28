@@ -36,8 +36,8 @@ _CTR       = Alignment(horizontal="center")
 
 _PARAM_COLS = {"focusset_size", "step", "period", "No_go_GSPC_rsi",
                "corner_bins", "vola_keep_frac", "q10_20_min", "q20_50_min",
-               "dominance_threshold", "dom_count_threshold", "persistence_frac", "tickers_per_gics",
-               "dominance_attribute", "dominance_attribute_direction",
+               "dominance_threshold_decile", "dom_count_threshold", "persistence_frac", "tickers_per_gics",
+               "dominance_attribute", "dominance_attribute_direction", "dominance_cutoff_avg",
                "priority_attribute", "priority_attribute_direction", "informational_attributes"}
 
 

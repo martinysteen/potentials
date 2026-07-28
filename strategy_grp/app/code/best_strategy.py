@@ -29,8 +29,9 @@ from openpyxl.utils import get_column_letter
 
 from shared.chain import (realizable_chain, laddered_portfolio,
                           chain_lot_stats, laddered_lot_stats, chain_inv_pct,
-                          chain_origin_range)
+                          chain_origin_range, chain_lot_alpha)
 from shared.config import REPORT_ROOT
+from run_config import MIN_CHAIN_LOTS
 from sweep_config import STRATEGY_ORDER
 
 # Decision metric is chain_annual — the additive average annual gain (phase-averaged,
@@ -62,6 +63,8 @@ _COMMENTS_CHAIN = {     # left table (column B) — plus the shared rows reused 
     "chain_n":       "Number of lots in full chain",
     "origin_sens%":  "Min and max of chain_annual across 4 start origins",
     "avg_gain":      "Average gain% per chain lot",
+    "avg_alpha":     "Average gain% per lot ABOVE the market (equal-weighted mean of all tickers that day)",
+    "avg_beta":      "Average beta3m of the picks — alpha assumes beta=1, so discount it when this is high",
     "Worst":         "Worst chain lot (gain%)",
     "N_loss":        "Most negative lots in any one realized chain (of chain_n)",
     "chain_inv%":    "Share of active span invested (%) — idle when No_go gating / too few survivors block a reinvest",
@@ -89,12 +92,15 @@ _COMMENTS_LADDER = {    # right table (column I) — the ladder_* rows only
 _CHAINED_KEYS = [
     "Run#", "period", "StartDaynum", "EndDaynum",
     "chain_annual", "origin_sens%", "chain_ret", "chain_n",
-    "avg_gain", "Worst", "N_loss",
+    "avg_gain", "avg_alpha", "avg_beta", "Worst", "N_loss",
     "chain_inv%",
     "focusset_size", "step", "No_go_GSPC_rsi", "from_rank",
+    "dom_count_threshold", "dominance_cutoff_avg",
     "source_file",
 ]
-_GAIN_COLS = {"avg_gain", "Worst", "ladder_avg_gain", "ladder_worst"}
+# avg_beta is NOT here: it is a ratio, and green/red gain shading would read as
+# "beta 1.7 is good news" rather than "this alpha is levered".
+_GAIN_COLS = {"avg_gain", "avg_alpha", "Worst", "ladder_avg_gain", "ladder_worst"}
 
 # Never a row of their own: StrategyName (it's the header); floor/cap (they're in the
 # title); N_hops/N_hops_active (redundant with chain_n on the left and ladder_n on the
@@ -116,6 +122,11 @@ _CHAIN_TO_LADDER = {
     "chain_ret":     "ladder_ret",
     "chain_n":       "ladder_n",
     "avg_gain":      "ladder_avg_gain",
+    # No ladder twin: alpha/beta are computed over the CHAIN's lots only. Mapping them to
+    # themselves would repeat the chain figure under an "Overlap investment" heading and
+    # read as a second, independent measurement.
+    "avg_alpha":     None,
+    "avg_beta":      None,
     "Worst":         "ladder_worst",
     "N_loss":        "ladder_n_loss",
     "chain_inv%":    "ladder_inv%",
@@ -143,13 +154,17 @@ _GRN_FILL   = PatternFill("solid", fgColor="C6EFCE")   # green
 _RED_FILL   = PatternFill("solid", fgColor="FFC7CE")   # red
 _BEST_FILL  = PatternFill("solid", fgColor="FFE599")   # amber for "Best overall" row
 _PARAM_FILL = PatternFill("solid", fgColor="FFFF99")   # yellow for simulation parameter headers
+_THIN_FILL  = PatternFill("solid", fgColor="F8CBAD")   # orange: column is a flagged fallback
+                                                        # (every run < MIN_CHAIN_LOTS lots).
+                                                        # Deliberately NOT _BEST_FILL's amber —
+                                                        # that already means "Best overall".
 _PCT_FMT    = '+0.00;-0.00;"-"'
 _CTR        = Alignment(horizontal="center")
 
 _PARAM_COLS = {"focusset_size", "step", "period", "No_go_GSPC_rsi", "from_rank",
                "corner_bins", "vola_keep_frac", "q10_20_min", "q20_50_min",
-               "dominance_threshold", "dom_count_threshold", "persistence_frac", "tickers_per_gics",
-               "dominance_attribute", "dominance_attribute_direction",
+               "dominance_threshold_decile", "dom_count_threshold", "persistence_frac", "tickers_per_gics",
+               "dominance_attribute", "dominance_attribute_direction", "dominance_cutoff_avg",
                "priority_attribute", "priority_attribute_direction", "informational_attributes"}
 
 
@@ -199,10 +214,14 @@ def _load_hopdata(strategy_name, source_file) -> list[tuple[int, float, float]] 
         return None
     out = []
     for _, r in hd.iterrows():
+        # mkt_gain/beta are newer columns: runs written before they existed still load,
+        # they just yield NaN alpha/beta rather than breaking the whole comparison.
         out.append((
             int(r["daynum"]),
             float(r["gain"]) if pd.notna(r.get("gain")) else float("nan"),
             float(r["gspc_rsi"]) if pd.notna(r.get("gspc_rsi")) else float("nan"),
+            float(r["mkt_gain"]) if pd.notna(r.get("mkt_gain")) else float("nan"),
+            float(r["beta"]) if pd.notna(r.get("beta")) else float("nan"),
         ))
     return out
 
@@ -272,6 +291,13 @@ def reclamp_chains(df: pd.DataFrame) -> tuple[pd.DataFrame, int | None, int | No
         df.at[idx, "Worst"]    = round(cworst, 4) if pd.notna(cworst) else None
         df.at[idx, "N_loss"]   = cnloss
 
+        # avg_alpha/avg_beta over the SAME chain lots as avg_gain above — active return,
+        # not Jensen's (see shared/chain.chain_lot_alpha). NaN for runs written before
+        # HopData carried mkt_gain/beta.
+        calpha, cbeta = chain_lot_alpha(rows, hold, thr, floor, cap, phase_average=True)
+        df.at[idx, "avg_alpha"] = round(calpha, 4) if pd.notna(calpha) else None
+        df.at[idx, "avg_beta"]  = round(cbeta, 3)  if pd.notna(cbeta)  else None
+
         # Chain's invested share of its active span (%) — idle when No_go gating or too few
         # survivors leave no usable hop at a reinvest point. The chain twin of ladder_inv%.
         cinv = chain_inv_pct(((r[0], r[1], r[2]) for r in rows), hold, thr, floor, cap)
@@ -338,15 +364,48 @@ def _style_gain_cell(cell, val, col: str) -> None:
 # Excel writer
 # ---------------------------------------------------------------------------
 
-def best_run(group: pd.DataFrame, primary: str, tiebreaker: str) -> pd.Series | None:
-    """That strategy's best run for one criterion (primary desc, tiebreaker desc)."""
+def best_run(group: pd.DataFrame, primary: str, tiebreaker: str,
+             min_lots: int = 0, verbose: bool = False) -> tuple[pd.Series | None, bool]:
+    """That strategy's best run for one criterion (primary desc, tiebreaker desc).
+
+    Returns (row, thin) — `thin` is True when the returned run realizes fewer than
+    `min_lots` lots, i.e. every candidate was too sparse and this is a flagged fallback
+    rather than a qualifying winner.
+
+    Runs whose chain realizes fewer than `min_lots` lots are barred from WINNING the
+    column (see run_config.MIN_CHAIN_LOTS for why: chain_annual annualizes over the
+    chain's own span, so one lucky lot posts a headline in the hundreds and displaces a
+    healthy run). They are not removed from anything else — their run*.xlsx and their
+    aggregated_summary.xlsx row are untouched.
+
+    If EVERY run of a strategy is below the floor the best available is returned with
+    thin=True rather than None: a strategy silently missing from the comparison is worse
+    than one shown with a flag.
+    """
     cols  = _sort_cols(group, primary, tiebreaker)
     if not cols:
-        return None
+        return None, False
     valid = group.dropna(subset=cols[:1])
     if valid.empty:
-        return None
-    return valid.sort_values(cols, ascending=False).iloc[0]
+        return None, False
+    ranked = valid.sort_values(cols, ascending=False)
+
+    if min_lots > 0 and "chain_n" in ranked.columns:
+        n = pd.to_numeric(ranked["chain_n"], errors="coerce")
+        eligible = ranked[n >= min_lots]
+        if not eligible.empty:
+            if verbose and len(eligible) < len(ranked):
+                for _i, r in ranked[n < min_lots].iterrows():
+                    print(f"      excluded from column (chain_n="
+                          f"{r.get('chain_n')} < {min_lots}): {r.get('source_file')}"
+                          f"  chain_annual={r.get(primary)}")
+            return eligible.iloc[0], False
+        if verbose:
+            print(f"      WARNING: every run of {ranked.iloc[0].get('StrategyName')} "
+                  f"realizes < {min_lots} lots — showing the best anyway, flagged")
+        return ranked.iloc[0], True
+
+    return ranked.iloc[0], False
 
 
 _HDR_ROW = 3   # the strategy-header row; titles occupy rows 1-2 above it
@@ -364,7 +423,8 @@ def fill_best_sheet(ws, columns: list[dict], chained_rows: list[str],
     The caller owns the workbook (this is sheet 1 of the combined best_strategy_<date>.xlsx,
     built by extension.run()); this function only populates and styles the sheet.
 
-    columns: [{"strategy", "row"}], one per strategy (its best run by chain_annual).
+    columns: [{"strategy", "row", "thin"}], one per strategy (its best run by
+             chain_annual). "thin" marks a flagged fallback — see best_run().
     chained_rows: chained metric names in display order; each row's overlap twin is
                   resolved via _CHAIN_TO_LADDER (shared keys repeat in both tables).
     floor/cap/period: unused by the title rows now (kept for signature compatibility
@@ -392,7 +452,18 @@ def fill_best_sheet(ws, columns: list[dict], chained_rows: list[str],
     for j, col in enumerate(columns):
         for base in (chain_c0, lad_c0):
             h = ws.cell(_HDR_ROW, base + j, col["strategy"])
-            h.font, h.fill, h.alignment = _BOLD, _SECT_FILL, _CTR
+            h.font, h.alignment = _BOLD, _CTR
+            h.fill = _THIN_FILL if col.get("thin") else _SECT_FILL
+
+    # One line explaining the orange, written only when a column actually carries it —
+    # an unexplained colour is worse than no colour, and a permanent legend for a rare
+    # case is clutter. B1 is otherwise unused (row 1 holds only the A1 page title).
+    if any(c.get("thin") for c in columns):
+        note = ws.cell(1, A_CMT,
+                       f"orange column: every run of that strategy realized < "
+                       f"{MIN_CHAIN_LOTS} lots, so its chain_annual is roughly one lot "
+                       f"annualized — shown for completeness, not comparable")
+        note.font = _SMALL
 
     # ---- one row per chained metric, with its overlap twin on the right ----
     for i, metric in enumerate(chained_rows, start=_HDR_ROW + 1):
@@ -416,6 +487,10 @@ def fill_best_sheet(ws, columns: list[dict], chained_rows: list[str],
                 cc.font = _BOLD
             elif metric == "origin_sens%":       # "min   max" text is wide — shrink to fit
                 cc.font = _SMALL
+            # Overwrite the green/red gain fill on a flagged column's two telling rows:
+            # the untrustworthy headline and the lot count that explains why.
+            if col.get("thin") and metric in ("chain_annual", "chain_n"):
+                cc.fill = _THIN_FILL
             if lad_metric is not None:
                 lv = _cell_val(row, lad_metric) if row is not None else None
                 lc = ws.cell(i, lad_c0 + j, lv); _style_gain_cell(lc, lv, lad_metric)
@@ -455,8 +530,11 @@ def select_best_runs(verbose: bool = False) -> tuple[list[dict], list[str]]:
     Returns (blocks, all_cols):
       blocks   : one dict per horizon, ordered by period ascending (the smallest —
                  normally 20d — is the primary): {"period", "floor", "cap", "columns"},
-                 where columns = [{"strategy", "row"}], one per strategy (its best run
-                 by chain_annual, chain_ret as tiebreaker) in STRATEGY_ORDER order.
+                 where columns = [{"strategy", "row", "thin"}], one per strategy (its
+                 best run by chain_annual, chain_ret as tiebreaker) in STRATEGY_ORDER
+                 order. Runs realizing < run_config.MIN_CHAIN_LOTS lots cannot win a
+                 column; "thin" flags the fallback when every run of a strategy is
+                 below that floor (see best_run()).
                  Chains of different hold lengths are never compared in one block.
       all_cols : every column present across the loaded runs (for metric-row order).
 
@@ -489,9 +567,11 @@ def select_best_runs(verbose: bool = False) -> tuple[list[dict], list[str]]:
 
         groups = {str(name): g for name, g in sub.groupby("StrategyName", sort=False)}
         order = sorted(groups, key=_order_key)
-        columns = [{"strategy": name,
-                    "row": best_run(groups[name], "chain_annual", "chain_ret")}
-                   for name in order]
+        columns = []
+        for name in order:
+            row, thin = best_run(groups[name], "chain_annual", "chain_ret",
+                                 min_lots=MIN_CHAIN_LOTS, verbose=verbose)
+            columns.append({"strategy": name, "row": row, "thin": thin})
         blocks.append({"period": pv, "floor": floor, "cap": cap, "columns": columns})
 
     return blocks, all_cols

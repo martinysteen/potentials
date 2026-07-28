@@ -39,6 +39,7 @@ from datetime import date
 from pathlib import Path
 from typing import Callable
 
+import numpy as np
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -61,6 +62,9 @@ _GRY_FILL     = PatternFill("solid", fgColor="EEEEEE")   # grey — suppressed /
 _REF_FILL     = PatternFill("solid", fgColor="FFF2CC")   # yellow — ref rows
 _LBL_FILL     = PatternFill("solid", fgColor="E2EFDA")   # light green — label row
 _EXT_POS_FILL = PatternFill("solid", fgColor="FFFF99")   # light yellow — positive gain
+_BENCH_FILL   = PatternFill("solid", fgColor="F2F2F2")   # pale grey — beta (a ratio, so it
+                                                          # never takes gain shading; same
+                                                          # colour as the main report's block)
 _EXT_NEG_FILL = PatternFill("solid", fgColor="FFC000")   # orange — negative gain
 
 _ATTR_FILLS: dict[str, PatternFill] = {
@@ -109,6 +113,52 @@ def _compute_partial_gains(potdat: pd.DataFrame, tickers: list[str],
 
 def _hop_avg(gains: dict[str, float]) -> float:
     vals = [v for v in gains.values() if pd.notna(v)]
+    return sum(vals) / len(vals) if vals else float("nan")
+
+
+def _market_partial_gain(potdat: pd.DataFrame, entry_daynum: int,
+                         exit_daynum: int) -> float:
+    """Benchmark over the SAME open window: equal-weighted cross-sectional mean of every
+    ticker's (price[exit]/price[entry] - 1).
+
+    Deliberately NOT shared.report._market_gain — that reads future_gain{period}d, which by
+    definition does not exist yet for these entries (the extension exists precisely because
+    the horizon has not closed). Same idea, different source: partial price return over the
+    days actually elapsed, so it lines up with avg_partial_gain day for day.
+    """
+    ec, xc = str(entry_daynum), str(exit_daynum)
+    if ec not in potdat.columns or xc not in potdat.columns:
+        return float("nan")
+    pe = pd.to_numeric(potdat[ec], errors="coerce")
+    px = pd.to_numeric(potdat[xc], errors="coerce")
+    ret = ((px - pe) / pe * 100).where(pe.notna() & px.notna() & (pe != 0))
+    ret = ret[np.isfinite(ret)]
+    return float(ret.mean()) if len(ret) else float("nan")
+
+
+def _beta_frame() -> pd.DataFrame | None:
+    """longi_beta3m.csv, or None when absent — the beta row is optional."""
+    try:
+        return load_longi("longi_beta3m.csv")
+    except (FileNotFoundError, OSError):
+        return None
+
+
+def _hop_beta(beta_df: pd.DataFrame | None, tickers: list[str], daynum: int) -> float:
+    """Mean beta3m of this entry's picks, as known ON the entry daynum.
+
+    Unlike the gain/market/alpha rows this is a PRE-trade number — it is the one value in
+    the block already knowable when the position was opened. It is context for reading
+    alpha (these picks run ~1.8x market beta), not a forecast: entry beta was tested
+    against the outcome and predicts neither gain nor alpha (corr ~ -0.02).
+    """
+    if beta_df is None:
+        return float("nan")
+    col = str(daynum)
+    if col not in beta_df.columns:
+        return float("nan")
+    vals = [float(beta_df.at[t, col]) for t in tickers
+            if t in beta_df.index and pd.notna(beta_df.at[t, col])]
     return sum(vals) / len(vals) if vals else float("nan")
 
 
@@ -193,10 +243,53 @@ def _fill_operational(ws, hop_results: list[dict], params: dict,
             cell.value = None
             cell.fill  = _GRY_FILL
 
+    # ---- benchmark rows: mkt_partial_gain, alpha, beta ----
+    # Same block as the main Operational sheet, over the partial (still-open) window:
+    # alpha = avg_partial_gain - mkt_partial_gain, active return with beta assumed 1. In a
+    # flat tape this mostly restates avg_partial_gain; it earns its place in an index
+    # selloff, where an open position's loss is the market's rather than the picks'.
+    # `beta` is the only PRE-trade number here — read alpha against it, do not read it as
+    # a warning light (it predicts neither gain nor alpha).
+    bench_row = gain_row + 1
+    has_beta  = any(pd.notna(h.get("beta", float("nan"))) for h in hop_results)
+    bench_defs = [("mkt_partial_gain", "mkt"), ("alpha", "alpha")]
+    if has_beta:
+        bench_defs.append(("beta", "beta"))
+
+    for idx, (label, kind) in enumerate(bench_defs):
+        row = bench_row + idx
+        c = ws.cell(row, 1, label); c.font = _BOLD
+        for j, h in enumerate(hop_results, start=2):
+            if kind == "mkt":
+                val = h.get("mkt_partial", float("nan"))
+            elif kind == "alpha":
+                gain = _hop_avg(h["gains_partial"])
+                m    = h.get("mkt_partial", float("nan"))
+                val  = gain - m if pd.notna(gain) and pd.notna(m) else float("nan")
+            else:
+                val = h.get("beta", float("nan"))
+
+            gspc_p = h.get("ref_values", {}).get("^GSPC_rsi", float("nan"))
+            no_go  = threshold is not None and not pd.isna(gspc_p) and gspc_p < threshold
+            cell   = ws.cell(row, j)
+            cell.alignment = _CTR
+            if pd.isna(val):
+                cell.value, cell.fill = None, _GRY_FILL
+                continue
+            if kind == "beta":
+                cell.number_format = "0.00"
+                cell.value = None if no_go else round(val, 2)
+                cell.fill  = _GRY_FILL if no_go else _BENCH_FILL
+                continue
+            cell.number_format = _PCT_FMT
+            cell.value = None if no_go else round(val, 4)
+            cell.fill  = (_GRY_FILL if no_go else
+                          (_EXT_NEG_FILL if val < 0 else _EXT_POS_FILL))
+
     # ---- informational_attributes mean/median rows — one pair per name (only for
     # strategies that expose one, e.g. DomGICS); row-dynamic so more names never
     # collide with what follows ----
-    next_row = gain_row + 1
+    next_row = bench_row + len(bench_defs)
     for attr in informational_attr_list(params.get("informational_attributes")):
         info_df = load_longi(f"longi_{attr}.csv")
         mean_row, median_row = next_row, next_row + 1
@@ -294,6 +387,7 @@ def run_extension(
     period: int  = int(params.get("period", 20))
     gain_df      = load_longi(f"future_gain{period}d.csv")
     potdat       = load_potdat()
+    beta_df      = _beta_frame()
     start_daynum = _find_gain_cutoff(gain_df, period)  # last fully-realized backtest daynum
     exit_daynum  = int(potdat.columns[0])            # most recent price available
     mark_step: int = params.get("step", 1)           # strategy cadence — used only to mark days
@@ -337,6 +431,8 @@ def run_extension(
             "tickers":         tickers,
             "gains_partial":   gains_partial,
             "days_realized":   days,
+            "mkt_partial":     _market_partial_gain(potdat, daynum, exit_daynum),
+            "beta":            _hop_beta(beta_df, tickers, daynum),
             "ref_values": get_ref_fn(daynum),
         })
 

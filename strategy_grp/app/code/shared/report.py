@@ -10,6 +10,7 @@ Master:    app/report/summary.csv  (one appended row per run, all strategies)
 
 import csv
 import statistics
+import time
 from datetime import date
 from pathlib import Path
 
@@ -62,6 +63,83 @@ def _avg_rows(n: int) -> list[tuple[str, str, int]]:
 
 # Gains for the chosen horizon live under this single hop key.
 _GAIN_KEY = "gains"
+
+
+# ---------------------------------------------------------------------------
+# Benchmark rows — mkt_gain / alpha / beta
+#
+# `alpha` here is ACTIVE RETURN (excess over benchmark): focusset gain minus the
+# benchmark's gain for the same daynum. It is NOT Jensen's alpha — it assumes beta = 1
+# and a zero risk-free rate, and makes no regression. The distinction is not academic
+# for this strategy: the focusset runs at ~1.7x market beta (mean beta3m 1.68, realized
+# 1.87 by regression on 20d hops), so a chunk of a positive alpha is levered market
+# exposure rather than selection. That is exactly why `beta` is reported beside it —
+# read the two together, and discount alpha when beta is high.
+#
+# Jensen's alpha was considered and rejected: it needs a fitted beta, and with ~31
+# INDEPENDENT 20d lots in this history (124 hops overlapping 4x at step=5) and R^2 ~ 0.05
+# the intercept carries more estimation noise than the correction is worth. Active return
+# is definitional — nothing to estimate, nothing to drift.
+#
+# The benchmark is the equal-weighted cross-sectional mean of EVERY ticker on that daynum,
+# deliberately not a cap-weighted index: "the average stock you could have picked that
+# day" is the right counterfactual for a stock-picking strategy.
+# ---------------------------------------------------------------------------
+
+def _market_gain(period: int) -> pd.Series:
+    """Benchmark: equal-weighted cross-sectional mean future_gain{period}d per daynum."""
+    return load_longi(f"future_gain{period}d.csv").mean(axis=0)
+
+
+def _beta_frame() -> pd.DataFrame | None:
+    """longi_beta3m.csv, or None when absent — the beta row is optional, and a missing
+    factor file must not take the whole report down with it."""
+    try:
+        return load_longi("longi_beta3m.csv")
+    except (FileNotFoundError, OSError):
+        return None
+
+
+def _hop_market(hop: dict, mkt: pd.Series) -> float:
+    """The benchmark's gain for this hop's daynum."""
+    v = mkt.get(str(hop["daynum"]), float("nan"))
+    return float(v) if pd.notna(v) else float("nan")
+
+
+def _hop_beta(hop: dict, beta_df: pd.DataFrame | None, n: int) -> float:
+    """Mean beta3m across this hop's focusset — context for the alpha row."""
+    if beta_df is None:
+        return float("nan")
+    col = str(hop["daynum"])
+    if col not in beta_df.columns:
+        return float("nan")
+    vals = [beta_df.at[t, col] for t in hop.get("tickers", [])[:n]
+            if t in beta_df.index and pd.notna(beta_df.at[t, col])]
+    return sum(vals) / len(vals) if vals else float("nan")
+
+
+def _grand_avg_alpha(hop_results: list[dict], n: int, params: dict) -> tuple[float, float]:
+    """(mean alpha, mean beta) across active hops — same No_go gating as _grand_avg_topn,
+    so the headline alpha is measured over exactly the hops the strategy would trade."""
+    threshold = params.get("No_go_GSPC_rsi")
+    mkt       = _market_gain(params.get("period", 20))
+    beta_df   = _beta_frame()
+    alphas: list[float] = []
+    betas:  list[float] = []
+    for h in hop_results:
+        if threshold is not None:
+            gspc = h.get("ref_values", {}).get("^GSPC_rsi", float("nan"))
+            if not pd.isna(gspc) and gspc < threshold:
+                continue
+        gain = _hop_avg_topn(h, _GAIN_KEY, n)
+        m    = _hop_market(h, mkt)
+        if pd.notna(gain) and pd.notna(m):
+            alphas.append(gain - m)
+        b = _hop_beta(h, beta_df, n)
+        if pd.notna(b):
+            betas.append(b)
+    return (sum(alphas) / len(alphas) if alphas else float("nan"),
+            sum(betas) / len(betas) if betas else float("nan"))
 
 
 def _chain_metric_labels() -> list[str]:
@@ -237,6 +315,8 @@ _SEP_FILL = PatternFill("solid", fgColor="D9E1F2")  # separator 20d→50d
 _REF_FILL   = PatternFill("solid", fgColor="FFF2CC")  # yellow for ref rows
 _INPUT_FILL = PatternFill("solid", fgColor="FFE599")  # amber for editable input cells
 _SURV_FILL  = PatternFill("solid", fgColor="DDEBF7")  # pale blue for N_survivors row
+_CUTOFF_FILL = PatternFill("solid", fgColor="E2EFDA")  # pale green for dominance_cutoff row
+_BENCH_FILL  = PatternFill("solid", fgColor="F2F2F2")  # pale grey for mkt_gain/alpha/beta
 
 _ATTR_FILLS: dict[str, PatternFill] = {
     "GICS":    PatternFill("solid", fgColor="D9D2E9"),  # light purple
@@ -262,8 +342,14 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     """
     Row 1   : (blank)  | daynum1 | daynum2 | ...
     Row 2   : (blank)  | date1   | date2   | ...
-    Rows 3…n+2: (blank) | ticker_rank1 … ticker_rankN
+    Row 3   : dominance_cutoff (only for strategies that expose one, e.g. DomGICS) —
+              that day's Step-1 decile cutoff value; absent otherwise, in which case
+              everything below shifts up accordingly
+    Rows …n: (blank) | ticker_rank1 … ticker_rankN
     +1 row  : avg_gain
+    +2 rows : mkt_gain (benchmark for that daynum) and alpha (avg_gain - mkt_gain,
+              ACTIVE RETURN, not Jensen's — see the _market_gain block), plus a third
+              `beta` row when longi_beta3m.csv is available
     +2 rows per informational_attributes entry (only for strategies that expose one,
               e.g. DomGICS): <attr>_mean / <attr>_median of that hop's focusset — absent
               otherwise, in which case everything below shifts up accordingly
@@ -277,6 +363,12 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     n_tickers = n
     threshold = params.get("No_go_GSPC_rsi")
 
+    # Optional dominance_cutoff row, inserted at row 3 (just under the date row), above
+    # the ticker rows — only for strategies whose hops carry a Step-1 day-by-day cutoff
+    # (the DomGICS_* family). Ticker rows and everything below shift down accordingly.
+    has_cutoff = any(h.get("dom_cutoff") is not None for h in hop_results)
+    cutoff_off = 1 if has_cutoff else 0
+
     # Optional N_survivors row, inserted directly below the ticker rows.
     has_surv = any("n_survivors" in h for h in hop_results)
     surv_off = 1 if has_surv else 0
@@ -287,11 +379,30 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     info_attrs = _informational_attr_names(params)
     n_info     = 2 * len(info_attrs)
 
-    # Pre-compute the row where ^GSPC_rsi will land, for use in avg formulas.
-    rows_list    = _avg_rows(n)
-    ref_base     = n_tickers + 3 + surv_off + len(rows_list) + n_info
+    # Benchmark rows below the avg rows: mkt_gain + alpha always, beta only when
+    # longi_beta3m.csv is present. See the _market_gain/_hop_beta block above for what
+    # `alpha` means here (active return, NOT Jensen's).
+    mkt_series = _market_gain(params.get("period", 20))
+    beta_df    = _beta_frame()
+    has_beta   = beta_df is not None and any(
+        pd.notna(_hop_beta(h, beta_df, n)) for h in hop_results)
+    n_bench    = 2 + (1 if has_beta else 0)
+
+    # ---- section top rows, derived ONCE and chained ----
+    # Every section's first row is the previous section's top plus its height. This used to
+    # be four independent copies of the same running sum, and inserting a section meant
+    # updating all four: miss one and the ref rows silently overwrite the informational
+    # rows while the No_go formula points at the wrong row. Derive, never re-add.
+    rows_list   = _avg_rows(n)
+    ticker_top  = 3 + cutoff_off
+    avg_top     = ticker_top + n_tickers + surv_off
+    bench_top   = avg_top + len(rows_list)
+    info_top    = bench_top + n_bench
+    ref_top     = info_top + n_info
+
+    # The row where ^GSPC_rsi lands, for the No_go formulas in the avg/benchmark rows.
     ref_keys     = list(hop_results[0].get("ref_values", {}).keys()) if hop_results else []
-    gspc_rsi_row = next((ref_base + i for i, k in enumerate(ref_keys) if "GSPC_rsi" in k), None)
+    gspc_rsi_row = next((ref_top + i for i, k in enumerate(ref_keys) if "GSPC_rsi" in k), None)
 
     # ---- header rows ----
     # A1/A2 hold the No_go label and editable threshold (safe for any focusset size).
@@ -305,9 +416,20 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
         c = ws.cell(1, j, dn);                 c.font, c.fill, c.alignment = _BOLD, _HDR_FILL, _CTR
         c = ws.cell(2, j, daynum_to_date(dn)); c.font, c.fill, c.alignment = _SMALL, _HDR_FILL, _CTR
 
+    # ---- dominance_cutoff row (optional — only when hops carry a Step-1 day-by-day
+    # cutoff, the DomGICS_* family) — row 3, just under the date row, above the tickers.
+    if has_cutoff:
+        crow = 3
+        c = ws.cell(crow, 1, "dominance_cutoff"); c.font, c.fill = _BOLD, _CUTOFF_FILL
+        for j, h in enumerate(hop_results, start=2):
+            val  = h.get("dom_cutoff")
+            cell = ws.cell(crow, j)
+            cell.fill, cell.alignment = _CUTOFF_FILL, _CTR
+            cell.value = round(val, 2) if val is not None else None
+
     # ---- ticker rows ----
     for i in range(n_tickers):
-        row = i + 3
+        row = ticker_top + i
         ws.cell(row, 1, "")
         for j, h in enumerate(hop_results, start=2):
             tickers = h.get("tickers", [])
@@ -315,7 +437,7 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
 
     # ---- N_survivors row (optional — only when hops carry the count) ----
     if has_surv:
-        srow = n_tickers + 3
+        srow = ticker_top + n_tickers
         c = ws.cell(srow, 1, "N_survivors"); c.font, c.fill = _BOLD, _SURV_FILL
         for j, h in enumerate(hop_results, start=2):
             val  = h.get("n_survivors")
@@ -325,7 +447,7 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
 
     # ---- avg rows ----
     for idx, (label, gain_key, top_n) in enumerate(rows_list):
-        row      = n_tickers + 3 + surv_off + idx
+        row      = avg_top + idx
         sep      = (gain_key == "gains_50d")
         lbl_cell = ws.cell(row, 1, label)
         lbl_cell.font = _BOLD
@@ -350,12 +472,54 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
                 cell.value = None
                 cell.fill  = PatternFill() if sep else _GRY_FILL
 
+    # ---- benchmark rows: mkt_gain, alpha, (beta) ----
+    # mkt_gain and alpha carry the same No_go formula as the avg rows so that editing the
+    # threshold in A2 blanks all three together — a visible alpha next to a blanked
+    # avg_gain would read as a trade the strategy never took.
+    bench_rows: list[tuple[str, str]] = [("mkt_gain", "mkt"), ("alpha", "alpha")]
+    if has_beta:
+        bench_rows.append(("beta", "beta"))
+
+    for idx, (label, kind) in enumerate(bench_rows):
+        row = bench_top + idx
+        lbl = ws.cell(row, 1, label)
+        lbl.font, lbl.fill = _BOLD, _BENCH_FILL
+        for j, h in enumerate(hop_results, start=2):
+            if kind == "mkt":
+                val = _hop_market(h, mkt_series)
+            elif kind == "alpha":
+                gain = _hop_avg_topn(h, _GAIN_KEY, n)
+                m    = _hop_market(h, mkt_series)
+                val  = gain - m if pd.notna(gain) and pd.notna(m) else float("nan")
+            else:
+                val = _hop_beta(h, beta_df, n)
+
+            gspc_p = h.get("ref_values", {}).get("^GSPC_rsi", float("nan"))
+            no_go  = threshold is not None and not pd.isna(gspc_p) and gspc_p < threshold
+            cell   = ws.cell(row, j)
+            cell.alignment = _CTR
+
+            if pd.isna(val):
+                cell.value, cell.fill = None, _GRY_FILL
+                continue
+            if kind == "beta":                       # a ratio, not a percentage
+                cell.number_format = "0.00"
+                cell.value = None if no_go else round(val, 2)
+                cell.fill  = _GRY_FILL if no_go else _BENCH_FILL
+                continue
+            cell.number_format = _PCT_FMT
+            if gspc_rsi_row is not None:
+                col_ltr    = get_column_letter(j)
+                cell.value = f'=IF({col_ltr}{gspc_rsi_row}<$A$2,"",{round(val, 4)})'
+            else:
+                cell.value = None if no_go else round(val, 4)
+            cell.fill = _GRY_FILL if no_go else _gain_fill(val)
+
     # ---- informational_attributes mean/median rows (optional — only strategies that
     # expose one) ----
-    info_start = n_tickers + 3 + surv_off + len(rows_list)
     for k, attr in enumerate(info_attrs):
-        _write_informational_attr_row(ws, hop_results, info_start + 2 * k,     attr, statistics.mean)
-        _write_informational_attr_row(ws, hop_results, info_start + 2 * k + 1, attr, statistics.median)
+        _write_informational_attr_row(ws, hop_results, info_top + 2 * k,     attr, statistics.mean)
+        _write_informational_attr_row(ws, hop_results, info_top + 2 * k + 1, attr, statistics.median)
 
     # ---- ref rows ----
     def _write_ref_rows(start_row: int, hop_key: str, label_suffix: str = "") -> int:
@@ -374,7 +538,7 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
                     cell.value = None
         return len(keys)
 
-    base   = n_tickers + 3 + surv_off + len(rows_list) + n_info
+    base  = ref_top
     n_ref = _write_ref_rows(base, "ref_values")
 
     # ---- attribute frequency rows ----
@@ -431,10 +595,25 @@ def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
     ]
     for k, v in params.items():
         rows.append((k, _param_cell(v)))
+        if k == "dominance_attribute_direction":
+            # Average of the per-daynum Step-1 dominance cutoff (DomGICS_* only — other
+            # strategies never carry dom_cutoff, so this row never appears for them).
+            cutoff_vals = [h["dom_cutoff"] for h in hop_results if h.get("dom_cutoff") is not None]
+            if cutoff_vals:
+                rows.append(("dominance_cutoff_avg", round(statistics.mean(cutoff_vals), 4)))
 
     for label, gain_key, top_n in _avg_rows(n):
         val = _grand_avg_topn(hop_results, gain_key, top_n, params)
         rows.append((label, round(val, 4) if pd.notna(val) else None))
+
+    # avg_alpha sits directly under avg_gain: the same hops, measured against the
+    # benchmark instead of against zero. avg_beta is its companion, not a metric in its
+    # own right — a high avg_alpha at beta 1.7 is a different claim than the same alpha
+    # at beta 1.0 (see the _market_gain block).
+    avg_alpha, avg_beta = _grand_avg_alpha(hop_results, n, params)
+    rows.append(("avg_alpha", round(avg_alpha, 4) if pd.notna(avg_alpha) else None))
+    if pd.notna(avg_beta):
+        rows.append(("avg_beta", round(avg_beta, 3)))
 
     # Realizable non-overlapping additive chain for the active horizon (= period).
     hold = int(params.get("period", 20))
@@ -451,7 +630,9 @@ def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
     ws.column_dimensions["A"].width = 24
     ws.column_dimensions["B"].width = 18
 
-    gain_labels = {r[0] for r in _avg_rows(n)} | {"chain_ret", "chain_annual"}
+    # avg_beta is deliberately absent: it is a ratio, not a percentage, and green/red
+    # gain shading on it would read as "beta 1.7 is good news".
+    gain_labels = {r[0] for r in _avg_rows(n)} | {"chain_ret", "chain_annual", "avg_alpha"}
     for i, (k, v) in enumerate(rows, start=1):
         kc = ws.cell(i, 1, k);  kc.font = _BOLD
         vc = ws.cell(i, 2, v)
@@ -471,23 +652,46 @@ def _fill_hopdata(ws, hop_results: list[dict], params: dict) -> None:
     arbitrary daynum window (best_strategy.py clamps to a common floor/cap).
 
     Stored as plain numbers (not Excel formulas) so they read back reliably.
-    Columns: daynum | gain | gspc_rsi  (gain = top-N avg for the active period).
+    Columns: daynum | gain | gspc_rsi | mkt_gain | beta
+             (gain = top-N avg for the active period).
+
+    mkt_gain and beta ride along so best_strategy.py can recompute avg_alpha/avg_beta over
+    the COMMON span, exactly as it already recomputes avg_gain. Without them the alpha in
+    the comparison sheet would be over each run's own span while the avg_gain beside it was
+    over the shared one — the same class of mismatch that produced N_loss=42 next to
+    chain_n=17. beta in particular cannot be recovered later: it needs the hop's tickers,
+    which HopData does not carry.
     """
     n = params.get("focusset_size", 10)
-    ws.append(["daynum", "gain", "gspc_rsi"])
+    mkt     = _market_gain(params.get("period", 20))
+    beta_df = _beta_frame()
+    ws.append(["daynum", "gain", "gspc_rsi", "mkt_gain", "beta"])
     for h in hop_results:
         g    = _hop_avg_topn(h, _GAIN_KEY, n)
         gspc = h.get("ref_values", {}).get("^GSPC_rsi", float("nan"))
+        m    = _hop_market(h, mkt)
+        b    = _hop_beta(h, beta_df, n)
         ws.append([
             int(h["daynum"]),
             None if pd.isna(g)    else round(float(g), 6),
             None if pd.isna(gspc) else round(float(gspc), 4),
+            None if pd.isna(m)    else round(float(m), 6),
+            None if pd.isna(b)    else round(float(b), 4),
         ])
 
 
 # ---------------------------------------------------------------------------
 # Master summary CSV
 # ---------------------------------------------------------------------------
+
+def _summary_header() -> list[str]:
+    """Current header row of summary.csv, or [] when unreadable."""
+    try:
+        with SUMMARY_CSV.open(newline="", encoding="utf-8") as f:
+            return next(csv.reader(f, delimiter=";"), [])
+    except (OSError, StopIteration):
+        return []
+
 
 def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
                         hop_results: list[dict]) -> None:
@@ -498,20 +702,39 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
         return "" if pd.isna(val) else f"{val:.4f}".replace(".", ",")
 
     param_cols   = list(params.keys())
-    avg_labels   = [r[0] for r in _avg_rows(n)]
+    avg_labels   = [r[0] for r in _avg_rows(n)] + ["avg_alpha", "avg_beta"]
     chain_labels = _chain_metric_labels()
     extra_cols   = ["origin_sens%", "N_loss", "Worst"]
     all_cols     = (["StrategyName", "Run#", "StartDaynum", "N_hops", "N_hops_active", "EndDaynum"]
                     + param_cols + avg_labels + chain_labels + extra_cols)
 
     SUMMARY_CSV.parent.mkdir(parents=True, exist_ok=True)
+
+    # The header is written once, at file creation, and every later run appends under it —
+    # so the moment the column set changes (a strategy gains a PARAMS key, a new metric is
+    # added) the file silently grows rows wider than their header and every column label
+    # after the divergence point is wrong. It had already drifted to 22 header fields
+    # against 29-field rows before avg_alpha/avg_beta existed.
+    #
+    # Archive rather than rewrite: the old rows belong to the old schema and cannot be
+    # re-aligned to the new columns, but they are still a record worth keeping. Same
+    # reversible convention run_sweep.archive_strategy uses for run*.xlsx.
     write_header = not SUMMARY_CSV.exists()
+    if not write_header and _summary_header() != all_cols:
+        stamp   = date.today().strftime("%Y%m%d")
+        archive = SUMMARY_CSV.parent / "_archive" / f"summary_{stamp}_{int(time.time())}.csv"
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        SUMMARY_CSV.rename(archive)
+        print(f"  summary.csv columns changed — previous file archived to {archive.name}")
+        write_header = True
 
     with SUMMARY_CSV.open("a", encoding="utf-8", newline="") as f:
         w = csv.writer(f, delimiter=";")
         if write_header:
             w.writerow(all_cols)
         avg_vals   = [_fmt(_grand_avg_topn(hop_results, gk, tn, params)) for _, gk, tn in _avg_rows(n)]
+        _alpha, _beta = _grand_avg_alpha(hop_results, n, params)
+        avg_vals  += [_fmt(_alpha), _fmt(_beta)]
         hold = int(params.get("period", 20))
         ret, annual, ntr = _chain_metrics(hop_results, _GAIN_KEY, n, hold, params)
         chain_vals = [_fmt(ret), _fmt(annual), str(ntr)]

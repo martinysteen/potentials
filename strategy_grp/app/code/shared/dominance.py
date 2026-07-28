@@ -7,14 +7,15 @@ shape make_strategy().main() does, so shared.report.save_report and shared.exten
 apply unchanged.
 
 Pipeline (one daynum) — three distinct attribute roles, see run_config.py:
-    1. gics_dominance_now (Step 1 — elevation): count tickers per GICS that "beat" the
-       GLOBAL best-decile cutoff of longi_{dominance_attribute}.csv — the value at the
-       dominance_threshold quantile of that attribute's full historical distribution (all
-       tickers, all daynums; not per-day), direction-aware: below the cutoff when
+    1. gics_dominance_now (Step 1 — elevation): count tickers per GICS that "beat" THAT
+       DAY's best-decile cutoff of longi_{dominance_attribute}.csv — the value at the
+       dominance_threshold_decile quantile of that attribute's cross-sectional distribution on
+       that one daynum (every ticker, that day only — computed independently per day, not
+       across history), direction-aware: below the cutoff when
        dominance_attribute_direction (smaller wins, e.g. rank, the default), above it
-       otherwise (bigger wins). Scale-free by construction, so dominance_threshold (a
+       otherwise (bigger wins). Scale-free by construction, so dominance_threshold_decile (a
        fraction, default 0.10 = best decile) means the same thing for any attribute — see
-       _global_decile_cutoff. A GICS with >= dom_count_threshold such tickers is
+       _daily_decile_cutoff. A GICS with >= dom_count_threshold such tickers is
        "dominating" that daynum.
     2. add_persistence: a GICS is also dom_20d/dom_50d when it held dom_now on at least
        persistence_frac of the trailing 20/50 daynums (inclusive of the daynum itself).
@@ -56,43 +57,47 @@ from shared.select import pick_by_rank
 # Dominance computation
 # ---------------------------------------------------------------------------
 
-def _global_decile_cutoff(signal: pd.DataFrame, decile: float,
-                          dominance_attribute_direction: bool) -> float:
-    """Value at the `decile` quantile of signal's FULL historical distribution (every
-    ticker, every daynum, NaN dropped — not per-day) — the boundary of the global best
-    decile for this attribute. Scale-free: the same `decile` fraction (e.g. 0.10) means
-    "best 10%" for any attribute, whatever its raw range (rank 1..~1200, rsi 0..100,
-    beta3m usually <5, ...), so dominance_attribute can be swapped without recalibrating
-    a raw-value threshold by hand.
+def _daily_decile_cutoff(signal: pd.DataFrame, decile: float,
+                         dominance_attribute_direction: bool) -> pd.Series:
+    """Per-daynum quantile of signal's cross-sectional distribution — each day's OWN
+    best-decile cutoff (every ticker on that daynum, NaN dropped), computed independently
+    day by day, not across the full history. Scale-free: the same `decile` fraction (e.g.
+    0.10) means "best 10%" for any attribute, whatever its raw range (rank 1..~1200, rsi
+    0..100, beta3m usually <5, ...), so dominance_attribute can be swapped without
+    recalibrating a raw-value threshold by hand.
+
+    Returns a Series indexed by daynum (signal's columns).
 
     direction=True  (smaller wins, e.g. rank): boundary of the SMALLEST `decile` fraction
                      -> low quantile (e.g. 0.10 -> 10th percentile).
     direction=False (bigger wins):             boundary of the LARGEST `decile` fraction
                      -> high quantile (e.g. 0.10 -> 90th percentile, i.e. 1 - decile).
     """
-    flat = signal.to_numpy().ravel()
-    flat = flat[~pd.isna(flat)]
     q = decile if dominance_attribute_direction else 1 - decile
-    return float(pd.Series(flat).quantile(q))
+    return signal.quantile(q, axis=0)
 
 
-def gics_dominance_now(dominance_threshold: float, dom_count_threshold: int,
+def gics_dominance_now(dominance_threshold_decile: float, dom_count_threshold: int,
                        dominance_attribute: str = "rank",
-                       dominance_attribute_direction: bool = True) -> pd.DataFrame:
+                       dominance_attribute_direction: bool = True
+                       ) -> tuple[pd.DataFrame, pd.Series]:
     """GICS x daynum boolean: True where >= dom_count_threshold tickers of that GICS
-    beat the GLOBAL best-decile cutoff of longi_{dominance_attribute}.csv (see
-    _global_decile_cutoff — dominance_threshold is a fraction, e.g. 0.10 = best decile,
-    not a raw value) on that daynum — "beat" means below the cutoff when
-    dominance_attribute_direction (smaller wins), above it otherwise."""
+    beat THAT DAY's best-decile cutoff of longi_{dominance_attribute}.csv (see
+    _daily_decile_cutoff — dominance_threshold_decile is a fraction, e.g. 0.10 = best decile,
+    not a raw value, computed independently per daynum) — "beat" means below the cutoff
+    when dominance_attribute_direction (smaller wins), above it otherwise.
+
+    Also returns the per-daynum cutoff Series (Step 1's day-by-day threshold, for
+    reporting — see shared/report.py's dominance_cutoff row)."""
     signal = load_longi(f"longi_{dominance_attribute}.csv")
-    cutoff = _global_decile_cutoff(signal, dominance_threshold, dominance_attribute_direction)
+    cutoffs = _daily_decile_cutoff(signal, dominance_threshold_decile, dominance_attribute_direction)
     gics = load_stamdata()["GICS"].dropna()
     common = signal.index.intersection(gics.index)
     vals = signal.loc[common]
-    qualifying = (vals < cutoff if dominance_attribute_direction
-                  else vals > cutoff)
+    qualifying = (vals.lt(cutoffs) if dominance_attribute_direction
+                  else vals.gt(cutoffs))
     counts = qualifying.groupby(gics.loc[common]).sum()
-    return counts >= dom_count_threshold
+    return counts >= dom_count_threshold, cutoffs
 
 
 def add_persistence(dom_now: pd.DataFrame, window: int, frac_threshold: float) -> pd.DataFrame:
@@ -108,18 +113,23 @@ def add_persistence(dom_now: pd.DataFrame, window: int, frac_threshold: float) -
     return (frac >= frac_threshold)[dom_now.columns]
 
 
-def dominance_tables(dominance_threshold: float, dom_count_threshold: int,
+def dominance_tables(dominance_threshold_decile: float, dom_count_threshold: int,
                      persistence_frac: float,
                      dominance_attribute: str = "rank",
-                     dominance_attribute_direction: bool = True) -> dict[str, pd.DataFrame]:
-    """{'dom_now', 'dom_20d', 'dom_50d'} -> GICS x daynum boolean matrices."""
-    dom_now = gics_dominance_now(dominance_threshold, dom_count_threshold,
-                                 dominance_attribute, dominance_attribute_direction)
-    return {
+                     dominance_attribute_direction: bool = True
+                     ) -> tuple[dict[str, pd.DataFrame], pd.Series]:
+    """{'dom_now', 'dom_20d', 'dom_50d'} -> GICS x daynum boolean matrices, plus the
+    per-daynum dominance cutoff Series (Step 1's day-by-day threshold — one value per
+    daynum, shared by all three tiers since persistence is derived from dom_now, not
+    from the cutoff itself)."""
+    dom_now, cutoffs = gics_dominance_now(dominance_threshold_decile, dom_count_threshold,
+                                          dominance_attribute, dominance_attribute_direction)
+    tables = {
         "dom_now": dom_now,
         "dom_20d": add_persistence(dom_now, 20, persistence_frac),
         "dom_50d": add_persistence(dom_now, 50, persistence_frac),
     }
+    return tables, cutoffs
 
 
 # ---------------------------------------------------------------------------
@@ -209,11 +219,14 @@ def make_dom_strategy(strategy_name: str, params: dict, dom_col: str):
     dominance_tables() column ("dom_now"/"dom_20d"/"dom_50d") this strategy draws from.
     """
 
-    def _dom_wide() -> pd.DataFrame:
-        return dominance_tables(params["dominance_threshold"], params["dom_count_threshold"],
-                                params["persistence_frac"],
-                                params.get("dominance_attribute", "rank"),
-                                params.get("dominance_attribute_direction", True))[dom_col]
+    def _dom_data() -> tuple[pd.DataFrame, pd.Series]:
+        """(dom_wide, cutoffs) — this strategy's dominance table plus the per-daynum
+        dominance cutoff Series (Step 1, day-by-day; see gics_dominance_now)."""
+        tables, cutoffs = dominance_tables(params["dominance_threshold_decile"], params["dom_count_threshold"],
+                                           params["persistence_frac"],
+                                           params.get("dominance_attribute", "rank"),
+                                           params.get("dominance_attribute_direction", True))
+        return tables[dom_col], cutoffs
 
     def _selector(daynum: int, dom_wide: pd.DataFrame) -> list[str]:
         return select_focusset(daynum, dom_wide, params["tickers_per_gics"],
@@ -224,7 +237,7 @@ def make_dom_strategy(strategy_name: str, params: dict, dom_col: str):
     def main() -> None:
         period: int = params.get("period", 20)
         gain_df  = load_longi(f"future_gain{period}d.csv")
-        dom_wide = _dom_wide()
+        dom_wide, cutoffs = _dom_data()
 
         n: int    = params["focusset_size"]
         step: int = params["step"]
@@ -241,11 +254,14 @@ def make_dom_strategy(strategy_name: str, params: dict, dom_col: str):
         hop_results: list[dict] = []
         daynum = start_daynum
         while daynum >= min_daynum:
+            cutoff = cutoffs.get(str(daynum))
+            dom_cutoff = float(cutoff) if pd.notna(cutoff) else None
             tickers = _selector(daynum, dom_wide)
             if not tickers:
                 hop_results.append({
                     "daynum": daynum, "tickers": [], "gains": {},
                     "ref_values": get_reference_values(daynum),
+                    "dom_cutoff": dom_cutoff,
                 })
                 daynum -= step
                 continue
@@ -254,6 +270,7 @@ def make_dom_strategy(strategy_name: str, params: dict, dom_col: str):
                 "tickers": tickers,
                 "gains": get_gains(gain_df, tickers, daynum),
                 "ref_values": get_reference_values(daynum),
+                "dom_cutoff": dom_cutoff,
             })
             daynum -= step
 
@@ -267,9 +284,16 @@ def make_dom_strategy(strategy_name: str, params: dict, dom_col: str):
 
     def build_extension(workbook=None):
         from shared.extension import run_extension
-        dom_wide = _dom_wide()
+        dom_wide, _cutoffs = _dom_data()
         return run_extension(strategy_name, params,
                              lambda dn: _selector(dn, dom_wide),
                              get_reference_values, workbook=workbook)
+
+    # Tag the entry point with the tier it draws from, so a caller holding only the
+    # discovered module (run_sweep.discover_strategies) can tell a DomGICS_* strategy
+    # from a plain filter one and rebuild its picks itself — walkforward.py needs this.
+    # Purely informational; nothing in the run path reads it.
+    main.strategy_name = strategy_name
+    main.dom_col = dom_col
 
     return main, build_extension

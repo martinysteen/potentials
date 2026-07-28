@@ -49,30 +49,37 @@ def _additive(chain: List[Tuple[int, float]], hold: int) -> Tuple[float, float]:
     return total_ret, annual
 
 
-def _greedy_from(usable: List[Tuple[int, float]], start_idx: int,
-                 hold: int) -> List[Tuple[int, float]]:
-    """Greedy non-overlapping pick starting at usable[start_idx], spaced >= hold."""
-    chain: List[Tuple[int, float]] = []
+def _greedy_from(usable: List[tuple], start_idx: int, hold: int) -> List[tuple]:
+    """Greedy non-overlapping pick starting at usable[start_idx], spaced >= hold.
+
+    Indexes only element 0 (the daynum), so it works unchanged on the (daynum, gain)
+    pairs from _filter_usable and the (daynum, gain, extras) triples from
+    _filter_usable_ext — one selection rule, whatever payload rides along.
+    """
+    chain: List[tuple] = []
     next_allowed: int | None = None
-    for dn, g in usable[start_idx:]:
+    for item in usable[start_idx:]:
+        dn = item[0]
         if next_allowed is None or dn >= next_allowed:
-            chain.append((dn, g))
+            chain.append(item)
             next_allowed = dn + hold
     return chain
 
 
-def _filter_usable(rows: Iterable[Tuple[int, float, float]],
-                   no_go_threshold: float | None,
-                   floor_daynum: int | None,
-                   cap_daynum: int | None) -> List[Tuple[int, float]]:
-    """(daynum, gain) for hops in [floor, cap] with a real gain that pass the no-go gate.
+def _filter_usable_ext(rows: Iterable[tuple],
+                       no_go_threshold: float | None,
+                       floor_daynum: int | None,
+                       cap_daynum: int | None) -> List[Tuple[int, float, tuple]]:
+    """(daynum, gain, extras) for hops in [floor, cap] with a real gain that pass the
+    no-go gate. Anything after gspc_rsi in a row rides along untouched in `extras`.
 
-    The single hop-selection rule shared by realizable_chain and the *_lot_stats
-    dispersion helpers, so a chain and its own per-lot statistics can never disagree
-    about which hops are investable.
+    THE single hop-selection rule for this module. _filter_usable wraps it, so the chain,
+    its per-lot dispersion, and its per-lot alpha can never disagree about which hops are
+    investable — adding a metric must never fork this rule.
     """
-    usable: List[Tuple[int, float]] = []
-    for daynum, gain, gspc in rows:
+    usable: List[Tuple[int, float, tuple]] = []
+    for row in rows:
+        daynum, gain, gspc = row[0], row[1], row[2]
         dn = int(daynum)
         if floor_daynum is not None and dn < floor_daynum:
             continue
@@ -83,9 +90,18 @@ def _filter_usable(rows: Iterable[Tuple[int, float, float]],
             continue
         if gain is None or pd.isna(gain):
             continue
-        usable.append((dn, float(gain)))
+        usable.append((dn, float(gain), tuple(row[3:])))
     usable.sort(key=lambda t: t[0])
     return usable
+
+
+def _filter_usable(rows: Iterable[Tuple[int, float, float]],
+                   no_go_threshold: float | None,
+                   floor_daynum: int | None,
+                   cap_daynum: int | None) -> List[Tuple[int, float]]:
+    """(daynum, gain) for investable hops — the payload-free view of _filter_usable_ext."""
+    return [(dn, g) for dn, g, _x in
+            _filter_usable_ext(rows, no_go_threshold, floor_daynum, cap_daynum)]
 
 
 def realizable_chain(rows: Iterable[Tuple[int, float, float]], hold: int,
@@ -285,6 +301,53 @@ def chain_lot_stats(rows: Iterable[Tuple[int, float, float]], hold: int,
     return (sum(means) / len(means),
             min(worsts),      # worst single lot any user could hit, across all origins
             max(nlosses))     # most losers in any one origin's chain (pairs with worst)
+
+
+def chain_lot_alpha(rows: Iterable[Tuple[int, float, float, float, float]], hold: int,
+                    no_go_threshold: float | None = None,
+                    floor_daynum: int | None = None,
+                    cap_daynum: int | None = None,
+                    phase_average: bool = True) -> Tuple[float, float]:
+    """(mean alpha, mean beta) over the chain's own non-overlapping lots.
+
+    rows : (daynum, gain_pct, gspc_rsi, mkt_gain_pct, beta) — the extra two ride through
+           _filter_usable_ext, so these figures are measured over EXACTLY the lots
+           chain_lot_stats reports avg_gain for. Pairing an alpha drawn from every hop
+           with an avg_gain drawn from the chain's lots would be the same silent mismatch
+           _filter_usable_ext exists to prevent.
+
+    `alpha` is ACTIVE RETURN — lot gain minus the benchmark's gain for that daynum, with
+    beta assumed 1 and no risk-free rate. It is NOT Jensen's alpha; `beta` is reported
+    beside it precisely so a levered alpha can be recognized as one (this focusset runs
+    at ~1.7x market beta). See shared/report.py's benchmark block for why the regression
+    form was rejected.
+
+    Origin-averaged like chain_lot_stats' avg_gain: the mean of each origin's mean.
+    (NaN, NaN) when no hop qualifies or the rows carry no benchmark column.
+    """
+    usable = _filter_usable_ext(rows, no_go_threshold, floor_daynum, cap_daynum)
+    if not usable:
+        return float("nan"), float("nan")
+    if phase_average:
+        first_dn = usable[0][0]
+        starts = [i for i, item in enumerate(usable) if item[0] < first_dn + hold]
+    else:
+        starts = [0]
+
+    a_means: List[float] = []
+    b_means: List[float] = []
+    for si in starts:
+        lots = _greedy_from(usable, si, hold)
+        alphas = [g - x[0] for _dn, g, x in lots
+                  if len(x) >= 1 and x[0] is not None and not pd.isna(x[0])]
+        betas  = [x[1] for _dn, _g, x in lots
+                  if len(x) >= 2 and x[1] is not None and not pd.isna(x[1])]
+        if alphas:
+            a_means.append(sum(alphas) / len(alphas))
+        if betas:
+            b_means.append(sum(betas) / len(betas))
+    return (sum(a_means) / len(a_means) if a_means else float("nan"),
+            sum(b_means) / len(b_means) if b_means else float("nan"))
 
 
 def chain_origin_sensitivity(rows: Iterable[Tuple[int, float, float]], hold: int,

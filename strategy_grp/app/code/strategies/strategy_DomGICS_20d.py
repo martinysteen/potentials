@@ -23,7 +23,7 @@ PARAMS: dict = {
     "period": 20,               # forward horizon in trading days (20 or 50)
     "No_go_GSPC_rsi": cfg.NO_GO_GSPC_RSI,
     "from_rank": cfg.FROM_RANK,
-    "dominance_threshold": cfg.DOMINANCE_THRESHOLD,
+    "dominance_threshold_decile": cfg.DOMINANCE_THRESHOLD_DECILE,
     "dom_count_threshold": cfg.DOM_COUNT_THRESHOLD,
     "persistence_frac": cfg.PERSISTENCE_FRAC,
     "tickers_per_gics": cfg.TICKERS_PER_GICS,

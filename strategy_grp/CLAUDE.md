@@ -96,6 +96,11 @@ python run_sweep.py --list     # list discoverable strategy names
 python aggregate_summary.py ["Strategy"]   # re-aggregate one or all strategies
 python extension.py                         # build the combined best_strategy_<date>.xlsx
 python best_strategy.py                     # same combined file (delegates to extension.run())
+
+# Out-of-sample check (read-only; touches none of the files above):
+python walkforward.py                       # walk-forward score of the sweep_config grid
+python walkforward.py --wide                # add numeric axes for a real selection test
+python walkforward.py --dry-run             # fold layout + grid size only
 ```
 
 To analyse the **50d** horizon instead of 20d: set `period: 50` in `sweep_config.py` (or a
@@ -201,8 +206,9 @@ laddered_portfolio(rows, hold, step, no_go_threshold=None,
 `run<N>_<date>.xlsx` with **three sheets** and appends one row to `app/report/summary.csv`:
 - **Operational** — ticker grid + the single `avg_gain` row + ref rows + attribute counts.
 - **Summary** — key/value metrics (see below).
-- **HopData** — machine-readable per-hop `daynum | gain | gspc_rsi` (raw numbers, *not*
-  Excel formulas), so the chain can be recomputed later over any window. best_strategy reads this.
+- **HopData** — machine-readable per-hop `daynum | gain | gspc_rsi | mkt_gain | beta` (raw
+  numbers, *not* Excel formulas), so the chain — and `avg_alpha`/`avg_beta` with it — can be
+  recomputed later over any window. best_strategy reads this.
 
 ### `aggregate_summary.py`
 Reads the Summary sheet from every `run*.xlsx` in a strategy folder → `aggregated_summary.xlsx`
@@ -217,6 +223,16 @@ standalone `report/<strategy>/extension_<YYYYMMDD>.xlsx` (returns its path) or �
 `workbook` — appends the content as **one sheet titled after the strategy** to that shared workbook
 (returns the sheet title); `None` if the window is empty / no hops. Every active strategy exposes a
 `build_extension(workbook=None)` that binds its selector and forwards `workbook` to `run_extension`.
+
+Below `avg_partial_gain` it writes the same benchmark block as the main Operational sheet —
+`mkt_partial_gain`, `alpha`, and (when `longi_beta3m.csv` loads) `beta`. The benchmark here is
+computed **differently and must stay that way**: `_market_partial_gain` takes the equal-weighted
+cross-sectional mean of every ticker's partial price return over the same still-open window,
+because `future_gain{period}d` by definition does not exist yet for these entries — that is the
+whole reason the extension exists. In a flat tape these rows mostly restate `avg_partial_gain`;
+they earn their place in an index selloff, where an open position's loss belongs to the market
+rather than to the picks. Row offsets advance through `next_row`, so inserting the block could
+not desync the informational/ref rows the way it did on the main sheet.
 
 ### `shared/dominance.py` — GICS-domination pipeline (new, not from `../strategy/`)
 The preprocessing stage behind the DomGICS_* family — see "GICS Domination Strategy Family" below
@@ -248,6 +264,8 @@ Each item in the list passed to `save_report`:
     "gains":           dict[str, float],  # {ticker: realised gain over `period` days, %}
     "ref_values":      dict[str, float],  # market context at daynum
     "n_survivors":     int,               # OPTIONAL — set when a strategy has ≥2 filters
+    "dom_cutoff":      float,             # OPTIONAL — DomGICS_* only: that daynum's Step-1
+                                           # dominance cutoff (see dominance_cutoff row/avg)
 }
 ```
 
@@ -264,14 +282,27 @@ There is a **single `gains` dict** per hop — the horizon is `period`, not two 
 |------|---------|--------|
 | 1 | A1=`No_go_GSPC_rsi` label \| daynum headers | Blue |
 | 2 | A2=editable No_go threshold \| date headers | A2 amber, rest blue |
-| 3–(N+2) | Ticker names, rank 1→N | — |
+| 3 *(optional)* | `dominance_cutoff` per hop — only when hops carry `"dom_cutoff"` (DomGICS_* family); label (A) bold, data cells plain text | Pale green |
+| next N rows | Ticker names, rank 1→N | — |
 | *(optional)* | `N_survivors` per hop — only when hops carry `"n_survivors"` | Pale blue |
 | next | `avg_gain` (single row; top-N avg over `period`) | Green/red/grey |
+| next 2 | `mkt_gain` (benchmark for that daynum) and `alpha` (`avg_gain − mkt_gain`) | Green/red/grey |
+| *(optional)* | `beta` — mean `beta3m` of the focusset; only when `longi_beta3m.csv` loads | Pale grey |
+| next 2 per informational attribute | `<attr>_mean` / `<attr>_median` | — |
 | next 4 | `^GSPC_rsi`, `^STOXX_rsi`, `^HSI_rsi`, `^VIX` | Yellow |
 | … | GICS / Sector2 / Zone occurrence counts | Purple / peach / teal |
 
-The `avg_gain` cell is an Excel formula `=IF(<gspc_rsi cell> < $A$2, "", value)` — editing the
-A2 threshold recalculates the no-go suppression live.
+`avg_gain`, `mkt_gain` and `alpha` are all Excel formulas `=IF(<gspc_rsi cell> < $A$2, "", value)`
+— editing the A2 threshold recalculates the no-go suppression live, and all three blank together
+(a visible alpha beside a blanked `avg_gain` would read as a trade the strategy never took).
+`beta` is a plain value that greys out under the gate.
+
+**Row offsets are derived, never re-added.** `_fill_operational` computes `ticker_top` →
+`avg_top` → `bench_top` → `info_top` → `ref_top` as a single chain, each from the one above.
+This used to be four independent copies of the same running sum, and inserting the benchmark
+rows desynced them: the ref rows overwrote the informational rows while the No_go formula
+pointed at `^VIX` instead of `^GSPC_rsi`. If you add a section, add its height to the chain —
+do not write out the sum again.
 
 ---
 
@@ -285,7 +316,10 @@ one run = one horizon = one set of metrics. Write order:
 |--------|---------|
 | `StrategyName`, `Run#`, `StartDaynum`, `N_hops`, `N_hops_active`, `EndDaynum` | identity / range. **`StartDaynum`/`EndDaynum` = the strategy's *usable* span, chronological** — a strategy starts where its source indicators do, not necessarily at the series start. `N_hops` = all evaluated hops; `N_hops_active` = hops actually invested. |
 | *(PARAMS keys)* | `focusset_size`, `step`, `period`, `No_go_GSPC_rsi`, … |
+| `dominance_cutoff_avg` | DomGICS_* only — run-average of the per-daynum Step-1 dominance cutoff; inserted right after `dominance_attribute_direction` here and in `aggregated_summary.xlsx`; shown in `best_strategy.py`'s comparison sheet as the row directly below `dom_count_threshold` |
 | `avg_gain` | grand average per-hop top-N gain over `period` (No_go-filtered) |
+| `avg_alpha` | same hops, measured against the benchmark instead of against zero — **active return, not Jensen's alpha** (see below) |
+| `avg_beta` | mean `beta3m` of the picks; omitted when `longi_beta3m.csv` is absent. Not a performance metric — the number you discount `avg_alpha` by |
 | `chain_ret`, `chain_annual`, `chain_n` | realizable chain (additive, phase-averaged; see below) |
 | `origin_sens%` | spread of `chain_annual` across start origins `(max−min)/avg %` — **lower = more robust** to when you start hopping (diagnostic; never ranks) |
 | `N_loss` | most negative lots in any one origin's realized chain (of `chain_n`) — worst-case count |
@@ -329,6 +363,126 @@ Each run's Summary chain is over that run's *own* span, so it is **not** compara
 strategies. `best_strategy.py` therefore **recomputes** the chain for every run from its HopData
 over the span all compared strategies share: `floor = max(per-run oldest hop)`,
 `cap = min(per-run newest hop)`, written as `chain_floor`/`chain_cap`.
+
+### Every figure in best_strategy.xlsx is IN-SAMPLE
+The sweep scores each parameter-set over the whole history and reports the winner's score over
+that same history. That number is biased upward by however many sets were tried, and it cannot
+say whether the winner would have been picked *in advance*. `walkforward.py` answers that
+separately (below); nothing in the sweep path corrects for it.
+
+Two specific traps this exposes:
+* **`chain_annual` is degenerate on sparse configs — GUARDED, see below.** `_additive` divides
+  the additive sum by the chain's own span, so a parameter-set that realizes a single lucky lot
+  annualizes it over ~one holding window and posts a headline in the hundreds. Seen for real: a
+  `dominance_threshold_decile=0.05, tickers_per_gics=2` config scored 445 on one lot — and
+  because `best_run()` ranks on `chain_annual`, it would have *become* that strategy's column,
+  displacing a healthy 31-lot run. Inspecting the run file does not help when the healthy run is
+  the one pushed out. Now floored by `run_config.MIN_CHAIN_LOTS`.
+* **Absolute return cannot separate a good strategy from a good market — ADDRESSED.** This is
+  what made the 2026-05/06 drawdown legible (picks −10.3% while the market was −0.2%: the loss
+  was the strategy's, not the tape's). Now reported as `alpha`/`avg_alpha` throughout — see the
+  next section for what it is and, importantly, what it is not.
+
+### `alpha` here is ACTIVE RETURN, not Jensen's alpha
+`alpha = focusset gain − benchmark gain` for the same daynum. It assumes **β = 1** and a zero
+risk-free rate, and fits no regression. Jensen's alpha is the intercept of
+`R_p − R_f = α + β(R_m − R_f) + ε` — a different quantity.
+
+The distinction is **not academic for this strategy**: the focusset runs at ~1.7× market beta
+(mean `beta3m` 1.68; 1.87 realized by regression on 20d hops). Measured over all hops, active
+return is **+7.04** where the regression intercept is **+5.57** — roughly 1.5 points of the
+apparent edge is levered market exposure rather than selection. That is exactly why `beta` /
+`avg_beta` is reported beside it: **read the two together and discount alpha when beta is high.**
+
+Jensen's alpha was considered and rejected: it needs a fitted β, and with ~31 *independent* 20d
+lots (124 hops overlapping 4× at `step=5`) and R² ≈ 0.05, the intercept carries more estimation
+noise than the correction removes. Active return is definitional — nothing to estimate, nothing
+to drift run-to-run.
+
+**Benchmark** = the equal-weighted cross-sectional mean of *every* ticker that daynum,
+deliberately not a cap-weighted index: "the average stock you could have picked that day" is the
+right counterfactual for a stock picker.
+
+**Alpha is a post-hoc attribution, not a trading signal.** It says the loss was the stocks rather
+than the tape, *after* the horizon closes. Its job is to let you validate a candidate pre-trade
+gate — without it you cannot tell a gate that dodges bad picks from one that merely dodges bad
+weeks. A search over entry-time observables (GSPC RSI, VIX, breadth, focusset RSI/MACD, sector
+rollover) found **no usable pre-signal**: every |r| ≤ 0.16 and every quartile pattern was either
+non-monotone or sign-flipped between the early and late halves of the history. Leaving
+`NO_GO_GSPC_RSI` at 0 is the defensible reading of that.
+
+**Span consistency**: `best_strategy.py` recomputes `avg_alpha`/`avg_beta` over the **common
+span and the chain's own lots**, exactly as it does `avg_gain` — via `shared.chain.chain_lot_alpha`,
+which shares `_filter_usable_ext`'s single hop-selection rule. `HopData` therefore carries
+`mkt_gain` and `beta` columns; `beta` in particular cannot be recovered later, since it needs the
+hop's tickers and HopData does not store them. Runs written before those columns existed still
+load — they just yield a blank alpha rather than breaking the comparison.
+
+### `MIN_CHAIN_LOTS` — the eligibility floor (not a warning, not a stop)
+`run_config.MIN_CHAIN_LOTS` (default 4) is the minimum lots a run's chain must realize before it
+may **represent** its strategy in `best_strategy.xlsx`. Deliberately an eligibility rule, not
+either of the alternatives:
+* **Not a hard stop.** A narrow decile is legitimate exploration, and `run_sweep.run_strategy`
+  catches per-run exceptions — a `raise` would silently drop the run, the opposite of visible.
+* **Not a warning alone.** Console output scrolls past and the artifact outlives it; the wrong
+  number would still sit in the comparison sheet as the strategy's headline.
+
+Behaviour in `best_run()`:
+1. Runs below the floor cannot win a column. Nothing else changes — every run still executes,
+   still writes its `run*.xlsx`, still appears in `aggregated_summary.xlsx`.
+2. If **every** run of a strategy is below the floor, the best available is returned with
+   `thin=True` rather than `None` — a strategy silently missing from the comparison is worse
+   than one shown with a flag.
+3. A flagged column is orange (`_THIN_FILL`, `F8CBAD`) on its header plus the two telling rows,
+   `chain_annual` and `chain_n`, with a one-line explanation written into B1. The note is
+   written only when a column actually carries the colour. Note the orange is deliberately
+   *not* `_BEST_FILL`'s amber, which already means "Best overall".
+4. `select_best_runs(verbose=True)` prints one line per excluded run.
+
+`chain_inv%` does **not** substitute for this: it is measured over the ACTIVE window (first to
+last invested hop), so two adjacent lots read as 100%.
+
+---
+
+## walkforward.py — out-of-sample evaluation
+
+Read-only harness. Writes only `app/report/walkforward_<date>.xlsx`; never touches `run*.xlsx`,
+`aggregated_summary.xlsx`, `summary.csv` or `best_strategy*.xlsx`, and changes no selection
+logic. Covers `DomGICS_*` only — it rebuilds picks through the dominance pipeline itself (so it
+can re-score a window without re-running a report), which is why `make_dom_strategy` tags
+`main.dom_col`.
+
+Per strategy, over rolling folds:
+
+```
+train = [oldest .. T - period]     pick the best parameter-set by chain_annual here
+test  = [T + 1 .. T + test_len]    score THAT set here, never re-picking
+T += test_len
+```
+
+`T - period` is an **embargo, not an off-by-one**: a hop entered at daynum `d` does not realize
+until `d + period`, so training up to `T` would let a hop closing inside the test window vote on
+the parameter choice. Without it the whole exercise leaks.
+
+Key columns (Summary sheet):
+| column | meaning |
+|---|---|
+| `is_avg_gain` / `is_alpha` | selected set on its own training window — what the sweep would report |
+| `oos_avg_gain` / `oos_alpha` | same set on the untouched test window |
+| `gain_gap` / `alpha_gap` | `oos − is`. **The overfit measure.** Negative = the edge evaporates |
+| `zeroskill_*` | mean OOS across *every* candidate — what no selection skill gets |
+| `selection_skill_*` | `oos(selected) − zeroskill`. ~0 means the sweep is fitting noise |
+| `is_annual` / `oos_annual` | `chain_annual`, for continuity only — unstable on a short fold (see trap above), do not rank on it |
+
+Fold geometry is constrained by a short history: ~2.5 years ⇒ only ~30 **independent** 20d lots
+in total. Defaults `--min-train 315` (~15 months) and `--test-len 63` (~3 months) give 5 folds;
+per-fold figures are noisy by construction, so read the pooled rows. Lots also overlap 4× at
+`step=5`/`hold=20`, so ~54 pooled OOS lots ≈ ~13 independent ones — suggestive, not conclusive.
+
+`--wide` adds numeric axes (`WIDE_AXES`) because the live `sweep_config` grid is 2 candidates,
+far too few for `selection_skill` to have power. It deliberately does **not** invent
+`priority_attribute` values: their direction must come from
+`run_config.PRIORITY_ATTRIBUTE_DICTIONARY` and is not the harness's to guess.
 
 ---
 
@@ -409,18 +563,26 @@ naming, not just documentation:**
 
 **Selection logic, per daynum:**
 1. **Step 1 — GICS elevation, "dominance" (`gics_dominance_now`)**: count tickers per `GICS`
-   (from `Stamdata.csv`) that "beat" the **global best-decile cutoff** of
+   (from `Stamdata.csv`) that "beat" **that day's own best-decile cutoff** of
    `longi_{dominance_attribute}.csv` — below the cutoff when `dominance_attribute_direction`
-   (smaller wins, e.g. rank, the default), above it otherwise (bigger wins). `dominance_threshold`
-   (default `0.10`) is a **fraction, not a raw value**: `shared.dominance._global_decile_cutoff`
-   computes the value at that quantile of the attribute's *full historical distribution* (every
-   ticker, every daynum — not per-day) once per run, so the same fraction means "best 10%" for any
-   attribute regardless of its raw scale (rank 1..~1200, rsi 0..100, beta3m usually <5, ...). A GICS
-   with `>= dom_count_threshold` (default 10) such tickers is "dominating" **that daynum** —
-   `dom_now`. `dominance_attribute` is still a **single fixed value, never swept** by
-   `sweep_config.py` — not because of a scale mismatch anymore (the decile cutoff fixed that), but
-   because each candidate attribute is meant to be tried as its own independent run, one at a time,
-   with results compared and noted outside the system.
+   (smaller wins, e.g. rank, the default), above it otherwise (bigger wins). `dominance_threshold_decile`
+   (default `0.10`) is a **fraction, not a raw value**: `shared.dominance._daily_decile_cutoff`
+   computes the value at that quantile of the attribute's *cross-sectional distribution on that one
+   daynum* (every ticker, that day only — computed independently day by day, not across history),
+   so the same fraction means "best 10%" for any attribute regardless of its raw scale (rank
+   1..~1200, rsi 0..100, beta3m usually <5, ...), on every individual day. A GICS with
+   `>= dom_count_threshold` (default 10) such tickers is "dominating" **that daynum** — `dom_now`.
+   `dominance_attribute` is still a **single fixed value, never swept** by `sweep_config.py` — not
+   because of a scale mismatch anymore (the decile cutoff fixed that), but because each candidate
+   attribute is meant to be tried as its own independent run, one at a time, with results compared
+   and noted outside the system. **The day's cutoff value is itself reported**: it lands as a
+   `dominance_cutoff` row at row 3 of the Operational sheet (just under the date row, above the
+   ticker rows, plain-text data cells — only the row label in column A is bold) in every
+   `run*.xlsx`, and its run-average as a `dominance_cutoff_avg` row in the Summary sheet
+   (immediately after `dominance_attribute_direction`), which `aggregate_summary.py` then carries
+   into `aggregated_summary.xlsx` automatically (yellow param-header fill, via `_PARAM_COLS`).
+   `best_strategy.py`'s cross-strategy comparison sheet shows it too, as the fixed `_CHAINED_KEYS`
+   row directly below `dom_count_threshold`.
 2. **Persistence (`add_persistence`)**: `dom_20d`/`dom_50d` additionally require `dom_now` to have
    held on at least `persistence_frac` (default 2/3) of the trailing 20/50 daynums (inclusive of
    the current one). `DomGICS_now`/`_20d`/`_50d` each key off one of `dom_now`/`dom_20d`/`dom_50d`.
@@ -447,7 +609,7 @@ naming, not just documentation:**
 names** (the `longi_<name>.csv` part only, e.g. `"rank"`, `"per1d"`, `"rsi"`, `"beta3m"`) — set
 them via `run_config.DOMINANCE_ATTRIBUTE`/`run_config.PRIORITY_ATTRIBUTE`/
 `run_config.INFORMATIONAL_ATTRIBUTES`, which each `strategy_DomGICS_*.py` copies into its own
-`PARAMS` the same way it does `DOMINANCE_THRESHOLD` etc. No edit to `shared/dominance.py` is needed
+`PARAMS` the same way it does `DOMINANCE_THRESHOLD_DECILE` etc. No edit to `shared/dominance.py` is needed
 to retarget any role to a different indicator — **but** swapping `dominance_attribute` or
 `priority_attribute` must be paired with its matching direction flag
 (`dominance_attribute_direction` / `priority_attribute_direction`, bool): `True` = smaller value
@@ -481,7 +643,7 @@ _dom_attr, _dom_dir = cfg.dominance_attribute_for(STRATEGY_NAME)
 PARAMS = {
     "focusset_size": cfg.FOCUSSET_SIZE, "step": cfg.STEP, "period": 20,
     "No_go_GSPC_rsi": cfg.NO_GO_GSPC_RSI, "from_rank": cfg.FROM_RANK,
-    "dominance_threshold": cfg.DOMINANCE_THRESHOLD, "dom_count_threshold": cfg.DOM_COUNT_THRESHOLD,
+    "dominance_threshold_decile": cfg.DOMINANCE_THRESHOLD_DECILE, "dom_count_threshold": cfg.DOM_COUNT_THRESHOLD,
     "persistence_frac": cfg.PERSISTENCE_FRAC, "tickers_per_gics": cfg.TICKERS_PER_GICS,
     "dominance_attribute": _dom_attr,
     "dominance_attribute_direction": _dom_dir,
@@ -495,7 +657,7 @@ main, build_extension = make_dom_strategy(STRATEGY_NAME, PARAMS, "dom_now")
 **`run_config.py`** is the single place to see and change every default each `strategy_DomGICS_*.py`
 copies into its own `PARAMS` — the "classic" backtest knobs (`FOCUSSET_SIZE`, `STEP`,
 `NO_GO_GSPC_RSI`, `FROM_RANK`), the Step-1 dominance knobs (`DOMINANCE_ATTRIBUTE`,
-`DOMINANCE_ATTRIBUTE_DIRECTION`, `DOMINANCE_THRESHOLD`, `DOM_COUNT_THRESHOLD`,
+`DOMINANCE_ATTRIBUTE_DIRECTION`, `DOMINANCE_THRESHOLD_DECILE`, `DOM_COUNT_THRESHOLD`,
 `PERSISTENCE_FRAC`, `DOMINANCE_ATTRIBUTE_OVERRIDES`), the Step-2 test-set knobs
 (`PRIORITY_ATTRIBUTE_DICTIONARY`, `PRIORITY_ATTRIBUTE`/`PRIORITY_ATTRIBUTE_DIRECTION` — the
 resting default, derived from the dictionary's first entry — and `TICKERS_PER_GICS`), and the
