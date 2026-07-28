@@ -110,4 +110,4 @@ TICKERS_PER_GICS: int = 3   # top candidates (by PRIORITY_ATTRIBUTE) drawn from 
 # Never affects which tickers get selected, how test-sets are built, or anything else.
 # May be a single Longi factor short name or a list of several.
 # ---------------------------------------------------------------------------
-INFORMATIONAL_ATTRIBUTES: list[str] = ["rsi","macd_histogram", "macd_signal", "macd_line", "stepup40", "median_30d"]
+INFORMATIONAL_ATTRIBUTES: list[str] = ["rsi","macd_histogram"]
