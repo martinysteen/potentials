@@ -134,6 +134,36 @@ MODULES: Dict[str, Module] = {
         script="longi_quot2050.py",
         depends_on=["ma20", "ma50"],  # Depends on longi_ma20.csv and longi_ma50.csv
     ),
+    "grp_GICS_per1d": Module(
+        name="GICS Sector-Aggregated 1-Day Performance",
+        script="longi_grp_GICS_per1d.py",
+        depends_on=["performance"],  # Depends on longi_per1d.csv
+    ),
+    "grp_GICS_per1w": Module(
+        name="GICS Sector-Aggregated 1-Week Performance",
+        script="longi_grp_GICS_per1w.py",
+        depends_on=["performance"],  # Depends on longi_per1w.csv
+    ),
+    "grp_GICS_per1m": Module(
+        name="GICS Sector-Aggregated 1-Month Performance",
+        script="longi_grp_GICS_per1m.py",
+        depends_on=["performance"],  # Depends on longi_per1m.csv
+    ),
+    "grp_GICS_per3m": Module(
+        name="GICS Sector-Aggregated 3-Month Performance",
+        script="longi_grp_GICS_per3m.py",
+        depends_on=["performance"],  # Depends on longi_per3m.csv
+    ),
+    "grp_GICS_per6m": Module(
+        name="GICS Sector-Aggregated 6-Month Performance",
+        script="longi_grp_GICS_per6m.py",
+        depends_on=["performance"],  # Depends on longi_per6m.csv
+    ),
+    "grp_GICS_per1y": Module(
+        name="GICS Sector-Aggregated 1-Year Performance",
+        script="longi_grp_GICS_per1y.py",
+        depends_on=["performance"],  # Depends on longi_per1y.csv
+    ),
     "coreindex": Module(
         name="CoreIndex Price per Ticker",
         script="longi_coreindex.py",

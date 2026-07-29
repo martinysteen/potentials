@@ -92,6 +92,9 @@ def get_available_output_files() -> List[Tuple[str, str]]:
 
         if filename.startswith("across_"):
             continue
+        # Sector-aggregate tables have sector names as rows, not tickers
+        if filename.startswith("longi_grp_"):
+            continue
 
         # Extract metric name: remove "longi_" prefix and ".csv" suffix
         if filename.startswith("longi_") and filename.endswith(".csv"):

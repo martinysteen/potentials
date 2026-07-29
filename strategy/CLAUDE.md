@@ -135,8 +135,10 @@ All input is read from `DATA_ROOT = /home/sm/potentials/repositoryRTBI/data/` (d
 | `data/Stamdata.csv` | Ticker metadata: Name, Sector, GICS, Sector2, Zone, … |
 | `data/Cal.csv` | daynum → date (index is float, e.g. 2055.0 — use `float(daynum)`) |
 
-*(The `Longi/longi_grp_*.csv` sector-row aggregates were deleted 2026-07-29 — never usable as
-per-ticker features. Any lingering copy in `repositoryRTBI/` is stale.)*
+**Do not use** `Longi/longi_grp_*.csv` as per-ticker features — they are sector-row aggregates
+(rows are GICS sector names, not tickers, so an inner join on ticker yields nothing). The current
+family is `longi_grp_GICS_per{1d,1w,1m,3m,6m,1y}.csv`, added 2026-07-29: the mean of each GICS
+sector's tickers, same shape as the matching `longi_per*.csv`.
 
 ---
 

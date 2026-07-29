@@ -144,8 +144,11 @@ prices (`PotNdx.csv`), a rich ranking snapshot (`PotRank.csv`), and historical f
 (`Yfinance/StockData2_stacked.csv` — P/E, margins, growth, analyst targets) not yet tapped by
 any strategy in `../strategy/`.
 
-*(The `Longi/longi_grp_*.csv` sector-row aggregates were deleted 2026-07-29 — never usable as
-per-ticker features. Any lingering copy in `repositoryRTBI/` is stale.)*
+**Do not use** `Longi/longi_grp_*.csv` as per-ticker features — they are sector-row aggregates
+(rows are GICS sector names, not tickers, so an inner join on ticker yields nothing). The current
+family is `longi_grp_GICS_per{1d,1w,1m,3m,6m,1y}.csv`, added 2026-07-29: the mean of each GICS
+sector's tickers, same shape as the matching `longi_per*.csv`. Potentially interesting to this
+project as a **sector-level** signal — but it would need its own pipeline stage, not a filter.
 
 ---
 
@@ -701,8 +704,7 @@ strategy**, strongest `chain_annual` leftmost.
 - **future_gain{period}d valid from ~newest-period**: the most recent ~`period` columns are NaN
   (not yet realised). `find_start_daynum()` skips them.
 - **Stamdata.csv first column header** is a timestamp string, not a meaningful label.
-- **`Longi/longi_grp_*.csv`** (sector-row aggregates, never per-ticker features) were deleted
-  2026-07-29; a copy may survive in `repositoryRTBI/` until the next longi upload sync.
+- **`Longi/longi_grp_*.csv`** are sector-row aggregates — never per-ticker features.
 
 ---
 
