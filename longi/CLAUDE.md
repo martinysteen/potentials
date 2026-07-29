@@ -15,7 +15,7 @@
     │   ├── longi_rank.py
     │   ├── longi_medians.py
     │   ├── longi_stepup.py
-    │   ├── longi_grp_GICS_per*.py  # Sector-aggregate modules (thin; see aux_grp_shared.py)
+    │   ├── longi_grp_{GICS,Sector2}_per*.py  # Sector-aggregate modules (thin; see aux_grp_shared.py)
     │   ├── longi_across.py # Cross-sectional data extraction module
     │   └── longi_upload.py
     ├── input/           # Data from Google Drive
@@ -140,9 +140,12 @@ but **rows are sector names**, one per distinct value of a `Stamdata.csv` attrib
   sector with no data on a daynum gets a blank cell, not a missing row
 - Header row is `-;<daynum>;<daynum>;…`, mirroring `longi_per*.csv`
 
-**Available aggregations** — the GICS performance family, one per `longi_per*` metric:
+**Available aggregations** — two performance families, one table per `longi_per*` metric:
 - **longi_grp_GICS_per1d.csv**, **_per1w**, **_per1m**, **_per3m**, **_per6m**, **_per1y**
   (13 GICS sectors: Basi, C-Di, C-St, Ener, Fina, Heal, Index, Indu, REIT, Tech, Tele, Util, na)
+  ✓ IMPLEMENTED
+- **longi_grp_Sector2_per1d.csv**, **_per1w**, **_per1m**, **_per3m**, **_per6m**, **_per1y**
+  (50 Sector2 values — the finer taxonomy; every ticker in Stamdata carries one, none blank)
   ✓ IMPLEMENTED
 
 **These are NOT per-ticker feature files.** Row keys are sector names, so they can never be
@@ -151,9 +154,10 @@ they must stay out of `aux_winloss_shared.FEATURE_FILES`. (An older, unrelated
 `longi_grp_*_{1yr,3m}` family was deleted 2026-07-29; it had no consumer.)
 
 **Implementation:** all the work lives in `aux_grp_shared.build_group_average(metric, group_col)`;
-each `longi_grp_GICS_per*.py` is a ~15-line wrapper naming its metric. `group_col` is a parameter,
-so a Sector2 (or Zone, Homeland, …) family is a drop-in — add the thin scripts and register them,
-no edit to the shared builder.
+each `longi_grp_{GICS,Sector2}_per*.py` is a ~15-line wrapper naming its metric and grouping
+column. `group_col` is a parameter, so a further family (Zone, Homeland, …) is a drop-in — add the
+thin scripts, register them in `longi.py`, add the filenames to `aux_qc_repo.EXPECTED_FILES`; no
+edit to the shared builder.
 
 ### Cross-Sectional Data
 Output directory: `app/output/`
@@ -247,7 +251,7 @@ Follow the same pattern:
 - ✓ Pipeline orchestrator (longi.py) fully implemented
   - Dependency management working
   - Parallel execution capability ready
-  - 40 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_GICS_per1d, grp_GICS_per1w, grp_GICS_per1m, grp_GICS_per3m, grp_GICS_per6m, grp_GICS_per1y, coreindex, coreindexRSI, beta3m, beta6m, beta1yr, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_gain20d, future_gain50d, across
+  - 46 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_GICS_per1d, grp_GICS_per1w, grp_GICS_per1m, grp_GICS_per3m, grp_GICS_per6m, grp_GICS_per1y, grp_Sector2_per1d, grp_Sector2_per1w, grp_Sector2_per1m, grp_Sector2_per3m, grp_Sector2_per6m, grp_Sector2_per1y, coreindex, coreindexRSI, beta3m, beta6m, beta1yr, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_gain20d, future_gain50d, across
 - ✓ longi_price.py fully implemented
   - Outputs: longi_price.csv (byte-exact copy of PotDat.csv via shutil.copyfile, no reformatting)
   - Purpose: (a) reference raw price data under the longi_ naming convention, (b) record the exact PotDat.csv snapshot used to derive all longi_*.csv outputs for this run, since PotDat.csv is updated asynchronously relative to them
@@ -289,6 +293,9 @@ Follow the same pattern:
   - Each is a thin wrapper on aux_grp_shared.build_group_average(metric, group_col="GICS")
   - Values: plain mean of the sector's tickers, NaN-skipping
   - Dependencies: performance module (the corresponding longi_per*.csv)
+- ✓ longi_grp_Sector2_per1d/per1w/per1m/per3m/per6m/per1y.py fully implemented
+  - Outputs: output/longi_grp_Sector2_per{1d,1w,1m,3m,6m,1y}.csv (50 Sector2 rows each)
+  - Identical to the GICS family but with group_col="Sector2"
 - ✓ longi_across.py fully implemented
   - make_across(daynum, target_folder) function for programmatic use
   - Creates one cross-sectional snapshot per call

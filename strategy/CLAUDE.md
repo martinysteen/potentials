@@ -137,8 +137,9 @@ All input is read from `DATA_ROOT = /home/sm/potentials/repositoryRTBI/data/` (d
 
 **Do not use** `Longi/longi_grp_*.csv` as per-ticker features — they are sector-row aggregates
 (rows are GICS sector names, not tickers, so an inner join on ticker yields nothing). The current
-family is `longi_grp_GICS_per{1d,1w,1m,3m,6m,1y}.csv`, added 2026-07-29: the mean of each GICS
-sector's tickers, same shape as the matching `longi_per*.csv`.
+families are `longi_grp_GICS_per{1d,1w,1m,3m,6m,1y}.csv` (13 rows) and
+`longi_grp_Sector2_per*.csv` (50 rows), added 2026-07-29: the mean of each sector's tickers, same
+shape as the matching `longi_per*.csv`.
 
 ---
 
