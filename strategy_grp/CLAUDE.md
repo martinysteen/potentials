@@ -144,7 +144,8 @@ prices (`PotNdx.csv`), a rich ranking snapshot (`PotRank.csv`), and historical f
 (`Yfinance/StockData2_stacked.csv` — P/E, margins, growth, analyst targets) not yet tapped by
 any strategy in `../strategy/`.
 
-**Do not use** `Longi/longi_grp_*.csv` as per-ticker features — they are sector-row aggregates.
+*(The `Longi/longi_grp_*.csv` sector-row aggregates were deleted 2026-07-29 — never usable as
+per-ticker features. Any lingering copy in `repositoryRTBI/` is stale.)*
 
 ---
 
@@ -700,7 +701,8 @@ strategy**, strongest `chain_annual` leftmost.
 - **future_gain{period}d valid from ~newest-period**: the most recent ~`period` columns are NaN
   (not yet realised). `find_start_daynum()` skips them.
 - **Stamdata.csv first column header** is a timestamp string, not a meaningful label.
-- **`Longi/longi_grp_*.csv`** are sector-row aggregates — never per-ticker features.
+- **`Longi/longi_grp_*.csv`** (sector-row aggregates, never per-ticker features) were deleted
+  2026-07-29; a copy may survive in `repositoryRTBI/` until the next longi upload sync.
 
 ---
 

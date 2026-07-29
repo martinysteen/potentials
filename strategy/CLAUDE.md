@@ -135,7 +135,8 @@ All input is read from `DATA_ROOT = /home/sm/potentials/repositoryRTBI/data/` (d
 | `data/Stamdata.csv` | Ticker metadata: Name, Sector, GICS, Sector2, Zone, … |
 | `data/Cal.csv` | daynum → date (index is float, e.g. 2055.0 — use `float(daynum)`) |
 
-**Do not use** `Longi/longi_grp_*.csv` as per-ticker features — they are sector-row aggregates.
+*(The `Longi/longi_grp_*.csv` sector-row aggregates were deleted 2026-07-29 — never usable as
+per-ticker features. Any lingering copy in `repositoryRTBI/` is stale.)*
 
 ---
 

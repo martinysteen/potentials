@@ -134,26 +134,6 @@ MODULES: Dict[str, Module] = {
         script="longi_quot2050.py",
         depends_on=["ma20", "ma50"],  # Depends on longi_ma20.csv and longi_ma50.csv
     ),
-    "grp_GICS_1yr": Module(
-        name="GICS Sector-Aggregated 1-Year Growth",
-        script="longi_grp_GICS_1yr.py",
-        depends_on=["performance"],  # Depends on longi_per1y.csv
-    ),
-    "grp_Sector2_1yr": Module(
-        name="Sector2-Aggregated 1-Year Growth",
-        script="longi_grp_Sector2_1yr.py",
-        depends_on=["performance"],  # Depends on longi_per1y.csv
-    ),
-    "grp_GICS_3m": Module(
-        name="GICS Sector-Aggregated 3-Month Growth",
-        script="longi_grp_GICS_3m.py",
-        depends_on=["performance"],  # Depends on longi_per3m.csv
-    ),
-    "grp_Sector2_3m": Module(
-        name="Sector2-Aggregated 3-Month Growth",
-        script="longi_grp_Sector2_3m.py",
-        depends_on=["performance"],  # Depends on longi_per3m.csv
-    ),
     "coreindex": Module(
         name="CoreIndex Price per Ticker",
         script="longi_coreindex.py",
@@ -222,7 +202,7 @@ MODULES: Dict[str, Module] = {
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="longi_across.py",
-        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "quot1020", "quot2050", "sh3m", "sh6m", "sh1yr", "grp_GICS_1yr", "grp_Sector2_1yr", "grp_GICS_3m", "grp_Sector2_3m", "coreindex", "coreindexRSI", "beta3m", "beta6m", "beta1yr", "trump", "iran"],  # Depends on ALL modules - must run last
+        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "quot1020", "quot2050", "sh3m", "sh6m", "sh1yr", "coreindex", "coreindexRSI", "beta3m", "beta6m", "beta1yr", "trump", "iran"],  # Depends on ALL modules - must run last
     ),
     # Add more modules here:
     # "module_name": Module(

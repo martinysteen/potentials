@@ -22,8 +22,8 @@ from sklearn.preprocessing import StandardScaler
 
 
 # All files here must have tickers as rows. build_feature_frame uses an inner join on
-# (ticker, daynum), so files with non-ticker row keys (e.g. longi_grp_*.csv which have
-# GICS sectors or Sector2 groups as rows) will produce an empty join and blank predictions.
+# (ticker, daynum), so a file with non-ticker row keys (e.g. sector names as rows) would
+# produce an empty join and blank predictions.
 FEATURE_FILES: List[str] = [
     "longi_beta3m.csv",
     "longi_coreindex.csv",

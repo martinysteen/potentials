@@ -6,12 +6,10 @@ This module creates a cross-sectional view of all derived tables for a specific 
 Output structure:
 - Rows: Stock tickers
 - Columns: ticker_<daynum> (first column with daynum), then metrics extracted
-  from longi_*.csv files, plus sector aggregates
+  from longi_*.csv files
   - e.g., ticker_2009, rsi, macd_line, macd_signal, macd_histogram,
     per1d, per1w, per1m, per3m, per6m, per1y, rank, median_10d, median_20d,
-    median_50d, median_100d, stepup, GICS_1yr, Sector2_1yr
-  - GICS_1yr: Sector-aggregated 1-year performance for stock's GICS sector
-  - Sector2_1yr: Sector-aggregated 1-year performance for stock's Sector2
+    median_50d, median_100d, stepup
 
 Usage:
   Programmatic: from longi_across import make_across; make_across(daynum, target_folder)
@@ -29,7 +27,6 @@ from typing import List, Optional, Dict, Tuple
 INPUT_DIR = Path(__file__).parent.parent / "input"
 SOURCE_DIR = Path(__file__).parent.parent / "output"
 POTDAT_FILE = INPUT_DIR / "PotDat.csv"
-STAMDATA_FILE = INPUT_DIR / "Stamdata.csv"
 
 
 def parse_european_decimal(value: str) -> Optional[str]:
@@ -46,47 +43,6 @@ def parse_european_decimal(value: str) -> Optional[str]:
     if not value:
         return None
     return value
-
-
-def load_stamdata_mappings(quiet: bool = False) -> Tuple[Dict[str, str], Dict[str, str]]:
-    """
-    Load ticker→GICS and ticker→Sector2 mappings from Stamdata.csv.
-
-    Args:
-        quiet: If True, suppress verbose output (used for batch updates)
-
-    Returns:
-        Tuple of (ticker_to_gics, ticker_to_sector2) dictionaries
-    """
-    ticker_to_gics = {}
-    ticker_to_sector2 = {}
-
-    try:
-        with open(STAMDATA_FILE, 'r', encoding='utf-8') as f:
-            reader = csv.reader(f, delimiter=';')
-            next(reader)  # Skip header row
-
-            for row in reader:
-                if len(row) < 20:  # Need at least 20 columns for Sector2
-                    continue
-
-                ticker = row[0].strip()
-                gics = row[5].strip() if len(row) > 5 else ""  # GICS at index 5
-                sector2 = row[19].strip() if len(row) > 19 else ""  # Sector2 at index 19
-
-                if ticker:
-                    if gics:
-                        ticker_to_gics[ticker] = gics
-                    if sector2:
-                        ticker_to_sector2[ticker] = sector2
-
-        if not quiet:
-            print(f"  Loaded Stamdata mappings: {len(ticker_to_gics)} GICS, {len(ticker_to_sector2)} Sector2")
-
-    except Exception as e:
-        print(f"  WARNING: Failed to load Stamdata.csv: {e}")
-
-    return ticker_to_gics, ticker_to_sector2
 
 
 def get_max_daynum_from_potdat() -> Optional[int]:
@@ -135,8 +91,6 @@ def get_available_output_files() -> List[Tuple[str, str]]:
         filename = filepath.name
 
         if filename.startswith("across_"):
-            continue
-        if filename.startswith("longi_grp_"):
             continue
 
         # Extract metric name: remove "longi_" prefix and ".csv" suffix
@@ -199,84 +153,6 @@ def load_column_for_daynum(filepath: str, daynum: int) -> Tuple[List[str], List[
         return [], []
 
 
-def load_sector_aggregated_data(daynum: int, quiet: bool = False) -> Tuple[Dict[str, str], Dict[str, str]]:
-    """
-    Load sector-aggregated performance data for a specific daynum.
-
-    Args:
-        daynum: Daynum to extract
-        quiet: If True, suppress verbose output (used for batch updates)
-
-    Returns:
-        Tuple of (gics_to_perf, sector2_to_perf) dictionaries
-        Maps sector name → performance value for this daynum
-    """
-    gics_to_perf = {}
-    sector2_to_perf = {}
-
-    # Load GICS aggregated data
-    gics_file = SOURCE_DIR / "longi_grp_GICS_1yr.csv"
-    if gics_file.exists():
-        try:
-            with open(gics_file, 'r', encoding='utf-8') as f:
-                reader = csv.reader(f, delimiter=';')
-                header = next(reader)
-
-                # Find column index for this daynum
-                daynum_str = str(daynum)
-                col_idx = None
-                for idx, col in enumerate(header[1:], start=1):
-                    if col.strip() == daynum_str:
-                        col_idx = idx
-                        break
-
-                if col_idx is not None:
-                    for row in reader:
-                        sector_name = row[0].strip()
-                        if col_idx < len(row):
-                            perf_value = parse_european_decimal(row[col_idx])
-                            if perf_value:
-                                gics_to_perf[sector_name] = perf_value
-
-            if not quiet:
-                print(f"  Loaded GICS aggregated data: {len(gics_to_perf)} sectors")
-
-        except Exception as e:
-            print(f"  WARNING: Failed to load GICS aggregated data: {e}")
-
-    # Load Sector2 aggregated data
-    sector2_file = SOURCE_DIR / "longi_grp_Sector2_1yr.csv"
-    if sector2_file.exists():
-        try:
-            with open(sector2_file, 'r', encoding='utf-8') as f:
-                reader = csv.reader(f, delimiter=';')
-                header = next(reader)
-
-                # Find column index for this daynum
-                daynum_str = str(daynum)
-                col_idx = None
-                for idx, col in enumerate(header[1:], start=1):
-                    if col.strip() == daynum_str:
-                        col_idx = idx
-                        break
-
-                if col_idx is not None:
-                    for row in reader:
-                        sector_name = row[0].strip()
-                        if col_idx < len(row):
-                            perf_value = parse_european_decimal(row[col_idx])
-                            if perf_value:
-                                sector2_to_perf[sector_name] = perf_value
-
-            if not quiet:
-                print(f"  Loaded Sector2 aggregated data: {len(sector2_to_perf)} sectors")
-
-        except Exception as e:
-            print(f"  WARNING: Failed to load Sector2 aggregated data: {e}")
-
-    return gics_to_perf, sector2_to_perf
-
-
 def extract_cross_sectional_data(daynum: int, quiet: bool = False) -> Tuple[List[str], Dict[str, List[Optional[str]]]]:
     """
     Extract cross-sectional data for all metrics at a specific daynum.
@@ -327,34 +203,6 @@ def extract_cross_sectional_data(daynum: int, quiet: bool = False) -> Tuple[List
     if tickers is None:
         tickers = []
 
-    # Add sector-aggregated performance columns (GICS_1yr and Sector2_1yr)
-    if not quiet:
-        print(f"\nAdding sector-aggregated performance columns...")
-    ticker_to_gics, ticker_to_sector2 = load_stamdata_mappings(quiet=quiet)
-    gics_to_perf, sector2_to_perf = load_sector_aggregated_data(daynum, quiet=quiet)
-
-    # Create GICS_1yr column: for each ticker, lookup its GICS sector's performance
-    gics_1yr_values = []
-    for ticker in tickers:
-        gics = ticker_to_gics.get(ticker)
-        if gics and gics in gics_to_perf:
-            gics_1yr_values.append(gics_to_perf[gics])
-        else:
-            gics_1yr_values.append(None)
-
-    metric_data["GICS_1yr"] = gics_1yr_values
-
-    # Create Sector2_1yr column: for each ticker, lookup its Sector2's performance
-    sector2_1yr_values = []
-    for ticker in tickers:
-        sector2 = ticker_to_sector2.get(ticker)
-        if sector2 and sector2 in sector2_to_perf:
-            sector2_1yr_values.append(sector2_to_perf[sector2])
-        else:
-            sector2_1yr_values.append(None)
-
-    metric_data["Sector2_1yr"] = sector2_1yr_values
-
     return tickers, metric_data
 
 
@@ -364,9 +212,7 @@ def write_cross_sectional_csv(daynum: int, tickers: List[str],
     """
     Write cross-sectional data to CSV file.
 
-    Column ordering:
-    - Regular columns: alphabetically sorted, placed first (left)
-    - Group columns (from longi_grp_*): alphabetically sorted, placed last (right)
+    Column ordering: alphabetically sorted.
 
     Args:
         daynum: Daynum being extracted
@@ -382,21 +228,7 @@ def write_cross_sectional_csv(daynum: int, tickers: List[str],
 
     output_file = target_folder / f"across_{daynum}.csv"
 
-    # Separate regular columns from group columns (GICS_*, Sector2_*, etc.)
-    # Group columns are those ending with _1yr, _3m, _6m patterns (from longi_grp_* files)
-    regular_cols = []
-    group_cols = []
-
-    for col_name in metric_data.keys():
-        # Check if this is a group column (contains underscore followed by time period)
-        # Pattern: GICS_1yr, Sector2_1yr, etc.
-        if '_1yr' in col_name or '_3m' in col_name or '_6m' in col_name or '_1m' in col_name:
-            group_cols.append(col_name)
-        else:
-            regular_cols.append(col_name)
-
-    # Sort each group alphabetically, then combine: regular first, group last
-    metric_names = sorted(regular_cols) + sorted(group_cols)
+    metric_names = sorted(metric_data.keys())
 
     with open(output_file, 'w', encoding='utf-8', newline='') as f:
         writer = csv.writer(f, delimiter=';')
