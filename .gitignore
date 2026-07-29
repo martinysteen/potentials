@@ -21,6 +21,9 @@ __pycache__/
 venv/
 env/
 
+# --- Editor workspace config (per-user; kept on disk, not tracked) ---
+*.code-workspace
+
 # --- System Junk ---
 .DS_Store
 shared/app/creds/token.json
