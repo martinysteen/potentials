@@ -39,8 +39,10 @@ import strategies as strategies_pkg
 import aggregate_summary
 from shared.config import REPORT_ROOT, SUMMARY_CSV
 
+import preflight
 import run_config
 import sweep_config
+from shared.datacheck import DataUnavailable
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +229,16 @@ def run_strategy(module: object, runs: list[dict]) -> int:
             ok += 1
         except SystemExit as exc:                 # strategies sys.exit(1) on zero hops
             print(f"      (no output: strategy exited — {exc})")
+        except DataUnavailable:
+            # NOT swallowed. This except-block exists to keep the sweep alive when ONE
+            # parameter-set is bad; an input file that vanished mid-sweep is not that —
+            # every remaining run would fail the same way, and burying it as one line in
+            # a wall of sweep output is exactly how it stayed invisible until the
+            # extension step crashed. Abort loudly instead.
+            print("\n" + "=" * 78)
+            print("ABORTING SWEEP — an input file became unavailable while running.")
+            print("=" * 78)
+            raise
         except Exception as exc:                  # keep the sweep alive on one bad config
             print(f"      (ERROR: {type(exc).__name__}: {exc})")
     return ok
@@ -251,6 +263,14 @@ def main() -> None:
         for name in sorted(modules):
             print(f"  {name}")
         return
+
+    # Freeze the inputs BEFORE anything reads a CSV: the whole sweep must score every run
+    # on one coherent vintage, and the repository is rewritten by cron all day. Raises
+    # DataUnavailable (with the full table printed) rather than letting a missing or
+    # half-updated file turn into empty focussets that only crash in the extension step.
+    # --live skips the snapshot; --stale-ok falls back to the previous one. See preflight.py.
+    if "--dry-run" not in args:
+        preflight.ensure_data()
 
     plan = build_plan(modules)
     swept = set(plan)
@@ -283,7 +303,9 @@ def main() -> None:
     import extension                           # local import avoids an import cycle
     extension.run()
 
-    print("\nSweep complete.")
+    from shared import data_loader
+    print(f"\n{data_loader.load_manifest_line()}")
+    print("Sweep complete.")
 
 
 if __name__ == "__main__":

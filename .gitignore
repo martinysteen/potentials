@@ -28,6 +28,12 @@ env/
 .DS_Store
 shared/app/creds/token.json
 
+# --- Run-local input snapshots (rebuilt from repositoryRTBI on every run;
+#     see strategy_grp/app/code/shared/datacheck.py) ---
+*/app/data/input/
+*/app/data/.input_new/
+*/app/data/.input_old/
+
 # --- Archived experiments (files kept on disk, not tracked) ---
 correlation/
 gainsuccess/

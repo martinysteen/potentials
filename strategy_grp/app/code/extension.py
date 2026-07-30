@@ -33,6 +33,7 @@ import pandas as pd
 from openpyxl import Workbook
 
 import best_strategy
+import preflight
 from run_sweep import discover_strategies
 from shared.config import REPORT_ROOT
 
@@ -99,6 +100,10 @@ def run() -> Path | None:
     comparison sheet per further horizon, then one extension sheet per strategy
     (best-first, primary-horizon params). The prior workbook is moved to report/_archive/
     first. Returns the workbook path, or None when there is nothing comparable to report."""
+    # No-op when run_sweep already froze the inputs; the guard that matters when this is
+    # invoked standalone (the normal daily use), which is where the missing-file crash
+    # surfaced — with a traceback pointing at the extension rather than at the data.
+    preflight.ensure_data()
     blocks, all_cols = best_strategy.select_best_runs(verbose=True)
     if not blocks:
         print("No comparable runs — nothing to report.")

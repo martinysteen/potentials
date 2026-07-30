@@ -101,6 +101,7 @@ def dominance_attribute_for(strategy_name: str) -> tuple[str, bool]:
 # ---------------------------------------------------------------------------
 PRIORITY_ATTRIBUTE_DICTIONARY: dict[str, bool] = {
     #"beta3m":         False,
+    #"conf_GICS":      False,    
     #"macd_histogram": False,
     #"median_10d":     True,
     #"median_20d":     True,
@@ -114,7 +115,7 @@ PRIORITY_ATTRIBUTE_DICTIONARY: dict[str, bool] = {
     #"per1m":          False, 
     #"quot1020":       False,
     #"quot2050":       False,
-    "rank":            False,
+    "rank":            True,       #rank=True (små-er-bedst) giver avg_gain=5% & worst=-36%
     #"rsi":            False,
     #"sh3m":           False,
     #"spr250d":        False,     #False bedst
@@ -136,4 +137,4 @@ TICKERS_PER_GICS: int = 3   # top candidates (by PRIORITY_ATTRIBUTE) drawn from 
 # Never affects which tickers get selected, how test-sets are built, or anything else.
 # May be a single Longi factor short name or a list of several.
 # ---------------------------------------------------------------------------
-INFORMATIONAL_ATTRIBUTES: list[str] = ["per1d", "rsi", "rank"]
+INFORMATIONAL_ATTRIBUTES: list[str] = ["rank","conf_GICS"]

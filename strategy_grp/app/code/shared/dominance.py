@@ -235,6 +235,13 @@ def make_dom_strategy(strategy_name: str, params: dict, dom_col: str):
                                params.get("priority_attribute_direction", True))
 
     def main() -> None:
+        # Idempotent — a no-op when run_sweep/extension already froze the inputs, and the
+        # guard when this strategy file is executed directly. Deferred import: preflight
+        # reaches back into run_sweep -> strategies -> this module, so importing it at
+        # module level would cycle.
+        import preflight
+        preflight.ensure_data()
+
         period: int = params.get("period", 20)
         gain_df  = load_longi(f"future_gain{period}d.csv")
         dom_wide, cutoffs = _dom_data()
@@ -277,6 +284,17 @@ def make_dom_strategy(strategy_name: str, params: dict, dom_col: str):
         if not hop_results:
             print("No valid hops produced — no dominating GICS in the data range")
             sys.exit(1)
+
+        # Second net behind preflight. An all-but-empty run is the exact signature of an
+        # input problem that no longer raises: select_focusset returns [] whenever the
+        # daynum is not a column, so a file of the wrong vintage yields a full-length run
+        # of cash hops that looks healthy until the report is read. A persistence tier can
+        # legitimately sit out long stretches, but not ~all of history.
+        n_empty = sum(1 for h in hop_results if not h["tickers"])
+        if n_empty > 0.9 * len(hop_results):
+            print(f"  ** WARNING: {n_empty}/{len(hop_results)} hops picked nothing. "
+                  f"If this is not expected for '{dom_col}', check the inputs: "
+                  f"`python preflight.py`.")
 
         save_report(strategy_name, params, hop_results)
         print(f"Done: {len(hop_results)} hops  "

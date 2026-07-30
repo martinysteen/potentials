@@ -557,7 +557,19 @@ def main() -> None:
                     help="add WIDE_AXES to the grid for a stronger selection test")
     ap.add_argument("--dry-run", action="store_true",
                     help="print the fold layout and grid size, then stop")
+    ap.add_argument("--live", action="store_true",
+                    help="read the live repository instead of a frozen snapshot of it")
+    ap.add_argument("--stale-ok", action="store_true",
+                    help="fall back to the previous snapshot when the live data is "
+                         "mid-update (loudly — the output is then NOT current)")
     args = ap.parse_args()
+
+    # Freeze the inputs first: a fold's IS and OOS windows must be scored on one vintage.
+    # Unconditional, unlike run_sweep's — walkforward's --dry-run still reads the gain data
+    # to lay the folds out, so it needs the same guard.
+    import preflight
+    preflight.ensure_data(mode="live" if args.live
+                          else "stale-ok" if args.stale_ok else "snapshot")
 
     modules = discover_strategies()
     plan = build_plan(modules)

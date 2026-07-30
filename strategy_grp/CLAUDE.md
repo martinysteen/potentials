@@ -48,13 +48,17 @@ strategy_grp/
     │   │   ├── chain.py                  # realizable_chain — the one place the chain math lives
     │   │   ├── report.py                 # per-run Excel writer (save_report) + master summary.csv
     │   │   ├── extension.py              # partial-gain extension runner (period-driven)
+    │   │   ├── datacheck.py              # INPUT GUARD: preflight + snapshot (see "Input Data Guard")
     │   │   └── dominance.py              # GICS-domination pipeline for DomGICS_* (see below)
+    │   ├── preflight.py                  # WHICH files a run needs + ensure_data() — the guard's front door
     │   ├── run_config.py                 # tunables for the DomGICS_* family (separate from sweep_config.py)
     │   └── strategies/
     │       ├── strategy_DomGICS_now.py   # dominating GICS THIS daynum
     │       ├── strategy_DomGICS_20d.py   # + persistence over trailing 20 daynums
     │       └── strategy_DomGICS_50d.py   # + persistence over trailing 50 daynums
-    ├── data/                             # scratch/temp only (not committed)
+    ├── data/
+    │   └── input/                        # the frozen input SNAPSHOT a run reads (rebuilt per
+    │                                     #   run, gitignored) + snapshot.json (its vintage)
     └── report/                           # populated once strategies run
         ├── <strategy_name>/
         │   ├── run<N>_<YYYYMMDD>.xlsx    # one file per run (Operational + Summary + HopData sheets)
@@ -92,6 +96,11 @@ python run_sweep.py            # archive old runs of swept strategies, rebuild, 
 python run_sweep.py --dry-run  # show the run plan; touch nothing
 python run_sweep.py --list     # list discoverable strategy names
 
+# Input guard — every entry point preflights and snapshots first (see "Input Data Guard"):
+python preflight.py                        # is the repository usable right now? run nothing
+python run_sweep.py --stale-ok             # mid-update: run on the previous snapshot, loudly
+python run_sweep.py --live                 # read the live repository unguarded
+
 # Standalone pieces (run_sweep already calls these at the end):
 python aggregate_summary.py ["Strategy"]   # re-aggregate one or all strategies
 python extension.py                         # build the combined best_strategy_<date>.xlsx
@@ -109,10 +118,101 @@ in shape, just for 50d. Mixing 20d and 50d runs in one comparison is rejected by
 
 ---
 
+## Input Data Guard — preflight + snapshot
+
+**The input repository is a moving target, and the failure it caused was invisible.** Three
+unsynchronised cron jobs rewrite `repositoryRTBI/data/` all day:
+
+| when | what | effect |
+|---|---|---|
+| `:07` / `:37` | `repositoryRTBI/sync_rtbi.sh` | `rclone sync` from Google Drive — a *sync*, so it **deletes** a local file the moment the Drive side is itself mid-regeneration |
+| `:15` | `longi/start_longi.sh` | rebuilds the `longi_*` family |
+| `:30` | `group_conformity/run_conf.sh` | rebuilds the `longi_conf_*` / `longi_sectorbeta_*` family |
+
+A run now needs files from **both** families (`INFORMATIONAL_ATTRIBUTES` includes
+`conf_GICS`), and between `:15` and `:30` they are never the same generation. Two bad states
+follow, and **the second is the dangerous one**:
+
+* **A file is gone.** pandas raised deep inside a strategy, `run_sweep.run_strategy`'s blanket
+  `except Exception` printed it as one line in a wall of sweep output, and the run vanished.
+* **A complete set from TWO generations.** `longi_rank.csv` already at today's newest daynum
+  while `longi_conf_GICS.csv` still ends a day earlier. **Nothing raises on this** — every
+  consumer treats "this daynum is not a column" as a legitimate no-pick
+  (`dominance.select_focusset` returns `[]`, the writers write blanks). The run sailed through
+  the entire sweep producing empty focussets and only detonated in the **extension** step,
+  with a traceback pointing nowhere near the cause. A louder loader would not have caught it:
+  nothing was missing at any single moment — the *assortment* was incoherent.
+
+### What runs now
+
+`preflight.ensure_data()` is the **first** call in every entry point, before anything opens a
+CSV (`run_sweep.main`, `extension.run`, `walkforward.main`, and each strategy's `main()` via
+`make_dom_strategy` — idempotent, so a sweep preflights once, not per run). It:
+
+1. **Checks** every file the configured strategies could read: present, non-empty, parseable,
+   not written within `MIN_AGE_SECONDS` (45s — may still be mid-write), and — for the daynum
+   matrices — **all agreeing on the same newest daynum**. That last rule is the one that
+   catches the silent case, and it is a hard failure. Row counts are also compared against the
+   previous snapshot; a >2% drop warns about a truncated write.
+2. **Freezes** the checked set into `app/data/input/` and points `shared/config`'s active root
+   there, so everything the run opens afterwards is one coherent generation, immune to a sync
+   landing mid-run. `snapshot.json` records the vintage.
+
+On failure it raises `DataUnavailable` **after printing a one-screen table** of every file with
+its daynum, rows, size, age and status — the diagnosis that did not exist before. Since this is
+usually transient, the message says so and names the two escape hatches.
+
+```bash
+python preflight.py                # print the table for the live repository; run nothing
+python preflight.py --manifest     # just list the files a run requires
+python run_sweep.py --stale-ok     # live data is mid-update: run on the previous snapshot
+                                   #   (loud banner; the output is NOT current)
+python run_sweep.py --live         # read the live repository unguarded (old behaviour)
+```
+
+### Division of labour (do not merge these two)
+* `shared/datacheck.py` — **generic** mechanics: inspect, evaluate, snapshot, print. Knows
+  nothing about DomGICS or any strategy; takes the file list as an argument, so it is
+  copyable verbatim to `../strategy/`.
+* `preflight.py` — **project-specific**: assembles that list from `run_config`, `sweep_config`
+  and the strategy modules (every `PRIORITY_ATTRIBUTE_DICTIONARY` entry, every
+  `DOMINANCE_ATTRIBUTE_OVERRIDES` entry, every informational attribute, each strategy's
+  horizon, any filter-chain CSV). Deliberately a **superset** of what one entry point touches
+  — a superset only makes the guard stricter, and per-entry-point lists are exactly the kind
+  of drift that lets a file go unchecked until it is missing.
+
+### Consequences elsewhere
+* `shared/config.py` exposes `active_root()`/`active_longi()`/… **functions**, not constants.
+  `from shared.config import DATA_LONGI` binds a value at import and could never be
+  redirected — which is why the indirection exists. `DATA_ROOT` still names the **live**
+  repository; `use_data_root()` switches the active one and clears the loader caches.
+* `shared/data_loader.py` raises `DataUnavailable` naming the file, the root, and the
+  preflight command — never a bare pandas traceback. `DataUnavailable` subclasses
+  `FileNotFoundError` **on purpose**, so the two places that treat a Longi file as genuinely
+  optional (`report.py`/`extension.py`'s `_beta_frame`, catching `(FileNotFoundError, OSError)`)
+  keep degrading silently as designed.
+* `run_sweep.run_strategy` **re-raises** `DataUnavailable` instead of swallowing it. That
+  except-block exists to survive one bad *parameter-set*; a vanished input file is not that —
+  every remaining run would fail identically, and burying it is how this stayed invisible.
+* `dominance.main()` warns when >90% of hops picked nothing — the second net behind preflight,
+  since that is the exact signature of an input problem that no longer raises.
+* Copies, not hardlinks: hardlinking is free but only isolates the run if rclone always writes
+  a new inode and renames; `--inplace` would rewrite the bytes underneath. The required set is
+  ~45 MB, so a copy costs under a second and needs no assumption about rclone.
+
+### Not yet done
+`../strategy/` shares the same verbatim `shared/` modules and reads the same repository, so it
+has the identical exposure and none of this guard. Mirroring is a copy of `datacheck.py` +
+`preflight.py` + the `config.py`/`data_loader.py` edits, with `preflight.required_files()`
+rewritten for its filter-chain strategies.
+
+---
+
 ## Data Sources
 
 All input is read from `DATA_ROOT = /home/sm/potentials/repositoryRTBI/data/` (defined in
 `shared/config.py`) — the same data source `../strategy/` reads. Never hardcode paths.
+**A run reads a frozen snapshot of it, not the live directory** — see "Input Data Guard" above.
 
 ### Matrix format (all Longi files)
 - **Rows:** ticker symbols (index column, no header label)
