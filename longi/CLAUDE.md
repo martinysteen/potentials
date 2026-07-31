@@ -209,11 +209,14 @@ inner-joined to ticker-keyed data. `longi_across.py` skips them by the `longi_gr
 they must stay out of `aux_winloss_shared.FEATURE_FILES`. (An older, unrelated
 `longi_grp_*_{1yr,3m}` family was deleted 2026-07-29; it had no consumer.)
 
-**Implementation:** all the work lives in `aux_grp_shared.build_group_average(metric, group_col)`;
-each `longi_grp_{GICS,Sector2}_per*.py` is a ~15-line wrapper naming its metric and grouping
-column. `group_col` is a parameter, so a further family (Zone, Homeland, …) is a drop-in — add the
-thin scripts, register them in `longi.py`, add the filenames to `aux_qc_repo.EXPECTED_FILES`; no
-edit to the shared builder.
+**Implementation:** all the work lives in `aux_grp_shared.build_group_average(metric, group_col)`.
+A single script, `longi_grp_performance.py`, loops over `GROUP_COLS x METRICS` and calls it 14
+times — one `longi.py` module (`grp_performance`) produces the whole family, mirroring how
+`longi_performance.py` loops its own `PERIODS` internally rather than being one script per period.
+(Until 2026-07-31 this was 14 separate ~15-line one-metric wrapper scripts, each its own `longi.py`
+module; consolidated since they carried no logic beyond naming a metric and a group column.)
+`group_col` is a parameter, so a further family (Zone, Homeland, …) is a drop-in — add it to
+`GROUP_COLS`, add the filenames to `aux_qc_repo.EXPECTED_FILES`; no edit to the shared builder.
 
 ### Cross-Sectional Data
 Output directory: `app/output/`
@@ -307,10 +310,12 @@ Follow the same pattern:
 - ✓ Pipeline orchestrator (longi.py) fully implemented
   - Dependency management working
   - Parallel execution capability ready
-  - 47 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_GICS_per1d, grp_GICS_per5d, grp_GICS_per10d, grp_GICS_per20d, grp_GICS_per50d, grp_GICS_per100d, grp_GICS_per200d, grp_Sector2_per1d, grp_Sector2_per5d, grp_Sector2_per10d, grp_Sector2_per20d, grp_Sector2_per50d, grp_Sector2_per100d, grp_Sector2_per200d, coreindex, coreindexRSI, beta3m, beta6m, beta1yr, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_performance, across
+  - 34 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_performance, coreindex, coreindexRSI, beta3m, beta6m, beta1yr, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_performance, across
     (`future_gain20d`/`future_gain50d` were retired 2026-07-31 — one `future_performance`
     module now emits the whole `longi_future_per*` "seven-pack" ladder — 1d/5d/10d/20d/50d/100d/200d,
-    replacing the earlier six-entry semantic ladder the same day)
+    replacing the earlier six-entry semantic ladder the same day. The 14 `grp_{GICS,Sector2}_per*`
+    modules were consolidated into a single `grp_performance` module the same day too — was 47
+    modules briefly, now 34.)
 - ✓ longi_price.py fully implemented
   - Outputs: longi_price.csv (byte-exact copy of PotDat.csv via shutil.copyfile, no reformatting)
   - Purpose: (a) reference raw price data under the longi_ naming convention, (b) record the exact PotDat.csv snapshot used to derive all longi_*.csv outputs for this run, since PotDat.csv is updated asynchronously relative to them
@@ -347,14 +352,13 @@ Follow the same pattern:
   - MA speed quotients: (fast MA / slow MA) * 100 (>100 = accelerating/bullish)
   - Dependencies: corresponding MA modules (ma10+ma20 resp. ma20+ma50)
   - Choosers for the advice strategies (see expAdviceModel/REPORT 6k/6l)
-- ✓ longi_grp_GICS_per1d/per5d/per10d/per20d/per50d/per100d/per200d.py fully implemented
+- ✓ longi_grp_performance.py fully implemented (one module, `grp_performance`)
+  - Loops GROUP_COLS=[GICS, Sector2] x METRICS=[per1d..per200d], calling
+    aux_grp_shared.build_group_average(metric, group_col) 14 times
   - Outputs: output/longi_grp_GICS_per{1d,5d,10d,20d,50d,100d,200d}.csv (13 GICS sector rows each)
-  - Each is a thin wrapper on aux_grp_shared.build_group_average(metric, group_col="GICS")
-  - Values: plain mean of the sector's tickers, NaN-skipping
-  - Dependencies: performance module (the corresponding longi_per*.csv)
-- ✓ longi_grp_Sector2_per1d/per5d/per10d/per20d/per50d/per100d/per200d.py fully implemented
   - Outputs: output/longi_grp_Sector2_per{1d,5d,10d,20d,50d,100d,200d}.csv (50 Sector2 rows each)
-  - Identical to the GICS family but with group_col="Sector2"
+  - Values: plain mean of the sector's tickers, NaN-skipping
+  - Dependencies: performance module (all 7 longi_per*.csv files)
 - ✓ longi_future_performance.py fully implemented
   - Outputs: longi_future_per{1d,5d,10d,20d,50d,100d,200d}.csv — forward gains on the same day
     counts as longi_performance.py, assigned to the SIGNAL day, entered at signal+1

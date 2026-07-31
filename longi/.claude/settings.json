@@ -16,7 +16,9 @@
       "Read(//tmp/**)",
       "Bash(sed -n '105,135p' /tmp/claude_fixed.md)",
       "Bash(diff \"//Gandalf/sm-home/potentials/longi/CLAUDE.md\" /tmp/claude_fixed.md | head -80)",
-      "Bash(cd \"//Gandalf/sm-home/potentials\" && grep -rln \"per1w\\\\|per1m\\\\b\\\\|per3m\\\\b\\\\|per6m\\\\b\\\\|per1y\\\\b\\\\|FUTURE_PERIOD_LABEL\" --include=*.py --include=*.md --include=*.sh --include=*.json . 2>/dev/null | grep -v \"_archive\\\\|_not_used\\\\|expAdviceModel\\\\|app/output/exp\"; echo \"\\(none above = fully clean\\)\")"
+      "Bash(cd \"//Gandalf/sm-home/potentials\" && grep -rln \"per1w\\\\|per1m\\\\b\\\\|per3m\\\\b\\\\|per6m\\\\b\\\\|per1y\\\\b\\\\|FUTURE_PERIOD_LABEL\" --include=*.py --include=*.md --include=*.sh --include=*.json . 2>/dev/null | grep -v \"_archive\\\\|_not_used\\\\|expAdviceModel\\\\|app/output/exp\"; echo \"\\(none above = fully clean\\)\")",
+      "Bash(ls \"//Gandalf/sm-home/potentials/longi/app/code\" | grep -E \"^longi_grp_\")",
+      "Read(///Gandalf/sm-home/potentials/longi/app/**)"
     ]
   }
 }

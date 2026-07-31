@@ -134,75 +134,10 @@ MODULES: Dict[str, Module] = {
         script="longi_quot2050.py",
         depends_on=["ma20", "ma50"],  # Depends on longi_ma20.csv and longi_ma50.csv
     ),
-    "grp_GICS_per1d": Module(
-        name="GICS Sector-Aggregated 1-Day Performance",
-        script="longi_grp_GICS_per1d.py",
-        depends_on=["performance"],  # Depends on longi_per1d.csv
-    ),
-    "grp_GICS_per5d": Module(
-        name="GICS Sector-Aggregated 5-Day Performance",
-        script="longi_grp_GICS_per5d.py",
-        depends_on=["performance"],  # Depends on longi_per5d.csv
-    ),
-    "grp_GICS_per10d": Module(
-        name="GICS Sector-Aggregated 10-Day Performance",
-        script="longi_grp_GICS_per10d.py",
-        depends_on=["performance"],  # Depends on longi_per10d.csv
-    ),
-    "grp_GICS_per20d": Module(
-        name="GICS Sector-Aggregated 20-Day Performance",
-        script="longi_grp_GICS_per20d.py",
-        depends_on=["performance"],  # Depends on longi_per20d.csv
-    ),
-    "grp_GICS_per50d": Module(
-        name="GICS Sector-Aggregated 50-Day Performance",
-        script="longi_grp_GICS_per50d.py",
-        depends_on=["performance"],  # Depends on longi_per50d.csv
-    ),
-    "grp_GICS_per100d": Module(
-        name="GICS Sector-Aggregated 100-Day Performance",
-        script="longi_grp_GICS_per100d.py",
-        depends_on=["performance"],  # Depends on longi_per100d.csv
-    ),
-    "grp_GICS_per200d": Module(
-        name="GICS Sector-Aggregated 200-Day Performance",
-        script="longi_grp_GICS_per200d.py",
-        depends_on=["performance"],  # Depends on longi_per200d.csv
-    ),
-    "grp_Sector2_per1d": Module(
-        name="Sector2-Aggregated 1-Day Performance",
-        script="longi_grp_Sector2_per1d.py",
-        depends_on=["performance"],  # Depends on longi_per1d.csv
-    ),
-    "grp_Sector2_per5d": Module(
-        name="Sector2-Aggregated 5-Day Performance",
-        script="longi_grp_Sector2_per5d.py",
-        depends_on=["performance"],  # Depends on longi_per5d.csv
-    ),
-    "grp_Sector2_per10d": Module(
-        name="Sector2-Aggregated 10-Day Performance",
-        script="longi_grp_Sector2_per10d.py",
-        depends_on=["performance"],  # Depends on longi_per10d.csv
-    ),
-    "grp_Sector2_per20d": Module(
-        name="Sector2-Aggregated 20-Day Performance",
-        script="longi_grp_Sector2_per20d.py",
-        depends_on=["performance"],  # Depends on longi_per20d.csv
-    ),
-    "grp_Sector2_per50d": Module(
-        name="Sector2-Aggregated 50-Day Performance",
-        script="longi_grp_Sector2_per50d.py",
-        depends_on=["performance"],  # Depends on longi_per50d.csv
-    ),
-    "grp_Sector2_per100d": Module(
-        name="Sector2-Aggregated 100-Day Performance",
-        script="longi_grp_Sector2_per100d.py",
-        depends_on=["performance"],  # Depends on longi_per100d.csv
-    ),
-    "grp_Sector2_per200d": Module(
-        name="Sector2-Aggregated 200-Day Performance",
-        script="longi_grp_Sector2_per200d.py",
-        depends_on=["performance"],  # Depends on longi_per200d.csv
+    "grp_performance": Module(
+        name="Sector-Aggregated Performance (GICS + Sector2 x seven-pack)",
+        script="longi_grp_performance.py",
+        depends_on=["performance"],  # Depends on all 7 longi_per*.csv files
     ),
     "coreindex": Module(
         name="CoreIndex Price per Ticker",
