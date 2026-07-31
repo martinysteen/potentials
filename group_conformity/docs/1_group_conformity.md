@@ -24,7 +24,7 @@ python analyze_conformity.py          # builds the grade + validity controls
 python analyze_conformity_gains.py    # buckets forward gain by conformity decile
 ```
 Input is fetched by `../fetch_input.sh` (a subset pull: `Stamdata.csv`, `longi_per1d.csv`,
-`longi_grp_{GICS,Sector2}_per1d.csv`, `longi_vola100d.csv`, `longi_future_per{1m,3m}.csv` — not the
+`longi_grp_{GICS,Sector2}_per1d.csv`, `longi_vola100d.csv`, `longi_future_per{20,50}d.csv` — not the
 full Longi/PotDat set `../correlation/fetch_input.sh` pulls).
 
 ### Why correlation, not beta
@@ -37,7 +37,7 @@ one grade is comparable across a 226-member GICS sector and a 12-member Sector2 
 beta is still written out (`longi_sectorbeta_*.csv`) as a side-by-side check, not discarded.
 
 ### Methodology — the grade (`analyze_conformity.py`)
-- Input is **daily returns** (`longi_per1d.csv`) only — `per1w/1m/3m/...` are overlapping trailing
+- Input is **daily returns** (`longi_per1d.csv`) only — `per5d/10d/20d/...` are overlapping trailing
   windows and would inflate any correlation built on them.
 - **All `^`-prefixed tickers are excluded up front** (`^VIX`, `^BTC`, `^GSPC`, `^IXIC`, `^AEX`,
   `^FCHI`, `^FTSE`, `^GDAXI`, `^HSI`, `^OMX`, `^OMXC20`, `^OSEBX`, `^STOXX`, `^DJAFK` — 14 tickers)
@@ -72,13 +72,16 @@ beta is still written out (`longi_sectorbeta_*.csv`) as a side-by-side check, no
   | persistence, corr(confₜ, confₜ₊250) | 0.539 | 0.616 | matches the ≈0.62 banked in the `strategy_grp` intra-sector-conformity measurement — conformity is a real, persistent ticker property |
   | reconstructed group mean vs published `longi_grp_*_per1d.csv` | 0.999996 | 0.999998 | validates both the grouping join and the published grp files |
 
-- `output/conformity_vs_gain.csv` — decile-bucketed `longi_future_per{1m,3m}` stats (mean, median,
+- `output/conformity_vs_gain.csv` — decile-bucketed `longi_future_per{20,50}d` stats (mean, median,
   std, P5, P95, %|gain|>10), by attribute × horizon × history-half × {conformity, beta} bucket.
-  The `horizon` column holds `1m`/`3m` (22/66 trading days). **Rows written before 2026-07-31
-  used `future_gain{20,50}d` and are not comparable**: those were 20/50-day horizons entered on
-  the signal day itself, whereas the `longi_future_per*` ladder enters the day after. The
-  headline findings survived the switch — Sector2 dispersion still falls with conformity
-  (ρ≈−0.68, holding in both half-splits), GICS still inconclusive.
+  The `horizon` column holds `20d`/`50d` (literal trading days — the "seven-pack" ladder).
+  **Rows written before 2026-07-31 are not comparable**, even where the numbers coincide:
+  the original `future_gain{20,50}d.csv` also used 20/50-day horizons but entered on the
+  signal day itself, whereas `longi_future_per*` enters the day after (there was also a
+  same-day intermediate naming, `longi_future_per{1m,3m}.csv` at 22/66 days, superseded within
+  the same session by this literal ladder). The headline findings survived the entry-day
+  change — Sector2 dispersion still falls with conformity (ρ≈−0.68, holding in both
+  half-splits), GICS still inconclusive.
 - `output/conformity_vs_gain_hop_secondary.csv` — low-power corroboration (see below).
 - `output/conformity_ranking_{GICS,Sector2}.csv` — **"who are they"**: one row per ticker,
   sorted group-then-`rank_within_group`. Columns: `group`, `group_size`, `name`, `n_valid_days`,

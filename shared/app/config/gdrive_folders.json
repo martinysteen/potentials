@@ -9,7 +9,7 @@
     "repositoryRTBI/Longi": {
       "id": "1XkGlWZjuj1Ic1PlQfvQMgJk42nDt7fBt",
       "description": "Longi-derived indicators and calculations",
-      "contains": ["longi_rank.csv", "longi_per1m.csv", "longi_rsi.csv", "longi_uptrend.csv"]
+      "contains": ["longi_rank.csv", "longi_per20d.csv", "longi_rsi.csv", "longi_uptrend.csv"]
     }
   }
 }

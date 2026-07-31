@@ -6,8 +6,8 @@
 Framework for backtesting **named stock-selection strategies** against historical Potentials data.
 Each strategy defines a *focusset selector* (picks N tickers for a given trading day) and the
 framework measures how those picks performed over a single forward horizon — the **`period`**
-parameter, in trading days. It must be one of the `longi_future_per*` ladder
-(1 / 5 / **22** / 66 / 132 / 264); `run_config.PERIOD` holds the default, 22 ("1 month").
+parameter, in trading days. It must be one of the `longi_future_per*` "seven-pack" ladder
+(1 / 5 / 10 / **20** / 50 / 100 / 200); `run_config.PERIOD` holds the default, 20.
 
 A hop at daynum `d` **enters at `d+1`**, not at `d` — the signal day's close is what the pick is
 made on, so it is not tradeable. See longi's `longi_future_performance.py`.
@@ -124,8 +124,8 @@ python walkforward.py --dry-run             # fold layout + grid size only
 ```
 
 To analyse a different horizon: set `run_config.PERIOD` (or override `period` in
-`sweep_config.py` / a strategy's PARAMS) to another key of `shared.config.FUTURE_PERIOD_LABEL` —
-66 for "3 months", 132 for "6 months", and so on — then re-run. Everything stays
+`sweep_config.py` / a strategy's PARAMS) to another member of `shared.config.FUTURE_PERIODS` —
+the "seven-pack" (1/5/10/20/50/100/200 trading days) — then re-run. Everything stays
 one-horizon-at-a-time; the report is identical in shape. Mixing horizons in one comparison is
 rejected by best_strategy.py.
 
@@ -133,9 +133,10 @@ rejected by best_strategy.py.
 `extension.py`/`best_strategy.py` read `period` back out of those rows — so the daily tool will
 pick up a stale horizon until `run_sweep.py` archives them aside.
 
-Note the longer horizons buy fewer independent lots: over the ~660-daynum history, 22 days gives
-~30 non-overlapping lots, 66 gives ~10, 132 gives ~5, and 264 gives ~1.5 — below
-`MIN_CHAIN_LOTS`. The 6m and 1y files exist for completeness; they will not sustain a backtest.
+Note the longer horizons buy fewer independent lots: over the ~660-daynum history, 20 days gives
+~33 non-overlapping lots, 50 gives ~13, 100 gives ~7 (borderline above `MIN_CHAIN_LOTS`), and
+200 gives ~3 — below `MIN_CHAIN_LOTS`. The 100d and 200d files exist for completeness; 200d in
+particular will not sustain a backtest.
 
 ---
 
@@ -253,8 +254,8 @@ read. Never hardcode paths.
 
 | File | Content |
 |------|---------|
-| `Longi/longi_future_per1m.csv` | Realised forward gain over a 22-trading-day hold (%) — `period=22`, the primary horizon |
-| `Longi/longi_future_per{1d,1w,3m,6m,1y}.csv` | The rest of the forward ladder: 1/5/66/132/264 days. Available, none currently used |
+| `Longi/longi_future_per20d.csv` | Realised forward gain over a 20-trading-day hold (%) — `period=20`, the primary horizon |
+| `Longi/longi_future_per{1d,5d,10d,50d,100d,200d}.csv` | The rest of the "seven-pack" forward ladder: 1/5/10/50/100/200 days. Available, none currently used |
 | `Longi/longi_rank.csv` | Average rank across all performance periods (1 = best) |
 | `Longi/longi_rsi.csv` | RSI14 (Wilder's method) |
 | `Longi/longi_ma*.csv` | Simple moving averages |
@@ -264,7 +265,7 @@ read. Never hardcode paths.
 | `data/Cal.csv` | daynum → date (index is float, e.g. 2055.0 — use `float(daynum)`) |
 
 Full factor set (all in `Longi/`, see `../repositoryRTBI/data/Longi/`): trailing returns
-(`longi_per1d/1w/1m/3m/6m/1y`), moving averages & ratios (`longi_ma10/20/50/200`,
+(`longi_per1d/5d/10d/20d/50d/100d/200d`, the "seven-pack"), moving averages & ratios (`longi_ma10/20/50/200`,
 `longi_PdivMA*`), momentum (`longi_macd_*`), beta (`longi_beta3m/6m/1yr`), volatility/spread
 (`longi_vola20d/100d`, `longi_spr100d/250d`), medians (`longi_median_10..100d`), MA-cross
 quotients (`longi_quot1020`, `longi_quot2050`), composite rank (`longi_rank`), plus normalized
@@ -293,10 +294,12 @@ copied verbatim from `../_archive/strategy/shared/` at the time. `strategy/` was
 ### `shared/config.py`
 Constants: `DATA_ROOT`, `DATA_LONGI`, `POTDAT_PATH`, `STAMDATA_PATH`, `CAL_PATH`, `APP_ROOT`, `REPORT_ROOT`, `SUMMARY_CSV`.
 
-Also `FUTURE_PERIOD_LABEL` + **`future_gain_file(period)`** — the one place a `period` becomes a
-forward-gain filename. **`period` stays an INT everywhere**, deliberately: it is not merely a
-filename infix but also the hold length `chain.py` spaces lots by, the amount `walkforward`
-embargoes the training window by, and the size of the extension's still-open window. Only the
+Also `FUTURE_PERIODS` + **`future_gain_file(period)`** — the one place a `period` becomes a
+forward-gain filename. Since the 2026-07-31 "seven-pack" rename, the label is always literally
+`f"{period}d"`, so this is a validated lookup, not a translation table. **`period` stays an INT
+everywhere**, deliberately: it is not merely a filename infix but also the hold length
+`chain.py` spaces lots by, the amount `walkforward` embargoes the training window by, and the
+size of the extension's still-open window. Only the
 filename is looked up, so none of that arithmetic had to change when the files were renamed.
 `future_gain_file` **raises** on a period outside the ladder rather than defaulting — a wrong
 horizon file does not crash anything downstream, it produces a complete and entirely plausible
@@ -647,8 +650,8 @@ far too few for `selection_skill` to have power. It deliberately does **not** in
 PARAMS: dict = {
     "focusset_size": 3,       # N tickers selected per hop
     "step": 1,                # daynum step between hops (sweep fixes this at 1)
-    "period": 22,             # forward horizon in trading days; a key of
-                              # shared.config.FUTURE_PERIOD_LABEL (1/5/22/66/132/264)
+    "period": 20,             # forward horizon in trading days; a member of the
+                              # "seven-pack" shared.config.FUTURE_PERIODS (1/5/10/20/50/100/200)
     "No_go_GSPC_rsi": 40,     # suppress avg gains / skip chain hops when GSPC RSI (at daynum) < this
     # strategy-specific keys as needed
 }
@@ -803,6 +806,14 @@ naming, not just documentation:**
    held on at least `persistence_frac` (default 2/3) of the trailing 20/50 daynums (inclusive of
    the current one). The `_now`/`_20d`/`_50d` tiers of each family key off one of
    `dom_now`/`dom_20d`/`dom_50d`. This is the **flicker-damping** axis — see "Turnover" below.
+   **Naming note (not a code collision, just a reading trap):** since the 2026-07-31
+   "seven-pack" rename, `20d`/`50d` are ALSO literal Longi filename suffixes
+   (`longi_future_per20d.csv`, `longi_per50d.csv`, …) meaning the **forward-horizon length in
+   `period`** — a completely different axis from this persistence window. `DomGICS_20d`'s `20d`
+   is a trailing-daynum count for Step 1; `period=20` is the hold length for the whole backtest.
+   The two happen to share a number by design (both read as "20 trading days"), but nothing in
+   code conflates them — read `strategy_Dom*.py`'s `STRATEGY_NAME` suffix and `PARAMS["period"]`
+   as answering two unrelated questions.
 3. **Step 2 — test-set construction, ticker selection (`select_focusset`)**: each dominating group
    contributes its `tickers_per_group` (default 3, shared by both criteria) **best** tickers by
    `longi_{priority_attribute}.csv` (direction-aware: smaller wins when

@@ -2,15 +2,19 @@
 Performance Calculation Module
 
 Calculates percentage gain/loss over various time periods.
-Reads PotDat.csv and outputs 6 separate CSV files with performance metrics.
+Reads PotDat.csv and outputs 7 separate CSV files with performance metrics.
 
-Time periods:
-- 1 day (1 trading day)
-- 1 week (5 trading days)
-- 1 month (22 trading days)
-- 3 months (66 trading days)
-- 6 months (132 trading days)
-- 1 year (264 trading days)
+Time periods — the "seven-pack": literal trading-day counts, filename always
+longi_per{N}d.csv for N days. Replaced the old semantic ladder (1d/1w/1m/3m/6m/1y ≈
+1/5/22/66/132/264 days) 2026-07-31 because the semantic labels were unpopular and, for four
+of the six, only approximated a round day count anyway:
+- 1 day
+- 5 days
+- 10 days
+- 20 days
+- 50 days
+- 100 days
+- 200 days
 
 Performance is calculated as: ((current_price - past_price) / past_price) * 100
 Output goes to stdout - start_longi.sh handles logging redirection.
@@ -36,11 +40,12 @@ class TimePeriod:
 
 PERIODS = [
     TimePeriod("1 day", 1, "longi_per1d.csv"),
-    TimePeriod("1 week", 5, "longi_per1w.csv"),
-    TimePeriod("1 month", 22, "longi_per1m.csv"),
-    TimePeriod("3 months", 66, "longi_per3m.csv"),
-    TimePeriod("6 months", 132, "longi_per6m.csv"),
-    TimePeriod("1 year", 264, "longi_per1y.csv"),
+    TimePeriod("5 days", 5, "longi_per5d.csv"),
+    TimePeriod("10 days", 10, "longi_per10d.csv"),
+    TimePeriod("20 days", 20, "longi_per20d.csv"),
+    TimePeriod("50 days", 50, "longi_per50d.csv"),
+    TimePeriod("100 days", 100, "longi_per100d.csv"),
+    TimePeriod("200 days", 200, "longi_per200d.csv"),
 ]
 
 

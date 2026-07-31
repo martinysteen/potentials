@@ -122,7 +122,7 @@ def _grand_avg_alpha(hop_results: list[dict], n: int, params: dict) -> tuple[flo
     """(mean alpha, mean beta) across active hops — same No_go gating as _grand_avg_topn,
     so the headline alpha is measured over exactly the hops the strategy would trade."""
     threshold = params.get("No_go_GSPC_rsi")
-    mkt       = _market_gain(params.get("period", 22))
+    mkt       = _market_gain(params.get("period", 20))
     beta_df   = _beta_frame()
     alphas: list[float] = []
     betas:  list[float] = []
@@ -393,7 +393,7 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     # Benchmark rows below the avg rows: mkt_gain + alpha always, beta only when
     # longi_beta3m.csv is present. See the _market_gain/_hop_beta block above for what
     # `alpha` means here (active return, NOT Jensen's).
-    mkt_series = _market_gain(params.get("period", 22))
+    mkt_series = _market_gain(params.get("period", 20))
     beta_df    = _beta_frame()
     has_beta   = beta_df is not None and any(
         pd.notna(_hop_beta(h, beta_df, n)) for h in hop_results)
@@ -627,7 +627,7 @@ def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
         rows.append(("avg_beta", round(avg_beta, 3)))
 
     # Realizable non-overlapping additive chain for the active horizon (= period).
-    hold = int(params.get("period", 22))
+    hold = int(params.get("period", 20))
     ret, annual, ntr = _chain_metrics(hop_results, _GAIN_KEY, n, hold, params)
     rows.append(("chain_ret",    round(ret, 4)    if pd.notna(ret)    else None))
     rows.append(("chain_annual", round(annual, 4) if pd.notna(annual) else None))
@@ -682,7 +682,7 @@ def _fill_hopdata(ws, hop_results: list[dict], params: dict) -> None:
     which HopData does not carry.
     """
     n = params.get("focusset_size", 10)
-    mkt     = _market_gain(params.get("period", 22))
+    mkt     = _market_gain(params.get("period", 20))
     beta_df = _beta_frame()
     ws.append(["daynum", "gain", "gspc_rsi", "mkt_gain", "beta"])
     for h in hop_results:
@@ -755,7 +755,7 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
         avg_vals   = [_fmt(_grand_avg_topn(hop_results, gk, tn, params)) for _, gk, tn in _avg_rows(n)]
         _alpha, _beta = _grand_avg_alpha(hop_results, n, params)
         avg_vals  += [_fmt(_alpha), _fmt(_beta)]
-        hold = int(params.get("period", 22))
+        hold = int(params.get("period", 20))
         ret, annual, ntr = _chain_metrics(hop_results, _GAIN_KEY, n, hold, params)
         chain_vals = [_fmt(ret), _fmt(annual), str(ntr)]
         worst, n_loss, sens = _chain_dispersion(hop_results, n, hold, params)

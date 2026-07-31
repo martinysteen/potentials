@@ -1,15 +1,16 @@
 """
 Ranking Module - Final Rank Based on Average Rank Across All Performance Periods
 
-Step 1: Rank performance values for each time period (1d, 1w, 1m, 3m, 6m, 1y)
+Step 1: Rank performance values for each time period (the "seven-pack": 1d, 5d, 10d, 20d,
+        50d, 100d, 200d — literal trading-day counts, see longi_performance.py)
   - For each column (daynum), rank all tickers by performance value
   - Rank 1 = highest performance (best)
   - Handle ties: assign same rank to equal values, skip next rank(s)
   - Example: if two values tie at rank 4, both get rank 4, next rank is 6
   - Preserve empty values (no ranking for missing data)
 
-Step 2: Calculate average rank across all 6 periods
-  - For each ticker and daynum, average the ranks from all 6 periods
+Step 2: Calculate average rank across all periods (PERFORMANCE_FILES — currently 7)
+  - For each ticker and daynum, average the ranks from all periods
   - Exclude empty values from average calculation
   - Result: average rank values (floats)
 
@@ -32,14 +33,15 @@ from dataclasses import dataclass
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 OUTPUT_FILE = OUTPUT_DIR / "longi_rank.csv"
 
-# Performance files to process
+# Performance files to process — the seven-pack, must match longi_performance.PERIODS
 PERFORMANCE_FILES = [
     "longi_per1d.csv",
-    "longi_per1w.csv",
-    "longi_per1m.csv",
-    "longi_per3m.csv",
-    "longi_per6m.csv",
-    "longi_per1y.csv",
+    "longi_per5d.csv",
+    "longi_per10d.csv",
+    "longi_per20d.csv",
+    "longi_per50d.csv",
+    "longi_per100d.csv",
+    "longi_per200d.csv",
 ]
 
 

@@ -8,8 +8,8 @@ Output structure:
 - Columns: ticker_<daynum> (first column with daynum), then metrics extracted
   from longi_*.csv files
   - e.g., ticker_2009, rsi, macd_line, macd_signal, macd_histogram,
-    per1d, per1w, per1m, per3m, per6m, per1y, rank, median_10d, median_20d,
-    median_50d, median_100d, stepup
+    per1d, per5d, per10d, per20d, per50d, per100d, per200d, rank, median_10d,
+    median_20d, median_50d, median_100d, stepup
 
 Usage:
   Programmatic: from longi_across import make_across; make_across(daynum, target_folder)

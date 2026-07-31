@@ -50,14 +50,14 @@ MODULES: Dict[str, Module] = {
         depends_on=[],  # Independent - can run in parallel with RSI
     ),
     "performance": Module(
-        name="Performance (1d/1w/1m/3m/6m/1y)",
+        name="Performance (seven-pack: 1d/5d/10d/20d/50d/100d/200d)",
         script="longi_performance.py",
         depends_on=[],  # Independent - reads only PotDat.csv
     ),
     "rank": Module(
         name="Average Rank Across Periods",
         script="longi_rank.py",
-        depends_on=["performance"],  # Depends on all 6 performance files
+        depends_on=["performance"],  # Depends on all 7 performance files
     ),
     "medians": Module(
         name="Rolling Medians (10d/20d/50d/100d)",
@@ -139,60 +139,70 @@ MODULES: Dict[str, Module] = {
         script="longi_grp_GICS_per1d.py",
         depends_on=["performance"],  # Depends on longi_per1d.csv
     ),
-    "grp_GICS_per1w": Module(
-        name="GICS Sector-Aggregated 1-Week Performance",
-        script="longi_grp_GICS_per1w.py",
-        depends_on=["performance"],  # Depends on longi_per1w.csv
+    "grp_GICS_per5d": Module(
+        name="GICS Sector-Aggregated 5-Day Performance",
+        script="longi_grp_GICS_per5d.py",
+        depends_on=["performance"],  # Depends on longi_per5d.csv
     ),
-    "grp_GICS_per1m": Module(
-        name="GICS Sector-Aggregated 1-Month Performance",
-        script="longi_grp_GICS_per1m.py",
-        depends_on=["performance"],  # Depends on longi_per1m.csv
+    "grp_GICS_per10d": Module(
+        name="GICS Sector-Aggregated 10-Day Performance",
+        script="longi_grp_GICS_per10d.py",
+        depends_on=["performance"],  # Depends on longi_per10d.csv
     ),
-    "grp_GICS_per3m": Module(
-        name="GICS Sector-Aggregated 3-Month Performance",
-        script="longi_grp_GICS_per3m.py",
-        depends_on=["performance"],  # Depends on longi_per3m.csv
+    "grp_GICS_per20d": Module(
+        name="GICS Sector-Aggregated 20-Day Performance",
+        script="longi_grp_GICS_per20d.py",
+        depends_on=["performance"],  # Depends on longi_per20d.csv
     ),
-    "grp_GICS_per6m": Module(
-        name="GICS Sector-Aggregated 6-Month Performance",
-        script="longi_grp_GICS_per6m.py",
-        depends_on=["performance"],  # Depends on longi_per6m.csv
+    "grp_GICS_per50d": Module(
+        name="GICS Sector-Aggregated 50-Day Performance",
+        script="longi_grp_GICS_per50d.py",
+        depends_on=["performance"],  # Depends on longi_per50d.csv
     ),
-    "grp_GICS_per1y": Module(
-        name="GICS Sector-Aggregated 1-Year Performance",
-        script="longi_grp_GICS_per1y.py",
-        depends_on=["performance"],  # Depends on longi_per1y.csv
+    "grp_GICS_per100d": Module(
+        name="GICS Sector-Aggregated 100-Day Performance",
+        script="longi_grp_GICS_per100d.py",
+        depends_on=["performance"],  # Depends on longi_per100d.csv
+    ),
+    "grp_GICS_per200d": Module(
+        name="GICS Sector-Aggregated 200-Day Performance",
+        script="longi_grp_GICS_per200d.py",
+        depends_on=["performance"],  # Depends on longi_per200d.csv
     ),
     "grp_Sector2_per1d": Module(
         name="Sector2-Aggregated 1-Day Performance",
         script="longi_grp_Sector2_per1d.py",
         depends_on=["performance"],  # Depends on longi_per1d.csv
     ),
-    "grp_Sector2_per1w": Module(
-        name="Sector2-Aggregated 1-Week Performance",
-        script="longi_grp_Sector2_per1w.py",
-        depends_on=["performance"],  # Depends on longi_per1w.csv
+    "grp_Sector2_per5d": Module(
+        name="Sector2-Aggregated 5-Day Performance",
+        script="longi_grp_Sector2_per5d.py",
+        depends_on=["performance"],  # Depends on longi_per5d.csv
     ),
-    "grp_Sector2_per1m": Module(
-        name="Sector2-Aggregated 1-Month Performance",
-        script="longi_grp_Sector2_per1m.py",
-        depends_on=["performance"],  # Depends on longi_per1m.csv
+    "grp_Sector2_per10d": Module(
+        name="Sector2-Aggregated 10-Day Performance",
+        script="longi_grp_Sector2_per10d.py",
+        depends_on=["performance"],  # Depends on longi_per10d.csv
     ),
-    "grp_Sector2_per3m": Module(
-        name="Sector2-Aggregated 3-Month Performance",
-        script="longi_grp_Sector2_per3m.py",
-        depends_on=["performance"],  # Depends on longi_per3m.csv
+    "grp_Sector2_per20d": Module(
+        name="Sector2-Aggregated 20-Day Performance",
+        script="longi_grp_Sector2_per20d.py",
+        depends_on=["performance"],  # Depends on longi_per20d.csv
     ),
-    "grp_Sector2_per6m": Module(
-        name="Sector2-Aggregated 6-Month Performance",
-        script="longi_grp_Sector2_per6m.py",
-        depends_on=["performance"],  # Depends on longi_per6m.csv
+    "grp_Sector2_per50d": Module(
+        name="Sector2-Aggregated 50-Day Performance",
+        script="longi_grp_Sector2_per50d.py",
+        depends_on=["performance"],  # Depends on longi_per50d.csv
     ),
-    "grp_Sector2_per1y": Module(
-        name="Sector2-Aggregated 1-Year Performance",
-        script="longi_grp_Sector2_per1y.py",
-        depends_on=["performance"],  # Depends on longi_per1y.csv
+    "grp_Sector2_per100d": Module(
+        name="Sector2-Aggregated 100-Day Performance",
+        script="longi_grp_Sector2_per100d.py",
+        depends_on=["performance"],  # Depends on longi_per100d.csv
+    ),
+    "grp_Sector2_per200d": Module(
+        name="Sector2-Aggregated 200-Day Performance",
+        script="longi_grp_Sector2_per200d.py",
+        depends_on=["performance"],  # Depends on longi_per200d.csv
     ),
     "coreindex": Module(
         name="CoreIndex Price per Ticker",
@@ -250,14 +260,16 @@ MODULES: Dict[str, Module] = {
         depends_on=[],  # Independent - reads only PotDat.csv
     ),
     "future_performance": Module(
-        name="Future Performance (1d/1w/1m/3m/6m/1y)",
+        name="Future Performance (seven-pack: 1d/5d/10d/20d/50d/100d/200d)",
         script="longi_future_performance.py",
         depends_on=[],  # Independent - reads only PotDat.csv
     ),
     # RETIRED 2026-07-31: future_gain20d / future_gain50d were replaced by the
     # future_performance family above. Scripts moved to _not_used/. Their two CSVs are
     # removed from Drive by longi_upload's rclone SYNC on the next run; every consumer
-    # (strategy/, strategy_grp/, group_conformity/) now reads longi_future_per1m.csv.
+    # (strategy_grp/, group_conformity/ — strategy/ archived same day) reads
+    # longi_future_per20d.csv (the "seven-pack" ladder replaced the old semantic
+    # 1d/1w/1m/3m/6m/1y labels with literal day counts the same day).
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="longi_across.py",

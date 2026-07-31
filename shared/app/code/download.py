@@ -237,7 +237,7 @@ def main() -> int:
         {
             'name': 'Longi derived files',
             'folder': 'repositoryRTBI/Longi',
-            'files': ['longi_rank.csv', 'longi_per1m.csv'],
+            'files': ['longi_rank.csv', 'longi_per20d.csv'],
             'local_path': '../input'
         },
     ]

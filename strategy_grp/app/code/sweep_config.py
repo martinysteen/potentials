@@ -91,10 +91,10 @@ DEFAULTS: dict = {
     "focusset_size":  cfg.FOCUSSET_SIZE,
     "step":           cfg.STEP,     # fixed at 1: finest phase-averaging for the chain;
                                           # step is otherwise second-order for the chain metric.
-    "period":         cfg.PERIOD,   # forward horizon in trading days; must be a key of
-                                          # shared.config.FUTURE_PERIOD_LABEL (1/5/22/66/132/264).
-                                          # Single value -> one column per strategy in
-                                          # best_strategy.
+    "period":         cfg.PERIOD,   # forward horizon in trading days; must be a member of
+                                          # shared.config.FUTURE_PERIODS, the "seven-pack"
+                                          # (1/5/10/20/50/100/200). Single value -> one column
+                                          # per strategy in best_strategy.
     "No_go_GSPC_rsi": cfg.NO_GO_GSPC_RSI,  # 0 = filter off; 40-50 = typical.
     "from_rank":      cfg.FROM_RANK,  # Which end of the priority_attribute ranking to draw
                                           # the focusset from (direction-aware — see

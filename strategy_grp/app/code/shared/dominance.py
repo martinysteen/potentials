@@ -336,7 +336,7 @@ def make_dom_strategy(strategy_name: str, params: dict, dom_col: str):
         import preflight
         preflight.ensure_data()
 
-        period: int = params.get("period", 22)
+        period: int = params.get("period", 20)
         gain_df  = load_longi(future_gain_file(period))
         dom_wide, cutoffs = _dom_data()
 

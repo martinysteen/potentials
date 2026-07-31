@@ -22,7 +22,7 @@ RCLONE_EXIT_CODE_1=$?
 
 echo "Copying from: $SOURCE_2"
 rclone copy "$SOURCE_2" "$RECEIVER" \
-    --include "{longi_per1d.csv,longi_grp_GICS_per1d.csv,longi_grp_Sector2_per1d.csv,longi_vola100d.csv,longi_future_per1m.csv,longi_future_per3m.csv}" \
+    --include "{longi_per1d.csv,longi_grp_GICS_per1d.csv,longi_grp_Sector2_per1d.csv,longi_vola100d.csv,longi_future_per20d.csv,longi_future_per50d.csv}" \
     --max-depth 1 --update --verbose --drive-skip-gdocs
 RCLONE_EXIT_CODE_2=$?
 

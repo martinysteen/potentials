@@ -384,7 +384,7 @@ def run_extension(
     get_focusset_fn(daynum) → list[str]  — strategy selector with pre-bound DataFrames
     get_ref_fn(daynum)      → dict       — market context (same as get_reference_values)
     """
-    period: int  = int(params.get("period", 22))
+    period: int  = int(params.get("period", 20))
     gain_df      = load_longi(future_gain_file(period))
     potdat       = load_potdat()
     beta_df      = _beta_frame()

@@ -1,7 +1,7 @@
 """
 Verdict: do extreme gains come from low-conformity group members?
 
-Reads the conformity grades from analyze_conformity.py and longi_future_per{1m,3m}.csv,
+Reads the conformity grades from analyze_conformity.py and longi_future_per{20,50}d.csv,
 builds a full (ticker, daynum) panel, and buckets it by conformity decile (and,
 separately, by sector-beta decile) to see whether low-conformity members produce
 wider dispersion / fatter tails in forward gain — not just a different mean.
@@ -24,12 +24,15 @@ import numpy as np
 import pandas as pd
 
 ATTRS = ["GICS", "Sector2"]
-# Forward horizons, named by the longi_future_per* suffix (1d/1w/1m/3m/6m/1y) produced by
-# longi/app/code/longi_future_performance.py. "1m" = 22 trading days, "3m" = 66.
-# These replaced future_gain{20,50}d.csv on 2026-07-31 — both the day counts and the entry
-# convention changed (entry is now the day AFTER the signal day), so results are NOT
-# comparable to conformity_vs_gain.csv rows written before that date.
-HORIZONS = ["1m", "3m"]
+# Forward horizons, named by the longi_future_per* suffix — the "seven-pack" literal
+# trading-day ladder (1d/5d/10d/20d/50d/100d/200d) produced by
+# longi/app/code/longi_future_performance.py. These replaced future_gain{20,50}d.csv on
+# 2026-07-31 — first via an intermediate 1m/3m (22/66-day) naming, then the same day
+# corrected to this literal 20d/50d ladder. The entry convention also changed (entry is now
+# the day AFTER the signal day), so results are NOT comparable to conformity_vs_gain.csv rows
+# written before 2026-07-31, even though "20d"/"50d" happen to match the old future_gain20d/
+# 50d day counts numerically.
+HORIZONS = ["20d", "50d"]
 N_DECILES = 10
 
 
@@ -283,7 +286,7 @@ def run(input_dir, conf_dir, output_dir, strategy_grp_report_dir):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Verdict: low-conformity group members vs. forward gain dispersion.")
     parser.add_argument("--input_dir", type=str, default="~/potentials/group_conformity/app/input",
-                        help="Directory with longi_future_per{1m,3m}.csv")
+                        help="Directory with longi_future_per{20,50}d.csv")
     parser.add_argument("--conf_dir", type=str, default="~/potentials/group_conformity/app/output",
                         help="Directory with longi_conf_*.csv / longi_sectorbeta_*.csv (analyze_conformity.py output)")
     parser.add_argument("--output_dir", type=str, default="~/potentials/group_conformity/app/output")

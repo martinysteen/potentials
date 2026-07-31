@@ -99,49 +99,51 @@ All tables follow PotDat.csv structure (rows=tickers, columns=daynums):
 3. **longi_macd.csv** - MACD(4,15,9) indicator ✓ IMPLEMENTED
 4. **longi_macd_Z.csv** - MACD histogram zero-crossings (ZOP/ZNED) ✓ IMPLEMENTED
 5. **longi_per1d.csv** - 1-day performance ✓ IMPLEMENTED
-6. **longi_per1w.csv** - 1-week performance ✓ IMPLEMENTED
-7. **longi_per1m.csv** - 1-month performance ✓ IMPLEMENTED
-8. **longi_per3m.csv** - 3-month performance ✓ IMPLEMENTED
-9. **longi_per6m.csv** - 6-month performance ✓ IMPLEMENTED
-10. **longi_per1y.csv** - 1-year performance ✓ IMPLEMENTED
-11. **longi_rank.csv** - Average rank across all performance periods ✓ IMPLEMENTED
-12. **longi_median_10d.csv** - 10-day rolling median of rank ✓ IMPLEMENTED
-13. **longi_median_20d.csv** - 20-day rolling median of rank ✓ IMPLEMENTED
-14. **longi_median_30d.csv** - 30-day rolling median of rank ✓ IMPLEMENTED
-15. **longi_median_40d.csv** - 40-day rolling median of rank ✓ IMPLEMENTED
-16. **longi_median_50d.csv** - 50-day rolling median of rank ✓ IMPLEMENTED
-17. **longi_median_100d.csv** - 100-day rolling median of rank ✓ IMPLEMENTED
-18. **longi_stepup.csv** - Step-up count (0-3) as uptrend measure ✓ IMPLEMENTED
-19. **longi_spr100d.csv** - Spread to 100-day maximum (% growth needed) ✓ IMPLEMENTED
-20. **longi_spr250d.csv** - Spread to 250-day maximum (% growth needed) ✓ IMPLEMENTED
-21. **longi_vola20d.csv** - 20-day volatility (returns-based stdev in %) ✓ IMPLEMENTED
-22. **longi_vola100d.csv** - 100-day volatility (returns-based stdev in %) ✓ IMPLEMENTED
-23. **longi_ma10.csv** - 10-day Simple Moving Average ✓ IMPLEMENTED
-24. **longi_ma20.csv** - 20-day Simple Moving Average ✓ IMPLEMENTED
-25. **longi_ma50.csv** - 50-day Simple Moving Average ✓ IMPLEMENTED
-26. **longi_ma200.csv** - 200-day Simple Moving Average ✓ IMPLEMENTED
-27. **longi_PdivMA20.csv** - Price / MA20 ratio (>100 = bullish) ✓ IMPLEMENTED
-28. **longi_PdivMA50.csv** - Price / MA50 ratio (>100 = bullish) ✓ IMPLEMENTED
-29. **longi_PdivMA200.csv** - Price / MA200 ratio (>100 = bullish) ✓ IMPLEMENTED
-30. **longi_sh3m.csv** - 3-month Sharpe ratio (return/volatility over 67 days) ✓ IMPLEMENTED
-31. **longi_sh6m.csv** - 6-month Sharpe ratio (return/volatility over 133 days) ✓ IMPLEMENTED
-32. **longi_sh1yr.csv** - 1-year Sharpe ratio (return/volatility over 265 days) ✓ IMPLEMENTED
-33. **longi_quot1020.csv** - MA10/MA20 quotient ×100, momentum speed (>100 = accelerating) ✓ IMPLEMENTED
-34. **longi_quot2050.csv** - MA20/MA50 quotient ×100, momentum speed (>100 = accelerating) ✓ IMPLEMENTED
+6. **longi_per5d.csv** - 5-day performance ✓ IMPLEMENTED
+7. **longi_per10d.csv** - 10-day performance ✓ IMPLEMENTED
+8. **longi_per20d.csv** - 20-day performance ✓ IMPLEMENTED
+9. **longi_per50d.csv** - 50-day performance ✓ IMPLEMENTED
+10. **longi_per100d.csv** - 100-day performance ✓ IMPLEMENTED
+11. **longi_per200d.csv** - 200-day performance ✓ IMPLEMENTED
+12. **longi_rank.csv** - Average rank across all performance periods ✓ IMPLEMENTED
+13. **longi_median_10d.csv** - 10-day rolling median of rank ✓ IMPLEMENTED
+14. **longi_median_20d.csv** - 20-day rolling median of rank ✓ IMPLEMENTED
+15. **longi_median_30d.csv** - 30-day rolling median of rank ✓ IMPLEMENTED
+16. **longi_median_40d.csv** - 40-day rolling median of rank ✓ IMPLEMENTED
+17. **longi_median_50d.csv** - 50-day rolling median of rank ✓ IMPLEMENTED
+18. **longi_median_100d.csv** - 100-day rolling median of rank ✓ IMPLEMENTED
+19. **longi_stepup.csv** - Step-up count (0-3) as uptrend measure ✓ IMPLEMENTED
+20. **longi_spr100d.csv** - Spread to 100-day maximum (% growth needed) ✓ IMPLEMENTED
+21. **longi_spr250d.csv** - Spread to 250-day maximum (% growth needed) ✓ IMPLEMENTED
+22. **longi_vola20d.csv** - 20-day volatility (returns-based stdev in %) ✓ IMPLEMENTED
+23. **longi_vola100d.csv** - 100-day volatility (returns-based stdev in %) ✓ IMPLEMENTED
+24. **longi_ma10.csv** - 10-day Simple Moving Average ✓ IMPLEMENTED
+25. **longi_ma20.csv** - 20-day Simple Moving Average ✓ IMPLEMENTED
+26. **longi_ma50.csv** - 50-day Simple Moving Average ✓ IMPLEMENTED
+27. **longi_ma200.csv** - 200-day Simple Moving Average ✓ IMPLEMENTED
+28. **longi_PdivMA20.csv** - Price / MA20 ratio (>100 = bullish) ✓ IMPLEMENTED
+29. **longi_PdivMA50.csv** - Price / MA50 ratio (>100 = bullish) ✓ IMPLEMENTED
+30. **longi_PdivMA200.csv** - Price / MA200 ratio (>100 = bullish) ✓ IMPLEMENTED
+31. **longi_sh3m.csv** - 3-month Sharpe ratio (return/volatility over 67 days) ✓ IMPLEMENTED
+32. **longi_sh6m.csv** - 6-month Sharpe ratio (return/volatility over 133 days) ✓ IMPLEMENTED
+33. **longi_sh1yr.csv** - 1-year Sharpe ratio (return/volatility over 265 days) ✓ IMPLEMENTED
+34. **longi_quot1020.csv** - MA10/MA20 quotient ×100, momentum speed (>100 = accelerating) ✓ IMPLEMENTED
+35. **longi_quot2050.csv** - MA20/MA50 quotient ×100, momentum speed (>100 = accelerating) ✓ IMPLEMENTED
 
 ### Forward-Looking Tables (longi_future_per*) — the backtest targets
 
 `longi_future_performance.py` is the forward-looking twin of `longi_performance.py` and emits
-the **same six-period ladder**, same day counts, same shape:
+the **same seven-period "seven-pack" ladder**, same day counts, same shape:
 
 | File | Days held | Newest blank columns |
 |------|-----------|----------------------|
 | `longi_future_per1d.csv` | 1 | 2 |
-| `longi_future_per1w.csv` | 5 | 6 |
-| `longi_future_per1m.csv` | 22 | 23 |
-| `longi_future_per3m.csv` | 66 | 67 |
-| `longi_future_per6m.csv` | 132 | 133 |
-| `longi_future_per1y.csv` | 264 | 265 |
+| `longi_future_per5d.csv` | 5 | 6 |
+| `longi_future_per10d.csv` | 10 | 11 |
+| `longi_future_per20d.csv` | 20 | 21 |
+| `longi_future_per50d.csv` | 50 | 51 |
+| `longi_future_per100d.csv` | 100 | 101 |
+| `longi_future_per200d.csv` | 200 | 201 |
 
 Where `longi_per*` assigns a **trailing** gain to the end date, these assign a **forward** gain
 to the **signal date** — at daynum `d` the cell answers "what would a position opened on the
@@ -157,9 +159,15 @@ gain[d] = (P[d+1+period_days] - P[d+1]) / P[d+1] * 100
 Hence `period_days + 1` blank columns at the newest end, not `period_days`.
 
 This family **replaced `future_gain20d.csv` / `future_gain50d.csv` on 2026-07-31** (scripts moved
-to `_not_used/`). Two things changed at once, so old and new results are not comparable: the
-horizons became 22/66 days rather than 20/50, and entry moved from `P[d]` to `P[d+1]` — the old
-files quietly assumed you could trade the very close you were reading.
+to `_not_used/`), in two steps the same day. First to a semantic ladder mirroring `longi_per*`'s
+old labels (`1d/1w/1m/3m/6m/1y` ≈ 1/5/22/66/132/264 days) — then, hours later, `longi_per*`
+itself was redefined to the literal **"seven-pack"** (1/5/10/20/50/100/200 days) because the
+semantic labels were unpopular and four of six didn't match a round day count anyway. The
+forward family follows suit. So relative to the *original* `future_gain20d/50d.csv`, two things
+changed: the day counts (20→20 and 50→50 are coincidentally unchanged in the final seven-pack,
+but the intermediate step wasn't — don't assume any given "N" survived unchanged without
+checking), and entry moved from `P[d]` to `P[d+1]` — the old files quietly assumed you could
+trade the very close you were reading.
 
 **These are NOT per-ticker features, despite the `longi_` prefix.** They are ticker-keyed and
 would join perfectly, which is exactly the danger. `longi_across.py` skips them by the
@@ -168,7 +176,8 @@ answer alongside the features. Keep them out of `aux_winloss_shared.FEATURE_FILE
 
 Verified on creation against the trailing family, which is the cheapest correctness check
 available — the two must satisfy `longi_future_perX[i] == longi_perX[i - 1 - days]` exactly.
-It held over all 4.09M overlapping cells.
+It held over all ~4.99M overlapping cells (seven periods; re-verified after the seven-pack
+correction, having first held over 4.09M cells for the six-period version).
 
 **QC interaction:** the blank newest columns are legitimate, so `aux_qc_repo.BLANK_LEAD_COLS`
 tells check 3 (data density) to start counting *after* that lead rather than flagging it. Add an
@@ -186,11 +195,12 @@ but **rows are sector names**, one per distinct value of a `Stamdata.csv` attrib
   sector with no data on a daynum gets a blank cell, not a missing row
 - Header row is `-;<daynum>;<daynum>;…`, mirroring `longi_per*.csv`
 
-**Available aggregations** — two performance families, one table per `longi_per*` metric:
-- **longi_grp_GICS_per1d.csv**, **_per1w**, **_per1m**, **_per3m**, **_per6m**, **_per1y**
+**Available aggregations** — two performance families, one table per `longi_per*` metric (the
+"seven-pack" ladder: 1d/5d/10d/20d/50d/100d/200d):
+- **longi_grp_GICS_per1d.csv**, **_per5d**, **_per10d**, **_per20d**, **_per50d**, **_per100d**, **_per200d**
   (13 GICS sectors: Basi, C-Di, C-St, Ener, Fina, Heal, Index, Indu, REIT, Tech, Tele, Util, na)
   ✓ IMPLEMENTED
-- **longi_grp_Sector2_per1d.csv**, **_per1w**, **_per1m**, **_per3m**, **_per6m**, **_per1y**
+- **longi_grp_Sector2_per1d.csv**, **_per5d**, **_per10d**, **_per20d**, **_per50d**, **_per100d**, **_per200d**
   (50 Sector2 values — the finer taxonomy; every ticker in Stamdata carries one, none blank)
   ✓ IMPLEMENTED
 
@@ -263,7 +273,7 @@ Main orchestrator that manages all processing modules with intelligent execution
   3. median_50d > median_100d → +1
 - Score range: 0-3 (higher = stronger uptrend)
 - NaN where any median is missing (first 99 columns from right have insufficient 100d history)
-- First 22 days (from left) are usable for correlation with 22-day forward gains
+- First 20 days (from left) are usable for correlation with 20-day forward gains
 
 #### longi_across.py - Cross-Sectional Data Extraction Module ✓ IMPLEMENTED
 - Contains `make_across(daynum, target_folder=None)` function
@@ -278,7 +288,7 @@ Main orchestrator that manages all processing modules with intelligent execution
 - **Output structure**:
   - Rows: Stock tickers
   - Columns: ticker_<daynum> (first column), then metric names (extracted from filenames), alphabetically sorted
-  - Example columns: ticker_2009, rsi, macd_line, macd_signal, macd_histogram, per1d, per1w, per1m, per3m, per6m, per1y, rank, median_10d, median_20d, median_30d, median_40d, median_50d, median_100d, stepup
+  - Example columns: ticker_2009, rsi, macd_line, macd_signal, macd_histogram, per1d, per5d, per10d, per20d, per50d, per100d, per200d, rank, median_10d, median_20d, median_30d, median_40d, median_50d, median_100d, stepup
 - **Manual historical generation**: Use make_across() function for creating backfilled files for specific daynums
   - From Python: `from longi_across import make_across; make_across(1950, "/path/to/folder")`
   - From CLI: `python3 longi_across.py 1950 --target-folder=/path/to/folder`
@@ -297,9 +307,10 @@ Follow the same pattern:
 - ✓ Pipeline orchestrator (longi.py) fully implemented
   - Dependency management working
   - Parallel execution capability ready
-  - 45 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_GICS_per1d, grp_GICS_per1w, grp_GICS_per1m, grp_GICS_per3m, grp_GICS_per6m, grp_GICS_per1y, grp_Sector2_per1d, grp_Sector2_per1w, grp_Sector2_per1m, grp_Sector2_per3m, grp_Sector2_per6m, grp_Sector2_per1y, coreindex, coreindexRSI, beta3m, beta6m, beta1yr, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_performance, across
+  - 47 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_GICS_per1d, grp_GICS_per5d, grp_GICS_per10d, grp_GICS_per20d, grp_GICS_per50d, grp_GICS_per100d, grp_GICS_per200d, grp_Sector2_per1d, grp_Sector2_per5d, grp_Sector2_per10d, grp_Sector2_per20d, grp_Sector2_per50d, grp_Sector2_per100d, grp_Sector2_per200d, coreindex, coreindexRSI, beta3m, beta6m, beta1yr, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_performance, across
     (`future_gain20d`/`future_gain50d` were retired 2026-07-31 — one `future_performance`
-    module now emits the whole `longi_future_per*` ladder)
+    module now emits the whole `longi_future_per*` "seven-pack" ladder — 1d/5d/10d/20d/50d/100d/200d,
+    replacing the earlier six-entry semantic ladder the same day)
 - ✓ longi_price.py fully implemented
   - Outputs: longi_price.csv (byte-exact copy of PotDat.csv via shutil.copyfile, no reformatting)
   - Purpose: (a) reference raw price data under the longi_ naming convention, (b) record the exact PotDat.csv snapshot used to derive all longi_*.csv outputs for this run, since PotDat.csv is updated asynchronously relative to them
@@ -336,16 +347,16 @@ Follow the same pattern:
   - MA speed quotients: (fast MA / slow MA) * 100 (>100 = accelerating/bullish)
   - Dependencies: corresponding MA modules (ma10+ma20 resp. ma20+ma50)
   - Choosers for the advice strategies (see expAdviceModel/REPORT 6k/6l)
-- ✓ longi_grp_GICS_per1d/per1w/per1m/per3m/per6m/per1y.py fully implemented
-  - Outputs: output/longi_grp_GICS_per{1d,1w,1m,3m,6m,1y}.csv (13 GICS sector rows each)
+- ✓ longi_grp_GICS_per1d/per5d/per10d/per20d/per50d/per100d/per200d.py fully implemented
+  - Outputs: output/longi_grp_GICS_per{1d,5d,10d,20d,50d,100d,200d}.csv (13 GICS sector rows each)
   - Each is a thin wrapper on aux_grp_shared.build_group_average(metric, group_col="GICS")
   - Values: plain mean of the sector's tickers, NaN-skipping
   - Dependencies: performance module (the corresponding longi_per*.csv)
-- ✓ longi_grp_Sector2_per1d/per1w/per1m/per3m/per6m/per1y.py fully implemented
-  - Outputs: output/longi_grp_Sector2_per{1d,1w,1m,3m,6m,1y}.csv (50 Sector2 rows each)
+- ✓ longi_grp_Sector2_per1d/per5d/per10d/per20d/per50d/per100d/per200d.py fully implemented
+  - Outputs: output/longi_grp_Sector2_per{1d,5d,10d,20d,50d,100d,200d}.csv (50 Sector2 rows each)
   - Identical to the GICS family but with group_col="Sector2"
 - ✓ longi_future_performance.py fully implemented
-  - Outputs: longi_future_per{1d,1w,1m,3m,6m,1y}.csv — forward gains on the same day
+  - Outputs: longi_future_per{1d,5d,10d,20d,50d,100d,200d}.csv — forward gains on the same day
     counts as longi_performance.py, assigned to the SIGNAL day, entered at signal+1
   - Independent module (reads only PotDat.csv); nothing depends on it — and `across`
     deliberately does NOT, see the skip guard in longi_across.py

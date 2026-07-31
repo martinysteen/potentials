@@ -33,11 +33,12 @@ GROUP_COLUMNS: tuple[str, ...] = ("GICS", "Sector2")
 # The "classic" backtest knobs, common to every strategy in this project.
 FOCUSSET_SIZE: int = 5             # tickers picked per hop
 STEP: int = 5                        # daynum step between hops
-PERIOD: int = 22                     # forward horizon in trading days. Must be a key of
-                                      # shared.config.FUTURE_PERIOD_LABEL, i.e. one of the
-                                      # longi_future_per* ladder: 1, 5, 22, 66, 132, 264.
-                                      # 22 = "1 month", the primary horizon. Doubles as the
-                                      # hold length the chain spaces its lots by.
+PERIOD: int = 20                     # forward horizon in trading days. Must be a member of
+                                      # shared.config.FUTURE_PERIODS, the "seven-pack" ladder:
+                                      # 1, 5, 10, 20, 50, 100, 200. 20 is the primary horizon —
+                                      # "20d dominations" reveal strategy variation cleanly, so
+                                      # no second horizon is swept. Doubles as the hold length
+                                      # the chain spaces its lots by.
 NO_GO_GSPC_RSI: int = 0             # suppress picks / chain hops when GSPC RSI < this
 FROM_RANK: int = 1                   # which end of the (already directionally-graded)
                                       # priority_attribute pool to draw the focusset from:
@@ -157,8 +158,8 @@ PRIORITY_ATTRIBUTE_DICTIONARY: dict[str, bool] = {
     #"PdivMA20":       False,
     #"PdivMA50":       False,
     #"per1d" :         False,
-    #"per1w" :         False,
-    #"per1m":          False,
+    #"per5d" :         False,
+    #"per20d":         False,
     #"quot1020":       False,
     #"quot2050":       False,
     "rank":           False,       #rank=True (små-er-bedst) giver avg_gain=5% & worst=-36%
@@ -189,8 +190,8 @@ TICKERS_PER_GROUP: int = 3  # top candidates (by PRIORITY_ATTRIBUTE) drawn from 
 # other one's. Each value may be a single Longi factor short name or a list of several.
 # ---------------------------------------------------------------------------
 INFORMATIONAL_ATTRIBUTES: dict[str, list[str]] = {
-    "GICS":    ["per1m","rank", "rsi", "spr100d"],
-    "Sector2": ["per1m","rank", "rsi", "spr100d"],
+    "GICS":    ["per20d", "rank", "rsi", "spr100d"],
+    "Sector2": ["per20d", "rank", "rsi", "spr100d"],
 }
 
 

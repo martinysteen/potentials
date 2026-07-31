@@ -78,12 +78,12 @@ REFERENCE_TICKERS: Final[list[str]] = ["^GSPC", "^STOXX", "^HSI", "^VIX"]
 # the training window by, and that sizes the extension's still-open window. Only the
 # FILENAME is looked up here, so none of that arithmetic has to change.
 #
-# Day counts mirror longi/app/code/longi_performance.py exactly — the forward family is the
-# same ladder as the trailing longi_per* one. Entry is the day AFTER the signal day
-# (see longi_future_performance.py), so a hop at daynum d buys at d+1.
-FUTURE_PERIOD_LABEL: Final[dict[int, str]] = {
-    1: "1d", 5: "1w", 22: "1m", 66: "3m", 132: "6m", 264: "1y",
-}
+# Day counts mirror longi/app/code/longi_performance.py exactly — the "seven-pack": literal
+# trading-day counts (1/5/10/20/50/100/200), so the label is always just f"{period}d" — no
+# lookup table needed since 2026-07-31 (before that, labels were semantic — 1m/3m/etc — and
+# didn't match the day count literally, which is why this used to be a dict). Entry is the
+# day AFTER the signal day (see longi_future_performance.py), so a hop at daynum d buys at d+1.
+FUTURE_PERIODS: Final[tuple[int, ...]] = (1, 5, 10, 20, 50, 100, 200)
 
 
 def future_gain_file(period: int) -> str:
@@ -93,10 +93,10 @@ def future_gain_file(period: int) -> str:
     file does not crash anything downstream, it produces a complete and entirely
     plausible report measured against the wrong future.
     """
-    try:
-        return f"longi_future_per{FUTURE_PERIOD_LABEL[int(period)]}.csv"
-    except KeyError:
+    period = int(period)
+    if period not in FUTURE_PERIODS:
         raise ValueError(
             f"period={period} has no longi_future_per*.csv counterpart. "
-            f"Valid periods: {sorted(FUTURE_PERIOD_LABEL)}"
-        ) from None
+            f"Valid periods: {list(FUTURE_PERIODS)}"
+        )
+    return f"longi_future_per{period}d.csv"

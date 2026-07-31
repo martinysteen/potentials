@@ -18,19 +18,21 @@ the exit is period_days after that:
 This deliberately differs from the retired future_gain20d/50d.csv, which entered at
 P[d] and so quietly assumed you could trade the very close you were reading.
 
-Time periods — IDENTICAL day counts to longi_performance.py, deliberately:
-- 1 day (1 trading day)
-- 1 week (5 trading days)
-- 1 month (22 trading days)
-- 3 months (66 trading days)
-- 6 months (132 trading days)
-- 1 year (264 trading days)
+Time periods — IDENTICAL day counts to longi_performance.py, deliberately (the "seven-pack",
+literal trading-day counts, replacing the old semantic 1d/1w/1m/3m/6m/1y ladder 2026-07-31):
+- 1 day
+- 5 days
+- 10 days
+- 20 days
+- 50 days
+- 100 days
+- 200 days
 
 Array layout: [0]=newest (e.g., 2202), [n-1]=oldest (e.g., 1543)
 Signal day d sits at index i, so entry is index i-1 and exit is index i-1-period_days.
 The newest period_days+1 columns are therefore empty — that future has not happened yet.
 
-Outputs longi_future_per{1d,1w,1m,3m,6m,1y}.csv.
+Outputs longi_future_per{1d,5d,10d,20d,50d,100d,200d}.csv.
 
 NOTE: these files carry the longi_ prefix but are NOT usable as per-ticker features.
 longi_across.py skips them by the `longi_future_` prefix; putting a realized forward
@@ -61,11 +63,12 @@ class TimePeriod:
 
 PERIODS = [
     TimePeriod("1 day", 1, "longi_future_per1d.csv"),
-    TimePeriod("1 week", 5, "longi_future_per1w.csv"),
-    TimePeriod("1 month", 22, "longi_future_per1m.csv"),
-    TimePeriod("3 months", 66, "longi_future_per3m.csv"),
-    TimePeriod("6 months", 132, "longi_future_per6m.csv"),
-    TimePeriod("1 year", 264, "longi_future_per1y.csv"),
+    TimePeriod("5 days", 5, "longi_future_per5d.csv"),
+    TimePeriod("10 days", 10, "longi_future_per10d.csv"),
+    TimePeriod("20 days", 20, "longi_future_per20d.csv"),
+    TimePeriod("50 days", 50, "longi_future_per50d.csv"),
+    TimePeriod("100 days", 100, "longi_future_per100d.csv"),
+    TimePeriod("200 days", 200, "longi_future_per200d.csv"),
 ]
 
 

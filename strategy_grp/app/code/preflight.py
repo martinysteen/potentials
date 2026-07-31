@@ -88,7 +88,7 @@ def required_files() -> tuple[list[str], list[str]]:
     # --- per-strategy: the forward-gain horizon(s) and any filter-chain sources ---
     for module in _strategy_modules():
         params = getattr(module, "PARAMS", {})
-        required.add(f"Longi/{config.future_gain_file(params.get('period', 22))}")
+        required.add(f"Longi/{config.future_gain_file(params.get('period', 20))}")
         for key in ("dominance_attribute", "priority_attribute"):
             if params.get(key):
                 required.add(_longi(params[key]))
@@ -128,7 +128,7 @@ def _informational(params: dict) -> list[str]:
 def _swept_periods() -> list[int]:
     try:
         import sweep_config
-        value = sweep_config.DEFAULTS.get("period", 22)
+        value = sweep_config.DEFAULTS.get("period", 20)
     except Exception:                             # noqa: BLE001
         return []
     return [int(v) for v in (value if isinstance(value, list) else [value])]
