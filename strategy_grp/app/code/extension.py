@@ -40,9 +40,15 @@ from shared.config import REPORT_ROOT
 # Params a run row may carry that a strategy consumes; others keep module defaults.
 # Integer-valued keys are rounded to int; the rest are taken as floats.
 _INT_PARAMS   = {"focusset_size", "step", "period", "No_go_GSPC_rsi", "from_rank",
-                 "corner_bins", "dom_count_threshold", "tickers_per_gics"}
+                 "corner_bins", "dom_count_threshold", "tickers_per_group"}
 _FLOAT_PARAMS = {"vola_keep_frac", "q10_20_min", "q20_50_min", "persistence_frac",
                  "dominance_threshold_decile"}
+# group_column is deliberately in NEITHER set. It is a string, and it is never swept — it
+# defines the strategy family and is fixed in the strategy module — so the module's own
+# value is always the right one and _params_from_row must leave it alone. Do not "fix" this
+# by adding a string-params set: reading it back from the aggregated row is how a Sector2
+# strategy would end up rebuilt on GICS. (Same reasoning already applies to
+# priority_attribute, which IS swept but is re-bound by the sweep, not by this path.)
 
 
 def _params_from_row(module, row: pd.Series) -> dict:

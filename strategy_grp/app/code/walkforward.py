@@ -97,25 +97,34 @@ WIDE_AXES: dict[str, list] = {
     "from_rank":                  [1, -1],
     "No_go_GSPC_rsi":             [0, 40, 45],
     "dominance_threshold_decile": [0.05, 0.10, 0.20],
-    "tickers_per_gics":           [2, 3, 5],
+    "tickers_per_group":          [2, 3, 5],
 }
+# group_column is deliberately NOT an axis: it defines the strategy family, and each family
+# is already walked forward separately. dom_count_threshold is not one either — its scale
+# depends on the group criterion (see run_config.DOM_COUNT_THRESHOLD), so one shared axis
+# would be meaningless across families.
 
 # Params that change WHICH TICKERS a hop picks (or what their gain is). Two parameter-sets
 # agreeing on all of these produce an identical hop series, so it is built once and shared.
 # No_go_GSPC_rsi is deliberately absent: it gates hops at scoring time inside
 # shared.chain, it does not change the picks — which makes it a free grid axis.
+#
+# group_column MUST be in here. DomGICS_now and DomSector2_now are identical in every other
+# param, so without it they collide in _series_cache and the second family silently scores
+# the first family's picks — a result that looks entirely plausible in the report.
 _PICK_KEYS: tuple[str, ...] = (
+    "group_column",
     "dominance_threshold_decile", "dom_count_threshold", "persistence_frac",
     "dominance_attribute", "dominance_attribute_direction",
-    "tickers_per_gics", "focusset_size", "from_rank",
+    "tickers_per_group", "focusset_size", "from_rank",
     "priority_attribute", "priority_attribute_direction", "step", "period",
 )
 
 # The grid axes worth naming in the report — the rest are constant across a run and
-# would just be noise in a column.
+# would just be noise in a column. group_column is absent: the strategy name carries it.
 _LABEL_KEYS: tuple[str, ...] = (
     "priority_attribute", "from_rank", "No_go_GSPC_rsi",
-    "dominance_threshold_decile", "tickers_per_gics", "focusset_size",
+    "dominance_threshold_decile", "tickers_per_group", "focusset_size",
 )
 
 
@@ -128,14 +137,19 @@ _series_cache: dict[tuple, list[tuple[int, float, float]]] = {}
 
 
 def _dom_table(params: dict, dom_col: str) -> pd.DataFrame:
-    """One tier's GICS x daynum dominance table, memoized on the Step-1 params.
+    """One tier's group x daynum dominance table, memoized on the Step-1 params.
 
     dominance_tables() builds all three tiers in one pass and is the expensive call in
     the whole harness, so a grid that varies only Step-2 params pays for it once.
+
+    `key` is splatted straight into dominance_tables(*key), so its ORDER must match that
+    signature — group_column last. It is part of the key for the same reason it is in
+    _PICK_KEYS: two criteria with identical Step-1 params build entirely different tables.
     """
     key = (params["dominance_threshold_decile"], params["dom_count_threshold"],
            params["persistence_frac"], params.get("dominance_attribute", "rank"),
-           params.get("dominance_attribute_direction", True))
+           params.get("dominance_attribute_direction", True),
+           params["group_column"])
     if key not in _dom_cache:
         _dom_cache[key] = dominance_tables(*key)
     tables, _cutoffs = _dom_cache[key]
@@ -166,10 +180,11 @@ def hop_series(params: dict, dom_col: str) -> list[tuple[int, float, float]]:
     daynum = start
     while daynum >= stop:
         col = str(daynum)
-        tickers = select_focusset(daynum, dom, params["tickers_per_gics"],
+        tickers = select_focusset(daynum, dom, params["tickers_per_group"],
                                   params["focusset_size"], params.get("from_rank", 1),
                                   params.get("priority_attribute", "rank"),
-                                  params.get("priority_attribute_direction", True))
+                                  params.get("priority_attribute_direction", True),
+                                  params["group_column"])
         vals = [gain_df.at[t, col] for t in tickers
                 if t in gain_df.index and col in gain_df.columns
                 and pd.notna(gain_df.at[t, col])]

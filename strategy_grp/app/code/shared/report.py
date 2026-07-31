@@ -576,7 +576,7 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
 # ---------------------------------------------------------------------------
 
 def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
-                  hop_results: list[dict]) -> None:
+                  hop_results: list[dict], extra_summary: dict | None = None) -> None:
     daynums = [h["daynum"] for h in hop_results]
     n       = params.get("focusset_size", 10)
 
@@ -626,6 +626,14 @@ def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
     rows.append(("origin_sens%", round(sens, 1) if pd.notna(sens) else None))
     rows.append(("N_loss", n_loss))
     rows.append(("Worst", round(worst, 4) if pd.notna(worst) else None))
+
+    # Caller-supplied diagnostics that only the strategy pipeline can compute (the Dom_*
+    # families' pick_turnover/group_turnover need the dominance table, which never reaches
+    # this module). Written last so the block above keeps a fixed shape; aggregate_summary
+    # turns any new key into a column on its own.
+    for key, value in (extra_summary or {}).items():
+        rows.append((key, round(value, 4) if isinstance(value, float) and pd.notna(value)
+                     else (None if isinstance(value, float) else value)))
 
     ws.column_dimensions["A"].width = 24
     ws.column_dimensions["B"].width = 18
@@ -694,17 +702,18 @@ def _summary_header() -> list[str]:
 
 
 def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
-                        hop_results: list[dict]) -> None:
+                        hop_results: list[dict], extra_summary: dict | None = None) -> None:
     daynums = [h["daynum"] for h in hop_results]
     n       = params.get("focusset_size", 10)
 
     def _fmt(val: float) -> str:
         return "" if pd.isna(val) else f"{val:.4f}".replace(".", ",")
 
+    extra_summary = extra_summary or {}
     param_cols   = list(params.keys())
     avg_labels   = [r[0] for r in _avg_rows(n)] + ["avg_alpha", "avg_beta"]
     chain_labels = _chain_metric_labels()
-    extra_cols   = ["origin_sens%", "N_loss", "Worst"]
+    extra_cols   = ["origin_sens%", "N_loss", "Worst"] + list(extra_summary)
     all_cols     = (["StrategyName", "Run#", "StartDaynum", "N_hops", "N_hops_active", "EndDaynum"]
                     + param_cols + avg_labels + chain_labels + extra_cols)
 
@@ -743,7 +752,7 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
             "" if pd.isna(sens) else f"{sens:.1f}".replace(".", ","),
             n_loss,
             _fmt(worst),
-        ]
+        ] + [_fmt(v) if isinstance(v, float) else v for v in extra_summary.values()]
         usable   = _usable_daynums(hop_results, _GAIN_KEY, params)
         start_dn = min(usable) if usable else (min(daynums) if daynums else "")
         end_dn   = max(usable) if usable else (max(daynums) if daynums else "")
@@ -760,13 +769,20 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
 # ---------------------------------------------------------------------------
 
 def save_report(strategy_name: str, params: dict, hop_results: list[dict],
-                run_num: int | None = None) -> None:
+                run_num: int | None = None, extra_summary: dict | None = None) -> None:
     """
     Write one Excel file and append one row to the master summary CSV.
 
     hop_results items contain:
         daynum, tickers (rank-ordered), gains_20d, gains_50d,
         ref_values (market context at daynum)
+
+    extra_summary: extra {label: value} Summary rows / summary.csv columns the caller
+    computed itself, for diagnostics this module cannot derive from hop_results alone
+    (the Dom_* families' pick_turnover/group_turnover need the dominance table). Appended
+    after the chain-dispersion block; aggregate_summary.py picks up new keys on its own.
+    Keep the key set stable per strategy — summary.csv archives and restarts whenever its
+    column set changes.
     """
     folder = REPORT_ROOT / strategy_name
     folder.mkdir(parents=True, exist_ok=True)
@@ -783,12 +799,12 @@ def save_report(strategy_name: str, params: dict, hop_results: list[dict],
     _fill_operational(ws_op, hop_results, params)
 
     ws_sum = wb.create_sheet("Summary")
-    _fill_summary(ws_sum, strategy_name, run_num, params, hop_results)
+    _fill_summary(ws_sum, strategy_name, run_num, params, hop_results, extra_summary)
 
     ws_hop = wb.create_sheet("HopData")
     _fill_hopdata(ws_hop, hop_results, params)
 
     wb.save(xlsx_path)
-    _append_summary_csv(strategy_name, run_num, params, hop_results)
+    _append_summary_csv(strategy_name, run_num, params, hop_results, extra_summary)
 
     print(f"** Report written: {xlsx_path} **")

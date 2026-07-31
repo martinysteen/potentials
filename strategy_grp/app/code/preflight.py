@@ -77,8 +77,13 @@ def required_files() -> tuple[list[str], list[str]]:
         required.add(_longi(attribute))
     for attribute in cfg.PRIORITY_ATTRIBUTE_DICTIONARY:
         required.add(_longi(attribute))
-    for attribute in cfg.INFORMATIONAL_ATTRIBUTES:
-        required.add(_longi(attribute))
+    # INFORMATIONAL_ATTRIBUTES is keyed by group_column, and the union across ALL criteria is
+    # the point: both longi_conf_GICS.csv and longi_conf_Sector2.csv get checked and frozen
+    # whichever families happen to be configured. They come from the same group_conformity
+    # cron, so the same-newest-daynum rule already covers the pair.
+    for attribute_list in cfg.INFORMATIONAL_ATTRIBUTES.values():
+        for attribute in attribute_list:
+            required.add(_longi(attribute))
 
     # --- per-strategy: the forward-gain horizon(s) and any filter-chain sources ---
     for module in _strategy_modules():

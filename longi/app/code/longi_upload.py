@@ -103,7 +103,7 @@ def main() -> int:
         "--verbose",
         "--drive-skip-gdocs",
         "--exclude", "*.txt",
-        "--exclude", "*.gdoc",
+        "--exclude", "longi_conf_*.csv",
     ]
 
     UPLOAD_TASKS = [

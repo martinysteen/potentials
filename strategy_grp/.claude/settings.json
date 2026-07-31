@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"//Gandalf/sm-home/potentials/strategy_grp/\" 2>/dev/null | head -60)",
+      "Read(///Gandalf/sm-home/potentials/**)",
+      "Bash(ls \"//Gandalf/sm-home/potentials/strategy_grp/\"*.md \"//Gandalf/sm-home/potentials/strategy/\"*.md \"//Gandalf/sm-home/potentials/\"*.md 2>/dev/null)",
+      "Read(///Gandalf/sm-home/potentials/strategy_grp/**)",
+      "Bash(cd \"//Gandalf/sm-home/potentials/strategy_grp/app/code\" && grep -rn \"load_longi\\\\|except\\\\b\" --include=*.py . | head -80)",
+      "Read(///Gandalf/sm-home/potentials/strategy_grp/app/**)",
+      "Bash(cd \"//Gandalf/sm-home/potentials/strategy_grp/app/code\" && grep -rn \"DATA_ROOT\\\\|DATA_LONGI\\\\|POTDAT_PATH\\\\|STAMDATA_PATH\\\\|CAL_PATH\" --include=*.py . )",
+      "Bash(cd \"//Gandalf/sm-home/potentials/strategy_grp/app/code\" && sed -n '1,60p' walkforward.py | tail -35; echo \"=== walkforward main ===\"; grep -n \"def main\\\\|__main__\" walkforward.py)"
+    ],
+    "additionalDirectories": [
+      "\\\\gandalf\\sm-home\\potentials\\strategy_grp\\app\\code\\shared",
+      "\\\\gandalf\\sm-home\\potentials\\strategy_grp\\app\\code\\strategies",
+      "\\\\gandalf\\sm-home\\potentials\\strategy_grp\\app\\code",
+      "\\\\gandalf\\sm-home\\tmp",
+      "\\\\gandalf\\sm-home\\potentials\\strategy_grp"
+    ]
+  }
+}

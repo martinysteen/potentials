@@ -20,11 +20,13 @@ have been stripped back out. This project's own named strategies, once defined, 
 one via the sweep, with results assembled into this project's own `best_strategy.xlsx` —
 independent of `strategy`'s roster and history.
 
-**Current status: the DomGICS_* family (GICS-sector "domination") is the first named strategy
-group** — `DomGICS_now`, `DomGICS_20d`, `DomGICS_50d`, registered in `sweep_config.py`. See
-"GICS Domination Strategy Family" below for the selection logic and `shared/dominance.py` for
-the implementation. Add further strategies (filter-based or otherwise) the same way: drop a file
-in `strategies/`, register it in `sweep_config.py`, and it shows up everywhere automatically.
+**Current status: two group-domination families, one pipeline** — `DomGICS_now/_20d/_50d` and
+`DomSector2_now/_20d/_50d`, all six registered in `sweep_config.py` and competing as six columns
+in one `best_strategy.xlsx`. They differ in exactly one parameter, `group_column` (the Stamdata
+column tickers are bucketed by): GICS's 13 sectors or Sector2's 50. See "Group Domination
+Strategy Family" below for the selection logic and `shared/dominance.py` for the implementation.
+Add further strategies (filter-based or otherwise) the same way: drop a file in `strategies/`,
+register it in `sweep_config.py`, and it shows up everywhere automatically.
 
 ---
 
@@ -49,13 +51,17 @@ strategy_grp/
     │   │   ├── report.py                 # per-run Excel writer (save_report) + master summary.csv
     │   │   ├── extension.py              # partial-gain extension runner (period-driven)
     │   │   ├── datacheck.py              # INPUT GUARD: preflight + snapshot (see "Input Data Guard")
-    │   │   └── dominance.py              # GICS-domination pipeline for DomGICS_* (see below)
+    │   │   └── dominance.py              # group-domination pipeline for both Dom* families (below)
     │   ├── preflight.py                  # WHICH files a run needs + ensure_data() — the guard's front door
-    │   ├── run_config.py                 # tunables for the DomGICS_* family (separate from sweep_config.py)
+    │   ├── run_config.py                 # tunables for both Dom* families + dom_params() — the one
+    │   │                                 #   copy of the shared 15-key PARAMS dict
     │   └── strategies/
-    │       ├── strategy_DomGICS_now.py   # dominating GICS THIS daynum
-    │       ├── strategy_DomGICS_20d.py   # + persistence over trailing 20 daynums
-    │       └── strategy_DomGICS_50d.py   # + persistence over trailing 50 daynums
+    │       ├── strategy_DomGICS_now.py      # dominating GICS THIS daynum
+    │       ├── strategy_DomGICS_20d.py      # + persistence over trailing 20 daynums
+    │       ├── strategy_DomGICS_50d.py      # + persistence over trailing 50 daynums
+    │       ├── strategy_DomSector2_now.py   # the same three tiers on Sector2's 50 groups —
+    │       ├── strategy_DomSector2_20d.py   #   group_column is the ONLY intended difference
+    │       └── strategy_DomSector2_50d.py   #   (dom_count_threshold follows from it)
     ├── data/
     │   └── input/                        # the frozen input SNAPSHOT a run reads (rebuilt per
     │                                     #   run, gitignored) + snapshot.json (its vintage)
@@ -129,8 +135,12 @@ unsynchronised cron jobs rewrite `repositoryRTBI/data/` all day:
 | `:15` | `longi/start_longi.sh` | rebuilds the `longi_*` family |
 | `:30` | `group_conformity/run_conf.sh` | rebuilds the `longi_conf_*` / `longi_sectorbeta_*` family |
 
-A run now needs files from **both** families (`INFORMATIONAL_ATTRIBUTES` includes
-`conf_GICS`), and between `:15` and `:30` they are never the same generation. Two bad states
+A run now needs files from **both** families (`INFORMATIONAL_ATTRIBUTES` includes `conf_GICS` and
+`conf_Sector2`), and between `:15` and `:30` they are never the same generation. Seen live on
+2026-07-30: the `:30` conformity job took 7m50s to upload 89 MB, the `:37` sync landed mid-upload
+and pulled `longi_conf_Sector2.csv` only — so `longi_conf_GICS.csv` was **deleted** locally (a sync
+mirrors deletions) and preflight failed correctly until the job's own trailing sync restored it at
+`:41`. Transient, and exactly what the guard is for. Two bad states
 follow, and **the second is the dangerous one**:
 
 * **A file is gone.** pandas raised deep inside a strategy, `run_sweep.run_strategy`'s blanket
@@ -245,12 +255,13 @@ prices (`PotNdx.csv`), a rich ranking snapshot (`PotRank.csv`), and historical f
 any strategy in `../strategy/`.
 
 **Do not use** `Longi/longi_grp_*.csv` as per-ticker features — they are sector-row aggregates
-(rows are GICS sector names, not tickers, so an inner join on ticker yields nothing). The current
+(rows are sector names, not tickers, so an inner join on ticker yields nothing). The current
 families are `longi_grp_GICS_per{1d,1w,1m,3m,6m,1y}.csv` (13 rows) and
 `longi_grp_Sector2_per*.csv` (50 rows), added 2026-07-29: the mean of each sector's tickers, same
-shape as the matching `longi_per*.csv`. Potentially interesting to this project as a
-**sector-level** signal — the Sector2 family in particular, given the pending "Sector2 grouping"
-idea — but it would need its own pipeline stage, not a filter.
+shape as the matching `longi_per*.csv`. **Not** what the `DomSector2_*` family uses — that groups
+by the `Sector2` column of `Stamdata.csv` and aggregates per-ticker factors itself. These files are
+still untapped; their natural use is the **market rotation rate** the turnover diagnostics want to
+be compared against (see "Turnover" in the family section).
 
 ---
 
@@ -340,11 +351,12 @@ they earn their place in an index selloff, where an open position's loss belongs
 rather than to the picks. Row offsets advance through `next_row`, so inserting the block could
 not desync the informational/ref rows the way it did on the main sheet.
 
-### `shared/dominance.py` — GICS-domination pipeline (new, not from `../strategy/`)
-The preprocessing stage behind the DomGICS_* family — see "GICS Domination Strategy Family" below
+### `shared/dominance.py` — group-domination pipeline (new, not from `../strategy/`)
+The preprocessing stage behind both Dom* families — see "Group Domination Strategy Family" below
 for the full write-up. `make_dom_strategy(strategy_name, params, dom_col)` is this module's
-`make_strategy()` analog: it returns the same `(main, build_extension)` pair, so a DomGICS_*
-strategy file is still a short declaration, just built on this pipeline instead of the filter chain.
+`make_strategy()` analog: it returns the same `(main, build_extension)` pair, so a Dom* strategy
+file is still a short declaration, just built on this pipeline instead of the filter chain. Also
+holds `turnover_stats` (the flicker diagnostics).
 
 ### `extension.py` — build the single combined report
 Standalone daily tool (no sweep needed; the sweep is for development) and the project's one
@@ -370,7 +382,7 @@ Each item in the list passed to `save_report`:
     "gains":           dict[str, float],  # {ticker: realised gain over `period` days, %}
     "ref_values":      dict[str, float],  # market context at daynum
     "n_survivors":     int,               # OPTIONAL — set when a strategy has ≥2 filters
-    "dom_cutoff":      float,             # OPTIONAL — DomGICS_* only: that daynum's Step-1
+    "dom_cutoff":      float,             # OPTIONAL — Dom* families only: that daynum's Step-1
                                            # dominance cutoff (see dominance_cutoff row/avg)
 }
 ```
@@ -388,7 +400,7 @@ There is a **single `gains` dict** per hop — the horizon is `period`, not two 
 |------|---------|--------|
 | 1 | A1=`No_go_GSPC_rsi` label \| daynum headers | Blue |
 | 2 | A2=editable No_go threshold \| date headers | A2 amber, rest blue |
-| 3 *(optional)* | `dominance_cutoff` per hop — only when hops carry `"dom_cutoff"` (DomGICS_* family); label (A) bold, data cells plain text | Pale green |
+| 3 *(optional)* | `dominance_cutoff` per hop — only when hops carry `"dom_cutoff"` (Dom* families); label (A) bold, data cells plain text | Pale green |
 | next N rows | Ticker names, rank 1→N | — |
 | *(optional)* | `N_survivors` per hop — only when hops carry `"n_survivors"` | Pale blue |
 | next | `avg_gain` (single row; top-N avg over `period`) | Green/red/grey |
@@ -396,7 +408,7 @@ There is a **single `gains` dict** per hop — the horizon is `period`, not two 
 | *(optional)* | `beta` — mean `beta3m` of the focusset; only when `longi_beta3m.csv` loads | Pale grey |
 | next 2 per informational attribute | `<attr>_mean` / `<attr>_median` | — |
 | next 4 | `^GSPC_rsi`, `^STOXX_rsi`, `^HSI_rsi`, `^VIX` | Yellow |
-| … | GICS / Sector2 / Zone occurrence counts | Purple / peach / teal |
+| … | GICS / Sector2 / Zone occurrence counts — **both** breakdowns are written for every strategy regardless of `group_column`, which is what lets a Sector2 run be read against its GICS twin | Purple / peach / teal |
 
 `avg_gain`, `mkt_gain` and `alpha` are all Excel formulas `=IF(<gspc_rsi cell> < $A$2, "", value)`
 — editing the A2 threshold recalculates the no-go suppression live, and all three blank together
@@ -422,7 +434,7 @@ one run = one horizon = one set of metrics. Write order:
 |--------|---------|
 | `StrategyName`, `Run#`, `StartDaynum`, `N_hops`, `N_hops_active`, `EndDaynum` | identity / range. **`StartDaynum`/`EndDaynum` = the strategy's *usable* span, chronological** — a strategy starts where its source indicators do, not necessarily at the series start. `N_hops` = all evaluated hops; `N_hops_active` = hops actually invested. |
 | *(PARAMS keys)* | `focusset_size`, `step`, `period`, `No_go_GSPC_rsi`, … |
-| `dominance_cutoff_avg` | DomGICS_* only — run-average of the per-daynum Step-1 dominance cutoff; inserted right after `dominance_attribute_direction` here and in `aggregated_summary.xlsx`; shown in `best_strategy.py`'s comparison sheet as the row directly below `dom_count_threshold` |
+| `dominance_cutoff_avg` | Dom* families only — run-average of the per-daynum Step-1 dominance cutoff; inserted right after `dominance_attribute_direction` here and in `aggregated_summary.xlsx`; shown in `best_strategy.py`'s comparison sheet as the row directly below `dom_count_threshold` |
 | `avg_gain` | grand average per-hop top-N gain over `period` (No_go-filtered) |
 | `avg_alpha` | same hops, measured against the benchmark instead of against zero — **active return, not Jensen's alpha** (see below) |
 | `avg_beta` | mean `beta3m` of the picks; omitted when `longi_beta3m.csv` is absent. Not a performance metric — the number you discount `avg_alpha` by |
@@ -430,6 +442,7 @@ one run = one horizon = one set of metrics. Write order:
 | `origin_sens%` | spread of `chain_annual` across start origins `(max−min)/avg %` — **lower = more robust** to when you start hopping (diagnostic; never ranks) |
 | `N_loss` | most negative lots in any one origin's realized chain (of `chain_n`) — worst-case count |
 | `Worst` | worst single chain lot (gain%): the lowest lot over all start origins |
+| `pick_turnover`, `group_turnover` | Dom_* only — flicker diagnostics passed in via `save_report(extra_summary=…)`; see "Turnover" under the family section. **Never rank on them** |
 
 ### Averages vs accumulation (why overlap matters)
 With `step < period`, consecutive hops measure **overlapping** forward windows. Overlap does
@@ -480,7 +493,7 @@ Two specific traps this exposes:
 * **`chain_annual` is degenerate on sparse configs — GUARDED, see below.** `_additive` divides
   the additive sum by the chain's own span, so a parameter-set that realizes a single lucky lot
   annualizes it over ~one holding window and posts a headline in the hundreds. Seen for real: a
-  `dominance_threshold_decile=0.05, tickers_per_gics=2` config scored 445 on one lot — and
+  `dominance_threshold_decile=0.05, tickers_per_group=2` config scored 445 on one lot — and
   because `best_run()` ranks on `chain_annual`, it would have *become* that strategy's column,
   displacing a healthy 31-lot run. Inspecting the run file does not help when the healthy run is
   the one pushed out. Now floored by `run_config.MIN_CHAIN_LOTS`.
@@ -554,9 +567,15 @@ last invested hop), so two adjacent lots read as 100%.
 
 Read-only harness. Writes only `app/report/walkforward_<date>.xlsx`; never touches `run*.xlsx`,
 `aggregated_summary.xlsx`, `summary.csv` or `best_strategy*.xlsx`, and changes no selection
-logic. Covers `DomGICS_*` only — it rebuilds picks through the dominance pipeline itself (so it
-can re-score a window without re-running a report), which is why `make_dom_strategy` tags
-`main.dom_col`.
+logic. Covers the `Dom*` families only (both of them — the gate is the presence of
+`main.dom_col`, which `make_dom_strategy` tags) — it rebuilds picks through the dominance pipeline
+itself, so it can re-score a window without re-running a report.
+
+**`group_column` is in `_PICK_KEYS` and in `_dom_table`'s cache key, and must stay there.**
+`DomGICS_now` and `DomSector2_now` are identical in every other parameter, so without it they
+collide in `_series_cache` and the second family silently scores the first family's picks — a
+result that looks entirely plausible in the report. `_dom_table`'s key is splatted into
+`dominance_tables(*key)`, so its **order** must match that signature (group_column last).
 
 Per strategy, over rolling folds:
 
@@ -656,28 +675,88 @@ That's it.
 
 ---
 
-## GICS Domination Strategy Family
+## Group Domination Strategy Family (GICS / Sector2)
 
-`DomGICS_now`/`DomGICS_20d`/`DomGICS_50d` are **not** filter-chain declarations — `shared/engine.py`'s
-per-ticker filters have no group-by-sector aggregation or trailing-window primitive, so this family
-is built on a separate pipeline, `shared/dominance.py`. It still produces the exact same `hop_results`
-shape (see below), so reporting/aggregation/comparison all work unmodified.
+`DomGICS_now`/`_20d`/`_50d` and `DomSector2_now`/`_20d`/`_50d` are **not** filter-chain
+declarations — `shared/engine.py`'s per-ticker filters have no group-by-sector aggregation or
+trailing-window primitive, so these families are built on a separate pipeline,
+`shared/dominance.py`. It still produces the exact same `hop_results` shape (see below), so
+reporting/aggregation/comparison all work unmodified.
+
+### `group_column` — a FOURTH role, deliberately not called an "attribute"
+
+The two families run the **same pipeline** and differ in one parameter: `group_column`, the name of
+a **`Stamdata.csv` column** whose values tickers are bucketed by before Step 1 counts anything.
+The three *attribute* roles below are all Longi factor short names (`longi_<name>.csv`) — a
+different kind of thing entirely, and this project has already been broken once by conflating
+roles, so the grouping knob is pointedly not a fourth "attribute".
+
+| `group_column` | values | avg tickers/group | `dom_count_threshold` |
+|---|---|---|---|
+| `"GICS"` | 13 | ~93 (Indu 225 … Index 14) | 10 |
+| `"Sector2"` | 50 | ~24 (75 … 2) | **5** |
+
+**`dom_count_threshold` is per group criterion and cannot be shared.** It is an absolute count of
+qualifying tickers, and the market-wide best decile is only ~120 of ~1200 tickers: "10 qualifying"
+asks a 93-member GICS for 11% of itself but a 24-member Sector2 for 42% — at 10 the Sector2 family
+produces almost nothing but cash hops. `run_config.DOM_COUNT_THRESHOLD` holds the pair and derives
+Sector2's as half of GICS's so the two cannot drift apart. `run_config.dom_count_threshold_for()`
+raises on an unknown column rather than defaulting.
+
+`group_column` is **never swept** — it defines the family, and sweeping it would put two group
+criteria in one report directory. It is in `sweep_config.NON_SWEEPABLE`, which `build_plan()` hard-
+fails on, and it is deliberately absent from `extension._INT_PARAMS`/`_FLOAT_PARAMS` so
+`_params_from_row` leaves the module's own value alone (reading it back from an aggregated row is
+how a Sector2 strategy would get rebuilt on GICS). To test another grouping, add a strategy.
+
+**Sector2 is a sub-partition of GICS, not a rival taxonomy.** 48 of its 50 values sit inside
+exactly one GICS, so the family is a *sharpening of which groups get promoted*. The sharpening is
+very uneven — Indu splits 10 ways, C-Di 8, Fina 7, Tech 6, while **Tele and Index have a single
+child each and cannot be sharpened at all** — so read any Sector2-vs-GICS difference against that.
+Two values leak across a GICS boundary by one or two tickers and look like upstream
+misclassifications: `Holiday` (C-Di 18 / C-St 1) and `Other[Indu]` (Indu 33 / Tech 2).
+
+**First measured verdict (2026-07-30) — the sharpening does not pay, on current evidence.** The
+family works and is a legitimate alternative, but nothing yet says it is better:
+
+* **In-sample `chain_annual`** (the primary decision metric, full history): GICS wins at every
+  tier — 68.2 / 74.0 / 60.5 against 60.5 / 60.7 / 57.0.
+* **The clean causal test** — take the hops where the two families disagree (113 of 128) with
+  `dominance_attribute` held constant, and compare the realized 20d gain of the picks Sector2
+  *adds* against the ones it *drops*: **−3.67 pp on `rank`**, −0.35 pp on `rsi`. It drops better
+  tickers than it adds. Focusset overlap is 0.67 mean, so the divergence is real, not marginal.
+* **Out-of-sample** (`walkforward.py`, 5 folds) is mixed and noise-dominated: `DomSector2_now`
+  edges `DomGICS_now` on `oos_avg_gain` (7.61 vs 6.41) while `DomGICS_50d` edges
+  `DomSector2_50d` (7.66 vs 6.86). With ~13 independent lots this settles nothing; `grid=1` also
+  makes `selection_skill` identically 0, so those runs measure OOS level, not selection.
+* Over the full history Sector2 elevates **8.0** groups per daynum against GICS's **4.2** (pools
+  of ~24 vs ~13 candidates) — the "6 vs 5" seen on one day was not typical.
+* `tickers_per_group=3` binds everywhere: the smallest group that ever dominates has 10 members,
+  so the small-sector worry is empirically a non-issue. 11 of 50 never dominate, including
+  `Other[C-Di]` (2 members) and `Other[C-St]` (5), which cannot reach the threshold of 5 at all.
+
+The diagnostic that produced the middle two bullets is `~/tmp/sector2_diag.py` (outside the repo,
+read-only, takes the dominance attribute as an argument). **Hold `dominance_attribute` constant when
+comparing families** — only `DomGICS_now` carries the `rsi` override, and taking each strategy's own
+pair measures `rsi` vs `rank` as much as the grouping.
 
 **Three distinct attribute roles — three different names. This distinction has been a recurring
 source of confusion (a prior stranded rename broke the sweep entirely); it is now load-bearing
 naming, not just documentation:**
 
 **Selection logic, per daynum:**
-1. **Step 1 — GICS elevation, "dominance" (`gics_dominance_now`)**: count tickers per `GICS`
-   (from `Stamdata.csv`) that "beat" **that day's own best-decile cutoff** of
+1. **Step 1 — group elevation, "dominance" (`group_dominance_now`)**: count tickers per
+   `group_column` value (from `Stamdata.csv`) that "beat" **that day's own best-decile cutoff** of
    `longi_{dominance_attribute}.csv` — below the cutoff when `dominance_attribute_direction`
    (smaller wins, e.g. rank, the default), above it otherwise (bigger wins). `dominance_threshold_decile`
    (default `0.10`) is a **fraction, not a raw value**: `shared.dominance._daily_decile_cutoff`
    computes the value at that quantile of the attribute's *cross-sectional distribution on that one
    daynum* (every ticker, that day only — computed independently day by day, not across history),
    so the same fraction means "best 10%" for any attribute regardless of its raw scale (rank
-   1..~1200, rsi 0..100, beta3m usually <5, ...), on every individual day. A GICS with
-   `>= dom_count_threshold` (default 10) such tickers is "dominating" **that daynum** — `dom_now`.
+   1..~1200, rsi 0..100, beta3m usually <5, ...), on every individual day. A group with
+   `>= dom_count_threshold` (10 for GICS, 5 for Sector2 — see the table above; the count is
+   absolute and does **not** transfer between criteria) such tickers is "dominating" **that
+   daynum** — `dom_now`.
    `dominance_attribute` is still a **single fixed value, never swept** by `sweep_config.py` — not
    because of a scale mismatch anymore (the decile cutoff fixed that), but because each candidate
    attribute is meant to be tried as its own independent run, one at a time, with results compared
@@ -691,13 +770,14 @@ naming, not just documentation:**
    row directly below `dom_count_threshold`.
 2. **Persistence (`add_persistence`)**: `dom_20d`/`dom_50d` additionally require `dom_now` to have
    held on at least `persistence_frac` (default 2/3) of the trailing 20/50 daynums (inclusive of
-   the current one). `DomGICS_now`/`_20d`/`_50d` each key off one of `dom_now`/`dom_20d`/`dom_50d`.
-3. **Step 2 — test-set construction, ticker selection (`select_focusset`)**: each dominating GICS
-   contributes its `tickers_per_gics` (default 3) **best** tickers by
+   the current one). The `_now`/`_20d`/`_50d` tiers of each family key off one of
+   `dom_now`/`dom_20d`/`dom_50d`. This is the **flicker-damping** axis — see "Turnover" below.
+3. **Step 2 — test-set construction, ticker selection (`select_focusset`)**: each dominating group
+   contributes its `tickers_per_group` (default 3, shared by both criteria) **best** tickers by
    `longi_{priority_attribute}.csv` (direction-aware: smaller wins when
-   `priority_attribute_direction`, bigger otherwise) — or its **worst** `tickers_per_gics` when
+   `priority_attribute_direction`, bigger otherwise) — or its **worst** `tickers_per_group` when
    `from_rank=-1`, so a bottom-pick draws from genuinely weak tickers rather than the weakest of
-   an already-best-biased pool. The pooled candidates across all dominating GICS sectors are then
+   an already-best-biased pool. The pooled candidates across all dominating groups are then
    re-ranked **globally** by that same value and `focusset_size`/`from_rank` applied via
    `shared.select.pick_by_rank` (`from_rank`: `1`=best n, `-1`=worst n) — same "smaller is better"
    convention `rank_by(..., ascending=False)` uses (negate a bigger-wins series before ranking).
@@ -706,15 +786,19 @@ naming, not just documentation:**
    candidate worth testing; `sweep_config.py` sweeps across **all** of them, one independent
    test-set (run) per entry, deriving each run's direction from the dictionary so a name can never
    be paired with the wrong direction (see `sweep_config.py`'s "Sweeping priority_attribute").
-4. **Step 3 — informational only (display)**: `informational_attributes` (default
-   `["per1d", "macd_histogram"]`) never affects dominance, test-set construction, or selection —
-   it only adds `<attr>_mean`/`<attr>_median` rows to `run*.xlsx`/extension sheets for insight into
-   what's going on along the timeline. May be a single Longi factor short name or a list.
+4. **Step 3 — informational only (display)**: `informational_attributes` never affects dominance,
+   test-set construction, or selection — it only adds `<attr>_mean`/`<attr>_median` rows to
+   `run*.xlsx`/extension sheets for insight into what's going on along the timeline. May be a
+   single Longi factor short name or a list. **Keyed by `group_column`** in
+   `run_config.INFORMATIONAL_ATTRIBUTES`, so each family displays its own conformity factor
+   (`conf_GICS` vs `conf_Sector2`) rather than the other one's; `informational_attributes_for()`
+   resolves it. `preflight.required_files()` unions **all** criteria's lists, so both conformity
+   files are always guarded whichever families are configured.
 
 **`dominance_attribute`/`priority_attribute`/`informational_attributes`** are Longi factor **short
 names** (the `longi_<name>.csv` part only, e.g. `"rank"`, `"per1d"`, `"rsi"`, `"beta3m"`) — set
 them via `run_config.DOMINANCE_ATTRIBUTE`/`run_config.PRIORITY_ATTRIBUTE`/
-`run_config.INFORMATIONAL_ATTRIBUTES`, which each `strategy_DomGICS_*.py` copies into its own
+`run_config.INFORMATIONAL_ATTRIBUTES`, which `run_config.dom_params()` copies into each strategy's
 `PARAMS` the same way it does `DOMINANCE_THRESHOLD_DECILE` etc. No edit to `shared/dominance.py` is needed
 to retarget any role to a different indicator — **but** swapping `dominance_attribute` or
 `priority_attribute` must be paired with its matching direction flag
@@ -723,52 +807,96 @@ wins (e.g. rank), `False` = bigger value wins. Get the direction wrong and the "
 ticker-selection choice silently inverts — there is no way to detect the mismatch from the data
 alone. `informational_attributes` has no direction flag — display only, direction is irrelevant.
 
-**Per-strategy `dominance_attribute` override (`DOMINANCE_ATTRIBUTE_OVERRIDES`)**: the three
-strategies (`DomGICS_now`/`_20d`/`_50d`) normally all share the one global
+A `priority_attribute` name is swept for **every** strategy, so a group-specific factor there
+(`conf_GICS`) would have the Sector2 family ranking candidates on GICS conformity — silent
+cross-wiring with nothing visibly wrong in the output. Test one family at a time via a `STRATEGIES`
+override if a conformity factor is ever tried in that role.
+
+**Per-strategy `dominance_attribute` override (`DOMINANCE_ATTRIBUTE_OVERRIDES`)**: the
+strategies of a family normally all share the one global
 `DOMINANCE_ATTRIBUTE`/`DOMINANCE_ATTRIBUTE_DIRECTION` pair, but per-attribute testing showed the
 "now" (no persistence) and persistence tiers (`_20d`/`_50d`) don't always agree on which attribute
 helps — e.g. `rsi` improved `DomGICS_now` on *both* `chain_annual` (119→184) and `Worst`
 (−52→−32) at once, while the persistence tiers did better staying on `rank`. Rather than force one
 global value, `run_config.DOMINANCE_ATTRIBUTE_OVERRIDES` (`dict[STRATEGY_NAME, (attribute,
-direction)]`) lets one strategy diverge; each `strategy_DomGICS_*.py` resolves its own pair via
+direction)]`) lets one strategy diverge; `cfg.dom_params()` resolves each strategy's pair via
 `cfg.dominance_attribute_for(STRATEGY_NAME)` instead of reading `cfg.DOMINANCE_ATTRIBUTE` directly
 — a strategy absent from the dict falls through to the shared global default. Like the global pair,
 `DOMINANCE_ATTRIBUTE` is still never swept by `sweep_config.py` — one attribute per strategy, tried
 as an independent run, results compared and noted outside the system.
 
+**Careful when comparing the two families:** only `DomGICS_now` currently carries an override
+(`rsi`), so a naive GICS-vs-Sector2 comparison at the `_now` tier measures `rsi` vs `rank` as much
+as it measures the grouping. Hold `dominance_attribute` constant when the question is about the
+group criterion itself.
+
 `make_dom_strategy(strategy_name, params, dom_col)` (in `shared/dominance.py`) is the
 `make_strategy()` analog: it returns the same `(main, build_extension)` pair, so each strategy
 file is still a short declaration:
+
+The 15-key `PARAMS` dict is built once, by `run_config.dom_params()`, so all six strategy files are
+four lines of declaration. Six hand-written copies of one parameter list is how a rename ends up
+half-applied — which has happened here:
 
 ```python
 from shared.dominance import make_dom_strategy
 import run_config as cfg
 
-STRATEGY_NAME = "DomGICS_now"
-_dom_attr, _dom_dir = cfg.dominance_attribute_for(STRATEGY_NAME)
-PARAMS = {
-    "focusset_size": cfg.FOCUSSET_SIZE, "step": cfg.STEP, "period": 20,
-    "No_go_GSPC_rsi": cfg.NO_GO_GSPC_RSI, "from_rank": cfg.FROM_RANK,
-    "dominance_threshold_decile": cfg.DOMINANCE_THRESHOLD_DECILE, "dom_count_threshold": cfg.DOM_COUNT_THRESHOLD,
-    "persistence_frac": cfg.PERSISTENCE_FRAC, "tickers_per_gics": cfg.TICKERS_PER_GICS,
-    "dominance_attribute": _dom_attr,
-    "dominance_attribute_direction": _dom_dir,
-    "priority_attribute": cfg.PRIORITY_ATTRIBUTE,
-    "priority_attribute_direction": cfg.PRIORITY_ATTRIBUTE_DIRECTION,
-    "informational_attributes": cfg.INFORMATIONAL_ATTRIBUTES,
-}
+STRATEGY_NAME = "DomSector2_now"
+GROUP_COLUMN  = "Sector2"        # the only intended difference from the GICS twin
+PARAMS: dict = cfg.dom_params(STRATEGY_NAME, GROUP_COLUMN, period=20)
 main, build_extension = make_dom_strategy(STRATEGY_NAME, PARAMS, "dom_now")
 ```
 
-**`run_config.py`** is the single place to see and change every default each `strategy_DomGICS_*.py`
-copies into its own `PARAMS` — the "classic" backtest knobs (`FOCUSSET_SIZE`, `STEP`,
-`NO_GO_GSPC_RSI`, `FROM_RANK`), the Step-1 dominance knobs (`DOMINANCE_ATTRIBUTE`,
-`DOMINANCE_ATTRIBUTE_DIRECTION`, `DOMINANCE_THRESHOLD_DECILE`, `DOM_COUNT_THRESHOLD`,
+`dom_params()` returns a **fresh dict every call** — `run_sweep.run_strategy` mutates
+`module.PARAMS` in place (`clear()` + `update()`), so two modules must never share one object.
+
+**`run_config.py`** is the single place to see and change every default `dom_params()` copies into a
+strategy's `PARAMS` — the "classic" backtest knobs (`FOCUSSET_SIZE`, `STEP`, `NO_GO_GSPC_RSI`,
+`FROM_RANK`), the grouping knob (`GROUP_COLUMNS`, `DOM_COUNT_THRESHOLD` +
+`dom_count_threshold_for()`), the Step-1 dominance knobs (`DOMINANCE_ATTRIBUTE`,
+`DOMINANCE_ATTRIBUTE_DIRECTION`, `DOMINANCE_THRESHOLD_DECILE`,
 `PERSISTENCE_FRAC`, `DOMINANCE_ATTRIBUTE_OVERRIDES`), the Step-2 test-set knobs
 (`PRIORITY_ATTRIBUTE_DICTIONARY`, `PRIORITY_ATTRIBUTE`/`PRIORITY_ATTRIBUTE_DIRECTION` — the
-resting default, derived from the dictionary's first entry — and `TICKERS_PER_GICS`), and the
-Step-3 display knob (`INFORMATIONAL_ATTRIBUTES`) — kept separate from `sweep_config.py`, which
-decides *what runs* (which strategies, which grid of overrides for a sweep), not these defaults.
+resting default, derived from the dictionary's first entry — and `TICKERS_PER_GROUP`), and the
+Step-3 display knob (`INFORMATIONAL_ATTRIBUTES` + `informational_attributes_for()`) — kept separate
+from `sweep_config.py`, which decides *what runs* (which strategies, which grid of overrides for a
+sweep), not these defaults.
+
+### Turnover — the flicker diagnostics (`pick_turnover` / `group_turnover`)
+
+`shared.dominance.turnover_stats` measures how much changes between consecutive hops: the Jaccard
+distance of the focussets (`pick_turnover`) and of the dominating-group sets (`group_turnover`),
+averaged over pairs where **both** hops are invested (cash gaps are the persistence gate doing its
+job and are already reported by `chain_inv%`). They reach the Summary sheet, `summary.csv`,
+`aggregated_summary.xlsx` and the comparison sheet via `save_report(..., extra_summary=...)`.
+
+**Diagnostic only — never rank on them**, same status as `origin_sens%`. The chain takes
+non-overlapping lots ≥ `period` apart, so every lot is a fresh purchase however much the picks
+churned in between: turnover costs `chain_annual` exactly nothing and there is no transaction-cost
+argument to make. What flicker actually costs is **followability** — a daily recommendation that
+changes under the user — which is a reason to prefer a persistence tier, not a return penalty.
+Both are measured per `step`, so they only compare across runs sharing `step`.
+
+What the first six-strategy run showed (2026-07-30, `step=5`):
+
+| | GICS now/20d/50d | Sector2 now/20d/50d |
+|---|---|---|
+| `group_turnover` | 0.35 / 0.09 / 0.03 | 0.61 / 0.25 / 0.12 |
+| `pick_turnover` | 0.93 / 0.92 / 0.93 | 0.94 / 0.92 / 0.90 |
+
+The finer grouping churns its **sector** set ~2–4× faster at every tier, and persistence damps it
+as designed. But `pick_turnover` is pinned near 0.93 in all six: **the persistence tiers stabilize
+which sectors are held, not which tickers.** Ticker-level churn is driven by the Step-2
+`priority_attribute` re-rank, not by the grouping — so a stability complaint about the daily
+recommendation is not addressable by changing `group_column` or the tier.
+
+Still unanswered: whether that churn is *in fair agreement with the market's own* rotation rate.
+The reference would be the tape's leadership churn — rank groups by trailing
+`longi_grp_{GICS,Sector2}_per*.csv`, take the top *k* with *k* = the run's mean dominating count,
+and measure how fast that set turns over; the ratio `group_turnover / market_group_turnover` reads
+≈1 as fair agreement, ≫1 as chasing noise, ≪1 as lagging real rotation. Not built: it needs a
+defended choice of window and *k*, plus half-split validation the way `group_conformity` was done.
 
 **Data-format gotcha:** Longi columns are newest-left (highest daynum first); "N days backwards"
 means *older* daynums (smaller integers), the opposite of the column reading direction.
@@ -794,7 +922,11 @@ strategy**, strongest `chain_annual` leftmost.
 - `chain_inv%` (left) / `ladder_inv%` (right) are a paired row: the share of the active span each
   estimator was actually invested.
 - `origin_sens%` is a **chain-only** row (absent from the ladder table — the ladder diversifies
-  the sensitivity away by construction).
+  the sensitivity away by construction). `pick_turnover`/`group_turnover` are chain-only for a
+  different reason: turnover is a property of the *picks*, identical for both estimators, so
+  repeating it under "Overlap investment" would read as a second, independent measurement.
+- `group_column` is a row, so which criterion produced a column is visible without decoding the
+  strategy name.
 - Adding a strategy to the sweep makes it appear automatically as a new column.
 
 ---

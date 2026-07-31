@@ -36,7 +36,7 @@ priority_attribute is the Step-2 test-set-construction attribute (see run_config
 it is NOT a plain grid axis like the ones above, because it is paired with
 priority_attribute_direction (True = smaller wins, False = bigger wins), and getting
 that pairing wrong silently inverts which tickers are "best" within each dominating
-GICS. So:
+group. So:
 
     DEFAULTS = {"priority_attribute": ["rank", "beta3m", "vola100d"]}
 
@@ -65,7 +65,12 @@ import run_config as cfg
 # informational_attributes: a list here means several Step-3 display-only factors shown
 # in ONE run's report (see shared/report.py / shared/extension.py) — never feeds
 # selection (shared/dominance.select_focusset); it is set once via run_config.py, not swept.
-NON_SWEEPABLE: set[str] = {"informational_attributes"}
+# group_column is here for a second reason: its value is a plain string, so a list WOULD
+# expand as a grid axis — but sweeping it would drop two different group criteria into one
+# strategy's report directory, where the comparison sheet has no way to tell them apart. The
+# group criterion defines the family and is fixed in the strategy module (see run_config.py's
+# "fourth role" note); the way to test another one is another strategy, not another run.
+NON_SWEEPABLE: set[str] = {"informational_attributes", "group_column"}
 
 # Alias -> the real param keys it fans out to (each strategy gets the ones it has).
 LINKED: dict[str, list[str]] = {}
@@ -74,7 +79,8 @@ LINKED: dict[str, list[str]] = {}
 # tables). Was previously sorted by chain_annual, but that reshuffles every time a swept
 # parameter changes performance, making the report hard to read run over run. A strategy
 # not listed here is placed after all listed ones (in whatever order pandas/groupby gives).
-STRATEGY_ORDER: list[str] = ["DomGICS_now", "DomGICS_20d", "DomGICS_50d"]
+STRATEGY_ORDER: list[str] = ["DomGICS_now", "DomGICS_20d", "DomGICS_50d",
+                             "DomSector2_now", "DomSector2_20d", "DomSector2_50d"]
 
 # Applied to every strategy below (where the key exists in that strategy's PARAMS).
 # Values default to run_config.py — the single source of truth for a resting value — so
@@ -104,7 +110,13 @@ DEFAULTS: dict = {
 # Strategy-specific overrides. An empty dict {} means "just use DEFAULTS".
 # Keys must match each strategy's STRATEGY_NAME (see `python run_sweep.py --list`).
 STRATEGIES: dict[str, dict] = {
+    # Two families, same three-step pipeline, different group criterion (see run_config.py).
+    # They compete as six columns in one best_strategy.xlsx — Sector2 is an alternative to
+    # GICS, not a replacement for it.
     "DomGICS_now": {},
     "DomGICS_20d": {},
     "DomGICS_50d": {},
+    "DomSector2_now": {},
+    "DomSector2_20d": {},
+    "DomSector2_50d": {},
 }

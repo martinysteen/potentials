@@ -90,10 +90,16 @@ _COMMENTS_LADDER = {    # right table (column I) — the ladder_* rows only
 # StrategyName is absent: the strategy name is the column header, so a row would just
 # repeat it. Floor/cap are absent: they are already stated in the title rows.
 _CHAINED_KEYS = [
-    "Run#", "period", "StartDaynum", "EndDaynum",
+    "Run#", "period", "group_column", "StartDaynum", "EndDaynum",
     "chain_annual", "origin_sens%", "chain_ret", "chain_n",
     "avg_gain", "avg_alpha", "avg_beta", "Worst", "N_loss",
     "chain_inv%",
+    # Flicker diagnostics, in the same never-ranks category as origin_sens%: how much of the
+    # focusset (and of the dominating-group set) is replaced from one hop to the next. They
+    # carry no return information — the chain's lots are >= period apart, so churn between
+    # them is free — and exist to make the stability<->rotation trade of the _now/_20d/_50d
+    # tiers visible. Read them beside chain_inv%, not beside chain_annual.
+    "pick_turnover", "group_turnover",
     "focusset_size", "step", "No_go_GSPC_rsi", "from_rank",
     "dom_count_threshold", "dominance_cutoff_avg",
     "source_file",
@@ -136,6 +142,11 @@ _CHAIN_TO_LADDER = {
     # returning to the full chain swing only at the n=1 edge (step=period). The serial chain,
     # picking one origin, is the one that actually feels it.
     "origin_sens%":  None,
+    # Chain-only for a different reason than origin_sens%: turnover is a property of the
+    # PICKS, identical for both estimators. Repeating it under "Overlap investment" would
+    # read as a second, independent measurement of something measured once.
+    "pick_turnover":  None,
+    "group_turnover": None,
     "source_file":   None,
 }
 def _is_gain_col(col: str) -> bool:
@@ -163,7 +174,8 @@ _CTR        = Alignment(horizontal="center")
 
 _PARAM_COLS = {"focusset_size", "step", "period", "No_go_GSPC_rsi", "from_rank",
                "corner_bins", "vola_keep_frac", "q10_20_min", "q20_50_min",
-               "dominance_threshold_decile", "dom_count_threshold", "persistence_frac", "tickers_per_gics",
+               "group_column",
+               "dominance_threshold_decile", "dom_count_threshold", "persistence_frac", "tickers_per_group",
                "dominance_attribute", "dominance_attribute_direction", "dominance_cutoff_avg",
                "priority_attribute", "priority_attribute_direction", "informational_attributes"}
 
