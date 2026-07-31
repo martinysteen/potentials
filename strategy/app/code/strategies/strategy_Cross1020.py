@@ -16,7 +16,8 @@ STRATEGY_NAME = "Cross1020"
 PARAMS: dict = {
     "focusset_size": 3,
     "step": 1,
-    "period": 20,           # forward horizon in trading days (20 or 50)
+    "period": 22,           # forward horizon in trading days; must be a key of
+                            # shared.config.FUTURE_PERIOD_LABEL (1/5/22/66/132/264)
     "No_go_GSPC_rsi": 0,
     "q10_20_min": 1.03,
     "from_rank": 1,         # where in the ranking to draw from: 1=best n,

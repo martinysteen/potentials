@@ -249,16 +249,15 @@ MODULES: Dict[str, Module] = {
         script="longi_sh1yr.py",
         depends_on=[],  # Independent - reads only PotDat.csv
     ),
-    "future_gain20d": Module(
-        name="Future Gain 20-Day",
-        script="future_gain20d.py",
+    "future_performance": Module(
+        name="Future Performance (1d/1w/1m/3m/6m/1y)",
+        script="longi_future_performance.py",
         depends_on=[],  # Independent - reads only PotDat.csv
     ),
-    "future_gain50d": Module(
-        name="Future Gain 50-Day",
-        script="future_gain50d.py",
-        depends_on=[],  # Independent - reads only PotDat.csv
-    ),
+    # RETIRED 2026-07-31: future_gain20d / future_gain50d were replaced by the
+    # future_performance family above. Scripts moved to _not_used/. Their two CSVs are
+    # removed from Drive by longi_upload's rclone SYNC on the next run; every consumer
+    # (strategy/, strategy_grp/, group_conformity/) now reads longi_future_per1m.csv.
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="longi_across.py",

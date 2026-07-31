@@ -8,7 +8,13 @@
       "Bash(cd \"//Gandalf/sm-home/potentials/strategy_grp/app/code\" && grep -rn \"load_longi\\\\|except\\\\b\" --include=*.py . | head -80)",
       "Read(///Gandalf/sm-home/potentials/strategy_grp/app/**)",
       "Bash(cd \"//Gandalf/sm-home/potentials/strategy_grp/app/code\" && grep -rn \"DATA_ROOT\\\\|DATA_LONGI\\\\|POTDAT_PATH\\\\|STAMDATA_PATH\\\\|CAL_PATH\" --include=*.py . )",
-      "Bash(cd \"//Gandalf/sm-home/potentials/strategy_grp/app/code\" && sed -n '1,60p' walkforward.py | tail -35; echo \"=== walkforward main ===\"; grep -n \"def main\\\\|__main__\" walkforward.py)"
+      "Bash(cd \"//Gandalf/sm-home/potentials/strategy_grp/app/code\" && sed -n '1,60p' walkforward.py | tail -35; echo \"=== walkforward main ===\"; grep -n \"def main\\\\|__main__\" walkforward.py)",
+      "Bash(grep -n \"informational\" \"\\\\\\\\\\\\\\\\Gandalf\\\\sm-home\\\\potentials\\\\strategy_grp\\\\app\\\\code\\\\shared\\\\report.py\")",
+      "Read(///Gandalf/sm-home/potentials/strategy_grp/app/code/shared/**)",
+      "Bash(grep -n \"informational\\\\|_mean\\\\|_median\" \"\\\\\\\\\\\\\\\\Gandalf\\\\sm-home\\\\potentials\\\\strategy_grp\\\\app\\\\code\\\\shared\\\\extension.py\")",
+      "Bash(grep -n \"^import statistics\\\\|statistics\\\\.\" \"\\\\\\\\\\\\\\\\Gandalf\\\\sm-home\\\\potentials\\\\strategy_grp\\\\app\\\\code\\\\shared\\\\extension.py\")",
+      "Read(//Gandalfsm-homepotentialsstrategy_grp/app/**)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('shared/report.py'\\).read\\(\\)\\); ast.parse\\(open\\('shared/extension.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")"
     ],
     "additionalDirectories": [
       "\\\\gandalf\\sm-home\\potentials\\strategy_grp\\app\\code\\shared",

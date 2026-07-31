@@ -20,7 +20,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
 from shared.chain import realizable_chain, chain_lot_stats, chain_origin_sensitivity
-from shared.config import REPORT_ROOT, SUMMARY_CSV
+from shared.config import REPORT_ROOT, SUMMARY_CSV, future_gain_file
 from shared.data_loader import daynum_to_date, load_longi, load_stamdata
 
 
@@ -87,8 +87,8 @@ _GAIN_KEY = "gains"
 # ---------------------------------------------------------------------------
 
 def _market_gain(period: int) -> pd.Series:
-    """Benchmark: equal-weighted cross-sectional mean future_gain{period}d per daynum."""
-    return load_longi(f"future_gain{period}d.csv").mean(axis=0)
+    """Benchmark: equal-weighted cross-sectional mean forward gain per daynum."""
+    return load_longi(future_gain_file(period)).mean(axis=0)
 
 
 def _beta_frame() -> pd.DataFrame | None:
@@ -122,7 +122,7 @@ def _grand_avg_alpha(hop_results: list[dict], n: int, params: dict) -> tuple[flo
     """(mean alpha, mean beta) across active hops — same No_go gating as _grand_avg_topn,
     so the headline alpha is measured over exactly the hops the strategy would trade."""
     threshold = params.get("No_go_GSPC_rsi")
-    mkt       = _market_gain(params.get("period", 20))
+    mkt       = _market_gain(params.get("period", 22))
     beta_df   = _beta_frame()
     alphas: list[float] = []
     betas:  list[float] = []
@@ -203,19 +203,28 @@ def _informational_attr_names(params: dict) -> list[str]:
     return informational_attr_list(params.get("informational_attributes"))
 
 
-def _write_informational_attr_row(ws, hop_results: list[dict], row: int, attr: str, agg) -> None:
-    """One row of per-hop agg(longi_{attr}) over that hop's focusset tickers (mean/median)."""
-    info_df  = load_longi(f"longi_{attr}.csv")
-    lbl_cell = ws.cell(row, 1, f"{attr}_{agg.__name__}")
-    lbl_cell.font = _BOLD
-    for j, h in enumerate(hop_results, start=2):
-        col  = str(h["daynum"])
-        vals = [float(info_df.at[t, col]) for t in h.get("tickers", [])
-                if t in info_df.index and col in info_df.columns
-                and pd.notna(info_df.at[t, col])]
-        cell = ws.cell(row, j)
-        cell.alignment = _CTR
-        cell.value = round(agg(vals), 2) if vals else None
+def _write_informational_attr_stock_rows(ws, hop_results: list[dict], start_row: int,
+                                          attr: str, n_tickers: int) -> None:
+    """N rows (attr_1 .. attr_N), one per focusset rank position — a direct per-stock draw
+    from longi_{attr}.csv, no aggregation. Row i aligns with the ticker_rank(i+1) row above."""
+    info_df = load_longi(f"longi_{attr}.csv")
+    for i in range(n_tickers):
+        row      = start_row + i
+        lbl_cell = ws.cell(row, 1, f"{attr}_{i + 1}")
+        lbl_cell.font = _BOLD
+        for j, h in enumerate(hop_results, start=2):
+            tickers = h.get("tickers", [])
+            col     = str(h["daynum"])
+            cell    = ws.cell(row, j)
+            cell.alignment = _CTR
+            if i < len(tickers):
+                t = tickers[i]
+                if t in info_df.index and col in info_df.columns and pd.notna(info_df.at[t, col]):
+                    cell.value = round(float(info_df.at[t, col]), 2)
+                else:
+                    cell.value = None
+            else:
+                cell.value = None
 
 
 def _param_cell(v):
@@ -350,9 +359,11 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     +2 rows : mkt_gain (benchmark for that daynum) and alpha (avg_gain - mkt_gain,
               ACTIVE RETURN, not Jensen's — see the _market_gain block), plus a third
               `beta` row when longi_beta3m.csv is available
-    +2 rows per informational_attributes entry (only for strategies that expose one,
-              e.g. DomGICS): <attr>_mean / <attr>_median of that hop's focusset — absent
-              otherwise, in which case everything below shifts up accordingly
+    +N rows per informational_attributes entry (only for strategies that expose one,
+              e.g. DomGICS), N = focusset_size: <attr>_1 .. <attr>_N, a direct per-stock
+              draw from longi_{attr}.csv for that hop's rank-i ticker — no aggregation,
+              row i aligned with the ticker_rank(i+1) row above; absent otherwise, in
+              which case everything below shifts up accordingly
     +4 rows : market context (^GSPC_rsi, ^STOXX_rsi, ^HSI_rsi, ^VIX)
     +?? rows: GICS count rows (sorted by frequency)
     +?? rows: Sector2 count rows
@@ -373,16 +384,16 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
     has_surv = any("n_survivors" in h for h in hop_results)
     surv_off = 1 if has_surv else 0
 
-    # Optional informational_attributes min/max rows (one pair per attribute), inserted
-    # below the avg rows — row-dynamic so a bigger focusset_size (more ticker rows) or
-    # more attributes never collide with what follows.
+    # Optional informational_attributes per-stock rows (N rows per attribute, N =
+    # focusset_size), inserted below the avg rows — row-dynamic so a bigger focusset_size
+    # (more ticker rows) or more attributes never collide with what follows.
     info_attrs = _informational_attr_names(params)
-    n_info     = 2 * len(info_attrs)
+    n_info     = n_tickers * len(info_attrs)
 
     # Benchmark rows below the avg rows: mkt_gain + alpha always, beta only when
     # longi_beta3m.csv is present. See the _market_gain/_hop_beta block above for what
     # `alpha` means here (active return, NOT Jensen's).
-    mkt_series = _market_gain(params.get("period", 20))
+    mkt_series = _market_gain(params.get("period", 22))
     beta_df    = _beta_frame()
     has_beta   = beta_df is not None and any(
         pd.notna(_hop_beta(h, beta_df, n)) for h in hop_results)
@@ -515,11 +526,11 @@ def _fill_operational(ws, hop_results: list[dict], params: dict) -> None:
                 cell.value = None if no_go else round(val, 4)
             cell.fill = _GRY_FILL if no_go else _gain_fill(val)
 
-    # ---- informational_attributes mean/median rows (optional — only strategies that
+    # ---- informational_attributes per-stock rows (optional — only strategies that
     # expose one) ----
     for k, attr in enumerate(info_attrs):
-        _write_informational_attr_row(ws, hop_results, info_top + 2 * k,     attr, statistics.mean)
-        _write_informational_attr_row(ws, hop_results, info_top + 2 * k + 1, attr, statistics.median)
+        _write_informational_attr_stock_rows(ws, hop_results, info_top + n_tickers * k,
+                                              attr, n_tickers)
 
     # ---- ref rows ----
     def _write_ref_rows(start_row: int, hop_key: str, label_suffix: str = "") -> int:
@@ -616,7 +627,7 @@ def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
         rows.append(("avg_beta", round(avg_beta, 3)))
 
     # Realizable non-overlapping additive chain for the active horizon (= period).
-    hold = int(params.get("period", 20))
+    hold = int(params.get("period", 22))
     ret, annual, ntr = _chain_metrics(hop_results, _GAIN_KEY, n, hold, params)
     rows.append(("chain_ret",    round(ret, 4)    if pd.notna(ret)    else None))
     rows.append(("chain_annual", round(annual, 4) if pd.notna(annual) else None))
@@ -671,7 +682,7 @@ def _fill_hopdata(ws, hop_results: list[dict], params: dict) -> None:
     which HopData does not carry.
     """
     n = params.get("focusset_size", 10)
-    mkt     = _market_gain(params.get("period", 20))
+    mkt     = _market_gain(params.get("period", 22))
     beta_df = _beta_frame()
     ws.append(["daynum", "gain", "gspc_rsi", "mkt_gain", "beta"])
     for h in hop_results:
@@ -744,7 +755,7 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
         avg_vals   = [_fmt(_grand_avg_topn(hop_results, gk, tn, params)) for _, gk, tn in _avg_rows(n)]
         _alpha, _beta = _grand_avg_alpha(hop_results, n, params)
         avg_vals  += [_fmt(_alpha), _fmt(_beta)]
-        hold = int(params.get("period", 20))
+        hold = int(params.get("period", 22))
         ret, annual, ntr = _chain_metrics(hop_results, _GAIN_KEY, n, hold, params)
         chain_vals = [_fmt(ret), _fmt(annual), str(ntr)]
         worst, n_loss, sens = _chain_dispersion(hop_results, n, hold, params)

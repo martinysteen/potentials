@@ -20,7 +20,7 @@ import run_config as cfg
 STRATEGY_NAME = "DomGICS_now"
 GROUP_COLUMN  = "GICS"        # Stamdata.csv column to group by (13 values, ~93 tickers each)
 
-PARAMS: dict = cfg.dom_params(STRATEGY_NAME, GROUP_COLUMN, period=20)
+PARAMS: dict = cfg.dom_params(STRATEGY_NAME, GROUP_COLUMN)
 
 main, build_extension = make_dom_strategy(STRATEGY_NAME, PARAMS, "dom_now")
 

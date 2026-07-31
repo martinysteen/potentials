@@ -1,7 +1,7 @@
 """
 Verdict: do extreme gains come from low-conformity group members?
 
-Reads the conformity grades from analyze_conformity.py and future_gain{20,50}d.csv,
+Reads the conformity grades from analyze_conformity.py and longi_future_per{1m,3m}.csv,
 builds a full (ticker, daynum) panel, and buckets it by conformity decile (and,
 separately, by sector-beta decile) to see whether low-conformity members produce
 wider dispersion / fatter tails in forward gain — not just a different mean.
@@ -24,7 +24,12 @@ import numpy as np
 import pandas as pd
 
 ATTRS = ["GICS", "Sector2"]
-HORIZONS = [20, 50]
+# Forward horizons, named by the longi_future_per* suffix (1d/1w/1m/3m/6m/1y) produced by
+# longi/app/code/longi_future_performance.py. "1m" = 22 trading days, "3m" = 66.
+# These replaced future_gain{20,50}d.csv on 2026-07-31 — both the day counts and the entry
+# convention changed (entry is now the day AFTER the signal day), so results are NOT
+# comparable to conformity_vs_gain.csv rows written before that date.
+HORIZONS = ["1m", "3m"]
 N_DECILES = 10
 
 
@@ -57,7 +62,7 @@ def _decile_stats(panel, bucket_col, value_col="gain"):
 def _build_panel(attr, horizon, conf_dir, gain_dir):
     conf = _read_matrix(os.path.join(conf_dir, f"longi_conf_{attr}.csv"))
     beta = _read_matrix(os.path.join(conf_dir, f"longi_sectorbeta_{attr}.csv"))
-    gain = _read_matrix(os.path.join(gain_dir, f"future_gain{horizon}d.csv"))
+    gain = _read_matrix(os.path.join(gain_dir, f"longi_future_per{horizon}.csv"))
 
     tickers = conf.index.intersection(beta.index).intersection(gain.index)
     daynums = conf.columns.intersection(beta.columns).intersection(gain.columns)
@@ -228,7 +233,7 @@ def run(input_dir, conf_dir, output_dir, strategy_grp_report_dir):
     monotonicity_notes = []
     for attr in ATTRS:
         for horizon in HORIZONS:
-            print(f"\n=== {attr} / {horizon}d ===")
+            print(f"\n=== {attr} / {horizon} ===")
             panel = _build_panel(attr, horizon, conf_dir, input_dir)
             print(f" - panel rows: {len(panel)}")
             if panel.empty:
@@ -252,7 +257,7 @@ def run(input_dir, conf_dir, output_dir, strategy_grp_report_dir):
                 & (out_df["split"] == "all") & (out_df["bucket_type"] == "conformity")
             ]
             note = _monotonicity_note(sub)
-            print(f" {attr} / {horizon}d: {note}")
+            print(f" {attr} / {horizon}: {note}")
             monotonicity_notes.append((attr, horizon, "all", note))
 
     print("\n--- Half-history consistency check (does the pattern survive a split?) ---")
@@ -264,7 +269,7 @@ def run(input_dir, conf_dir, output_dir, strategy_grp_report_dir):
                     & (out_df["split"] == split) & (out_df["bucket_type"] == "conformity")
                 ]
                 note = _monotonicity_note(sub)
-                print(f" {attr} / {horizon}d / {split}: {note}")
+                print(f" {attr} / {horizon} / {split}: {note}")
 
     print("\n=== Secondary check: DomGICS_* hop-level corroboration (low power, ~dozens of hops) ===")
     hop_df = _secondary_hop_check(conf_dir, strategy_grp_report_dir)
@@ -278,7 +283,7 @@ def run(input_dir, conf_dir, output_dir, strategy_grp_report_dir):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Verdict: low-conformity group members vs. forward gain dispersion.")
     parser.add_argument("--input_dir", type=str, default="~/potentials/group_conformity/app/input",
-                        help="Directory with future_gain{20,50}d.csv")
+                        help="Directory with longi_future_per{1m,3m}.csv")
     parser.add_argument("--conf_dir", type=str, default="~/potentials/group_conformity/app/output",
                         help="Directory with longi_conf_*.csv / longi_sectorbeta_*.csv (analyze_conformity.py output)")
     parser.add_argument("--output_dir", type=str, default="~/potentials/group_conformity/app/output")

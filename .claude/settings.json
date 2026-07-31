@@ -4,7 +4,9 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git ls-tree *)",
-      "Bash(git log *)"
+      "Bash(git log *)",
+      "Bash(ls -la \"//Gandalf/sm-home/potentials\")",
+      "Read(///Gandalf/sm-home//**)"
     ]
   }
 }

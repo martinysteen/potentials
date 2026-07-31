@@ -6,7 +6,11 @@
 Framework for backtesting **named stock-selection strategies** against historical Potentials data.
 Each strategy defines a *focusset selector* (picks N tickers for a given trading day) and the
 framework measures how those picks performed over a single forward horizon — the **`period`**
-parameter (20 or 50 trading days; default 20).
+parameter, in trading days. It must be one of the `longi_future_per*` ladder
+(1 / 5 / **22** / 66 / 132 / 264); `run_config.PERIOD` holds the default, 22 ("1 month").
+
+A hop at daynum `d` **enters at `d+1`**, not at `d` — the signal day's close is what the pick is
+made on, so it is not tradeable. See longi's `longi_future_performance.py`.
 
 Output is Excel reports — not new data files — stored under `app/report/`.
 
@@ -118,9 +122,19 @@ python walkforward.py --wide                # add numeric axes for a real select
 python walkforward.py --dry-run             # fold layout + grid size only
 ```
 
-To analyse the **50d** horizon instead of 20d: set `period: 50` in `sweep_config.py` (or a
-strategy's PARAMS) and re-run. Everything stays one-horizon-at-a-time; the report is identical
-in shape, just for 50d. Mixing 20d and 50d runs in one comparison is rejected by best_strategy.py.
+To analyse a different horizon: set `run_config.PERIOD` (or override `period` in
+`sweep_config.py` / a strategy's PARAMS) to another key of `shared.config.FUTURE_PERIOD_LABEL` —
+66 for "3 months", 132 for "6 months", and so on — then re-run. Everything stays
+one-horizon-at-a-time; the report is identical in shape. Mixing horizons in one comparison is
+rejected by best_strategy.py.
+
+**Re-sweep after changing it.** `aggregated_summary.xlsx` retains runs at the old horizon, and
+`extension.py`/`best_strategy.py` read `period` back out of those rows — so the daily tool will
+pick up a stale horizon until `run_sweep.py` archives them aside.
+
+Note the longer horizons buy fewer independent lots: over the ~660-daynum history, 22 days gives
+~30 non-overlapping lots, 66 gives ~10, 132 gives ~5, and 264 gives ~1.5 — below
+`MIN_CHAIN_LOTS`. The 6m and 1y files exist for completeness; they will not sustain a backtest.
 
 ---
 
@@ -235,8 +249,8 @@ All input is read from `DATA_ROOT = /home/sm/potentials/repositoryRTBI/data/` (d
 
 | File | Content |
 |------|---------|
-| `Longi/future_gain20d.csv` | Realised forward gain over next 20 trading days (%) — `period=20` |
-| `Longi/future_gain50d.csv` | Realised forward gain over next 50 trading days (%) — `period=50` |
+| `Longi/longi_future_per1m.csv` | Realised forward gain over a 22-trading-day hold (%) — `period=22`, the primary horizon |
+| `Longi/longi_future_per{1d,1w,3m,6m,1y}.csv` | The rest of the forward ladder: 1/5/66/132/264 days. Available, none currently used |
 | `Longi/longi_rank.csv` | Average rank across all performance periods (1 = best) |
 | `Longi/longi_rsi.csv` | RSI14 (Wilder's method) |
 | `Longi/longi_ma*.csv` | Simple moving averages |
@@ -273,6 +287,17 @@ identical to `../strategy/shared/` — copied verbatim; keep in sync manually if
 
 ### `shared/config.py`
 Constants: `DATA_ROOT`, `DATA_LONGI`, `POTDAT_PATH`, `STAMDATA_PATH`, `CAL_PATH`, `APP_ROOT`, `REPORT_ROOT`, `SUMMARY_CSV`.
+
+Also `FUTURE_PERIOD_LABEL` + **`future_gain_file(period)`** — the one place a `period` becomes a
+forward-gain filename. **`period` stays an INT everywhere**, deliberately: it is not merely a
+filename infix but also the hold length `chain.py` spaces lots by, the amount `walkforward`
+embargoes the training window by, and the size of the extension's still-open window. Only the
+filename is looked up, so none of that arithmetic had to change when the files were renamed.
+`future_gain_file` **raises** on a period outside the ladder rather than defaulting — a wrong
+horizon file does not crash anything downstream, it produces a complete and entirely plausible
+report measured against the wrong future. (It fired for real during the 2026-07-31 cutover, on
+archived `period=20` runs still sitting in `aggregated_summary.xlsx`; the fix is a re-sweep,
+which archives the old horizon out.)
 
 ### `shared/data_loader.py`
 All functions are `@lru_cache`. `load_longi(filename)`, `load_potdat()`, `load_stamdata()`,
@@ -333,7 +358,7 @@ Reads the Summary sheet from every `run*.xlsx` in a strategy folder → `aggrega
 
 ### `shared/extension.py` — partial-gain extension runner
 Covers the recent days where the strategy's forward horizon isn't fully realized yet. The horizon
-is read from `params["period"]` (loads `future_gain{period}d.csv`, so the window is ~`period`
+is read from `params["period"]` (loads the matching `longi_future_per*.csv`, so the window is ~`period`
 trading days). For each entry daynum it computes partial gain `(exit_price-entry_price)/entry_price`
 from PotDat up to the latest available price. `run_extension(..., workbook=None)` either writes a
 standalone `report/<strategy>/extension_<YYYYMMDD>.xlsx` (returns its path) or — when given a
@@ -345,7 +370,7 @@ Below `avg_partial_gain` it writes the same benchmark block as the main Operatio
 `mkt_partial_gain`, `alpha`, and (when `longi_beta3m.csv` loads) `beta`. The benchmark here is
 computed **differently and must stay that way**: `_market_partial_gain` takes the equal-weighted
 cross-sectional mean of every ticker's partial price return over the same still-open window,
-because `future_gain{period}d` by definition does not exist yet for these entries — that is the
+because the realized `longi_future_per*` matrix by definition does not exist yet for these entries — that is the
 whole reason the extension exists. In a flat tape these rows mostly restate `avg_partial_gain`;
 they earn their place in an index selloff, where an open position's loss belongs to the market
 rather than to the picks. Row offsets advance through `next_row`, so inserting the block could
@@ -617,7 +642,8 @@ far too few for `selection_skill` to have power. It deliberately does **not** in
 PARAMS: dict = {
     "focusset_size": 3,       # N tickers selected per hop
     "step": 1,                # daynum step between hops (sweep fixes this at 1)
-    "period": 20,             # forward horizon in trading days (20 or 50)
+    "period": 22,             # forward horizon in trading days; a key of
+                              # shared.config.FUTURE_PERIOD_LABEL (1/5/22/66/132/264)
     "No_go_GSPC_rsi": 40,     # suppress avg gains / skip chain hops when GSPC RSI (at daynum) < this
     # strategy-specific keys as needed
 }
@@ -666,7 +692,7 @@ That's it.
   survivor set.
 
 **Rules / invariants the engine already enforces:**
-- One `gains` dict per hop, for `future_gain{period}d.csv` — never both horizons.
+- One `gains` dict per hop, for the `period` horizon file — never both horizons.
 - Selection returns `[]` when a daynum/column is absent; never raises; `str(daynum)` for all lookups.
 - Empty-focusset policy: filter strategies **skip** (record a cash hop and `continue`) by default.
 - `n_survivors` is recorded (→ `N_survivors` report row) automatically when a strategy has **≥2
@@ -933,9 +959,9 @@ strategy**, strongest `chain_annual` leftmost.
 
 ## Known Data Quirks
 
-- **Series starts at daynum 1543** — PotDat/future_gain/Longi all begin there; nothing earlier.
+- **Series starts at daynum 1543** — PotDat/longi_future_per*/Longi all begin there; nothing earlier.
 - **Cal.csv index is float**: `2055,00` → `2055.0`. Look up with `float(daynum)`.
-- **future_gain{period}d valid from ~newest-period**: the most recent ~`period` columns are NaN
+- **`longi_future_per*` valid from ~newest-(period+1)**: the most recent ~`period`+1 columns are NaN
   (not yet realised). `find_start_daynum()` skips them.
 - **Stamdata.csv first column header** is a timestamp string, not a meaningful label.
 - **`Longi/longi_grp_*.csv`** are sector-row aggregates — never per-ticker features.

@@ -72,7 +72,7 @@ from openpyxl.utils import get_column_letter
 import sweep_config
 from run_sweep import build_plan, discover_strategies
 from shared.chain import realizable_chain
-from shared.config import REPORT_ROOT
+from shared.config import REPORT_ROOT, future_gain_file
 from shared.data_loader import daynum_to_date, load_longi
 from shared.dominance import dominance_tables, select_focusset
 
@@ -159,7 +159,7 @@ def _dom_table(params: dict, dom_col: str) -> pd.DataFrame:
 def hop_series(params: dict, dom_col: str) -> list[tuple[int, float, float]]:
     """(daynum, hop gain %, GSPC RSI) for every hop over the full history.
 
-    The hop gain is the mean realized future_gain{period}d across the focusset, NaN
+    The hop gain is the mean realized forward gain across the focusset, NaN
     dropped — the same quantity shared.report feeds the chain, so a walk-forward score
     and a run*.xlsx score are measuring the same thing.
     """
@@ -169,7 +169,7 @@ def hop_series(params: dict, dom_col: str) -> list[tuple[int, float, float]]:
 
     period  = params["period"]
     step    = params["step"]
-    gain_df = load_longi(f"future_gain{period}d.csv")
+    gain_df = load_longi(future_gain_file(period))
     rsi_df  = load_longi("longi_rsi.csv")
     dom     = _dom_table(params, dom_col)
 
@@ -206,13 +206,13 @@ def _first_realized_daynum(gain_df: pd.DataFrame, min_valid: int = 10) -> int:
     for col in gain_df.columns:
         if gain_df[col].dropna().size >= min_valid:
             return int(col)
-    raise ValueError("No valid starting daynum found in future_gain data")
+    raise ValueError("No valid starting daynum found in the forward-gain file")
 
 
 def market_series(period: int) -> pd.Series:
-    """Cross-sectional mean future_gain{period}d per daynum — the passive benchmark
+    """Cross-sectional mean forward gain per daynum — the passive benchmark
     every hop's alpha is measured against."""
-    return load_longi(f"future_gain{period}d.csv").mean(axis=0)
+    return load_longi(future_gain_file(period)).mean(axis=0)
 
 
 # ---------------------------------------------------------------------------

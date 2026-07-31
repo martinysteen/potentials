@@ -1,7 +1,7 @@
 """
 Strategy: Ranknow
 Select the N tickers with the best (lowest) longi_rank at each test daynum,
-then measure their realised forward gains over 20d and 50d horizons.
+then measure their realised forward gain over the PARAMS["period"] horizon.
 N is set via PARAMS["focusset_size"].
 """
 
@@ -12,6 +12,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from shared.config import future_gain_file
 from shared.data_loader import load_longi, load_potdat, daynum_to_date
 from shared.report import save_report
 from shared.select import pick_by_rank
@@ -24,7 +25,8 @@ VERBOSE = False
 PARAMS: dict = {
     "focusset_size": 3,
     "step": 1,
-    "period": 20,           # forward horizon in trading days (20 or 50)
+    "period": 22,           # forward horizon in trading days; must be a key of
+                            # shared.config.FUTURE_PERIOD_LABEL (1/5/22/66/132/264)
     "No_go_GSPC_rsi": 40,
     "from_rank": 1,         # where in the ranking to draw from: 1=best n,
                             # k>1=skip best k-1, -1=worst n. See shared/select.py.
@@ -56,21 +58,22 @@ def get_gains(gain_df: pd.DataFrame, tickers: list[str], daynum: int) -> dict[st
     }
 
 
-def find_start_daynum(gain20_df: pd.DataFrame, rank_df: pd.DataFrame,
+def find_start_daynum(gain_df: pd.DataFrame, rank_df: pd.DataFrame,
                       min_valid: int = 10) -> int:
     """
-    Walk future_gain20d columns left-to-right (newest first) and return the
-    first daynum where both rank_df AND gain20_df have at least min_valid valid values.
-    This skips the most recent ~20 daynums where future gain is not yet realized.
+    Walk the forward-gain columns left-to-right (newest first) and return the
+    first daynum where both rank_df AND gain_df have at least min_valid valid values.
+    This skips the most recent ~period daynums where future gain is not yet realized.
     """
-    for col in gain20_df.columns:
+    for col in gain_df.columns:
         daynum = int(col)
         scol = str(daynum)
         has_rank = scol in rank_df.columns and rank_df[scol].dropna().size >= min_valid
-        has_gain = gain20_df[col].dropna().size >= min_valid
+        has_gain = gain_df[col].dropna().size >= min_valid
         if has_rank and has_gain:
             return daynum
-    raise ValueError("No valid starting daynum found — check future_gain20d.csv and longi_rank.csv")
+    raise ValueError("No valid starting daynum found — check the longi_future_per*.csv "
+                     "horizon file and longi_rank.csv")
 
 
 def get_reference_values(daynum: int) -> dict[str, float]:
@@ -120,8 +123,8 @@ def _hop_avg(gains: dict[str, float]) -> float:
 
 def main() -> None:
     rank_df = load_longi("longi_rank.csv")
-    period: int = PARAMS.get("period", 20)
-    gain_df = load_longi(f"future_gain{period}d.csv")
+    period: int = PARAMS.get("period", 22)
+    gain_df = load_longi(future_gain_file(period))
 
     n: int = PARAMS["focusset_size"]
     step: int = PARAMS["step"]

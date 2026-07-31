@@ -29,6 +29,20 @@ POTDAT_FILE = INPUT_DIR / "PotDat.csv"
 
 DENSITY_CHECK_COLS = 10  # Number of most-recent daynum columns to test for data
 
+# The forward-looking longi_future_per*.csv files are blank in their newest columns by
+# construction — the signal day's future has not happened yet. Check 3 therefore starts
+# AFTER that lead rather than reporting it as a defect; the check still verifies real
+# density, just at the first columns where data is legitimately expected.
+# Value = period_days + 1 (entry is signal+1), matching longi_future_performance.PERIODS.
+BLANK_LEAD_COLS: dict[str, int] = {
+    "longi_future_per1d.csv": 2,
+    "longi_future_per1w.csv": 6,
+    "longi_future_per1m.csv": 23,
+    "longi_future_per3m.csv": 67,
+    "longi_future_per6m.csv": 133,
+    "longi_future_per1y.csv": 265,
+}
+
 # Canonical file set — update here when modules are added or removed
 EXPECTED_FILES: set[str] = {
     "longi_beta1yr.csv",
@@ -36,6 +50,12 @@ EXPECTED_FILES: set[str] = {
     "longi_beta6m.csv",
     "longi_coreindex.csv",
     "longi_coreindexRSI.csv",
+    "longi_future_per1d.csv",
+    "longi_future_per1m.csv",
+    "longi_future_per1w.csv",
+    "longi_future_per1y.csv",
+    "longi_future_per3m.csv",
+    "longi_future_per6m.csv",
     "longi_grp_GICS_per1d.csv",
     "longi_grp_GICS_per1m.csv",
     "longi_grp_GICS_per1w.csv",
@@ -155,9 +175,15 @@ def check_header_continuity(filepath: Path) -> tuple[bool, str]:
 
 
 def check_data_density(
-    filepath: Path, n_cols: int = DENSITY_CHECK_COLS
+    filepath: Path, n_cols: int = DENSITY_CHECK_COLS, lead: int = 0
 ) -> tuple[bool, str]:
-    """Check 3: first n_cols daynum columns each have at least one non-blank cell."""
+    """Check 3: n_cols daynum columns, starting after `lead` legitimately-blank ones,
+    each have at least one non-blank cell.
+
+    `lead` is 0 for every ordinary file. It is non-zero only for the forward-looking
+    longi_future_per*.csv, whose newest columns are empty by construction — see
+    BLANK_LEAD_COLS.
+    """
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             lines = f.readlines()
@@ -168,18 +194,21 @@ def check_data_density(
         return False, "no data rows"
 
     header = lines[0].rstrip("\n").split(";")
-    cols_to_check = min(n_cols, len(header) - 1)
+    cols_to_check = min(n_cols, len(header) - 1 - lead)
+    if cols_to_check <= 0:
+        return False, f"fewer than {lead + 1} daynum columns (lead {lead})"
 
-    # Count non-blank values per daynum column; parse only cols_to_check+1 fields
+    # Count non-blank values per daynum column; parse only what we look at
     counts = [0] * cols_to_check
     for line in lines[1:]:
-        parts = line.rstrip("\n").split(";", cols_to_check + 1)
+        parts = line.rstrip("\n").split(";", lead + cols_to_check + 1)
         for c in range(cols_to_check):
-            if c + 1 < len(parts) and parts[c + 1].strip():
+            idx = lead + c + 1
+            if idx < len(parts) and parts[idx].strip():
                 counts[c] += 1
 
     empty_col_names = [
-        header[c + 1] if (c + 1) < len(header) else f"col{c + 2}"
+        header[lead + c + 1] if (lead + c + 1) < len(header) else f"col{lead + c + 2}"
         for c, cnt in enumerate(counts)
         if cnt == 0
     ]
@@ -188,7 +217,8 @@ def check_data_density(
 
     total = len(lines) - 1
     min_fill = min(counts) if counts else 0
-    return True, f"min {min_fill}/{total} ({cols_to_check} cols)"
+    skipped = f" after {lead}" if lead else ""
+    return True, f"min {min_fill}/{total} ({cols_to_check} cols{skipped})"
 
 
 def check_file_set(output_dir: Path = OUTPUT_DIR) -> tuple[bool, str, list[str], list[str]]:
@@ -250,7 +280,7 @@ def run_qc(
             c1_ok, c1_msg = True, "skip (no PotDat)"
 
         c2_ok, c2_msg = check_header_continuity(filepath)
-        c3_ok, c3_msg = check_data_density(filepath)
+        c3_ok, c3_msg = check_data_density(filepath, lead=BLANK_LEAD_COLS.get(name, 0))
 
         file_results[name] = {
             "check1": {"ok": c1_ok, "msg": c1_msg},

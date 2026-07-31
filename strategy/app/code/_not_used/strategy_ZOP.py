@@ -2,6 +2,12 @@
 Strategy: ZOP
 Pick tickers whose MACD-Z signal equals "ZOP" at the test daynum,
 then select the N with the lowest longi_rank. Backtest 20d and 50d gains.
+
+PARKED — AND NOW STALE. This file still loads future_gain20d.csv / future_gain50d.csv,
+which were retired 2026-07-31 and no longer exist in repositoryRTBI. Before restoring it,
+switch both loads to shared.config.future_gain_file(period) and pick horizons from the
+longi_future_per* ladder (22 = "1m", 66 = "3m"). Note that family also enters on the day
+AFTER the signal day, so its numbers will not reproduce this file's old results.
 """
 
 import sys

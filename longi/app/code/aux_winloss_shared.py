@@ -60,9 +60,15 @@ class TargetSpec:
     loss_threshold: float = 0.0
     horizon_days: int = 0          # outcome window length; labels born at daynum + horizon_days
 
+# Repointed 2026-07-31 from the retired future_gain{20,50}d.csv to the longi_future_per*
+# ladder. Two things changed besides the filename: the horizons are 22/66 days rather than
+# 20/50, and entry is now the day AFTER the signal day. The win thresholds below were tuned
+# against the old 20d/50d windows and have NOT been re-tuned for the longer ones — retune
+# before reading anything into a fresh model run. (The win/loss model itself was retired
+# 2026-07-07; this sandbox is kept for reference only.)
 TARGET_SPECS: List[TargetSpec] = [
-    TargetSpec(key="20d", target_file="future_gain20d.csv", win_threshold=6.0, loss_threshold=0.0, horizon_days=20),
-    TargetSpec(key="50d", target_file="future_gain50d.csv", win_threshold=10.0, loss_threshold=0.0, horizon_days=50),
+    TargetSpec(key="1m", target_file="longi_future_per1m.csv", win_threshold=6.0, loss_threshold=0.0, horizon_days=22),
+    TargetSpec(key="3m", target_file="longi_future_per3m.csv", win_threshold=10.0, loss_threshold=0.0, horizon_days=66),
 ]
 
 

@@ -44,6 +44,7 @@ import pandas as pd
 # Allow `from shared...` imports when a strategy file runs us as `python strategy_X.py`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from shared.config import future_gain_file
 from shared.data_loader import load_longi, load_potdat, daynum_to_date
 from shared.report import save_report
 from shared.select import pick_by_rank
@@ -434,8 +435,8 @@ def make_strategy(strategy_name: str, params: dict, filters: list,
         raise ValueError(f"No valid starting daynum found — check: {sources}")
 
     def main() -> None:
-        period: int = params.get("period", 20)
-        gain_df     = load_longi(f"future_gain{period}d.csv")
+        period: int = params.get("period", 22)
+        gain_df     = load_longi(future_gain_file(period))
 
         n: int    = params["focusset_size"]
         step: int = params["step"]

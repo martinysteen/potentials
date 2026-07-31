@@ -384,7 +384,7 @@ def _fill_summary(ws, strategy_name: str, run_num: int, params: dict,
         rows.append((label, round(val, 4) if pd.notna(val) else None))
 
     # Realizable non-overlapping additive chain for the active horizon (= period).
-    hold = int(params.get("period", 20))
+    hold = int(params.get("period", 22))
     ret, annual, ntr = _chain_metrics(hop_results, _GAIN_KEY, n, hold, params)
     rows.append(("chain_ret",    round(ret, 4)    if pd.notna(ret)    else None))
     rows.append(("chain_annual", round(annual, 4) if pd.notna(annual) else None))
@@ -459,7 +459,7 @@ def _append_summary_csv(strategy_name: str, run_num: int, params: dict,
         if write_header:
             w.writerow(all_cols)
         avg_vals   = [_fmt(_grand_avg_topn(hop_results, gk, tn, params)) for _, gk, tn in _avg_rows(n)]
-        hold = int(params.get("period", 20))
+        hold = int(params.get("period", 22))
         ret, annual, ntr = _chain_metrics(hop_results, _GAIN_KEY, n, hold, params)
         chain_vals = [_fmt(ret), _fmt(annual), str(ntr)]
         worst, n_loss, sens = _chain_dispersion(hop_results, n, hold, params)

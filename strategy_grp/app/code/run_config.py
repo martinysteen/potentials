@@ -33,6 +33,11 @@ GROUP_COLUMNS: tuple[str, ...] = ("GICS", "Sector2")
 # The "classic" backtest knobs, common to every strategy in this project.
 FOCUSSET_SIZE: int = 5             # tickers picked per hop
 STEP: int = 5                        # daynum step between hops
+PERIOD: int = 22                     # forward horizon in trading days. Must be a key of
+                                      # shared.config.FUTURE_PERIOD_LABEL, i.e. one of the
+                                      # longi_future_per* ladder: 1, 5, 22, 66, 132, 264.
+                                      # 22 = "1 month", the primary horizon. Doubles as the
+                                      # hold length the chain spaces its lots by.
 NO_GO_GSPC_RSI: int = 0             # suppress picks / chain hops when GSPC RSI < this
 FROM_RANK: int = 1                   # which end of the (already directionally-graded)
                                       # priority_attribute pool to draw the focusset from:
@@ -184,8 +189,8 @@ TICKERS_PER_GROUP: int = 3  # top candidates (by PRIORITY_ATTRIBUTE) drawn from 
 # other one's. Each value may be a single Longi factor short name or a list of several.
 # ---------------------------------------------------------------------------
 INFORMATIONAL_ATTRIBUTES: dict[str, list[str]] = {
-    "GICS":    ["rank", "rsi", "spr100d"],
-    "Sector2": ["rank", "rsi", "spr100d"],
+    "GICS":    ["per1m","rank", "rsi", "spr100d"],
+    "Sector2": ["per1m","rank", "rsi", "spr100d"],
 }
 
 
@@ -199,7 +204,7 @@ def informational_attributes_for(group_column: str) -> list[str]:
 # The PARAMS dict every strategy_Dom*.py copies
 # ---------------------------------------------------------------------------
 
-def dom_params(strategy_name: str, group_column: str, period: int = 20) -> dict:
+def dom_params(strategy_name: str, group_column: str, period: int = PERIOD) -> dict:
     """The full PARAMS dict for one Dom* strategy.
 
     Six strategies share one 15-key parameter list; writing it out per module is how a
@@ -212,7 +217,7 @@ def dom_params(strategy_name: str, group_column: str, period: int = 20) -> dict:
     return {
         "focusset_size": FOCUSSET_SIZE,
         "step": STEP,
-        "period": period,           # forward horizon in trading days (20 or 50)
+        "period": period,           # forward horizon in trading days — see PERIOD above
         "No_go_GSPC_rsi": NO_GO_GSPC_RSI,
         "from_rank": FROM_RANK,
         "group_column": group_column,          # Stamdata column to group by — see the

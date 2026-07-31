@@ -1,6 +1,6 @@
 """
 Extension runner: shows the "known future" — for every trading day where the
-strategy's forward horizon (future_gain{period}d) is not yet fully realized, it
+strategy's forward horizon (longi_future_per*) is not yet fully realized, it
 lists that day's focusset and its partial realised gain so far.
 
 The horizon is read from params["period"] (20 or 50), so the window is roughly the
@@ -39,7 +39,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
-from shared.config import REPORT_ROOT
+from shared.config import REPORT_ROOT, future_gain_file
 from shared.data_loader import load_longi, load_potdat, load_stamdata, daynum_to_date
 
 
@@ -72,11 +72,11 @@ _CTR     = Alignment(horizontal="center")
 # ---------------------------------------------------------------------------
 
 def _find_gain_cutoff(gain_df: pd.DataFrame, period: int, min_valid: int = 10) -> int:
-    """Return the newest daynum where future_gain{period}d has sufficient realized data."""
+    """Return the newest daynum where the forward-gain file has sufficient realized data."""
     for col in gain_df.columns:
         if gain_df[col].dropna().size >= min_valid:
             return int(col)
-    raise ValueError(f"No valid daynum found in future_gain{period}d.csv")
+    raise ValueError(f"No valid daynum found in {future_gain_file(period)}")
 
 
 def _compute_partial_gains(potdat: pd.DataFrame, tickers: list[str],
@@ -265,8 +265,8 @@ def run_extension(
     get_focusset_fn(daynum) → list[str]  — strategy selector with pre-bound DataFrames
     get_ref_fn(daynum)      → dict       — market context (same as get_reference_values)
     """
-    period: int  = int(params.get("period", 20))
-    gain_df      = load_longi(f"future_gain{period}d.csv")
+    period: int  = int(params.get("period", 22))
+    gain_df      = load_longi(future_gain_file(period))
     potdat       = load_potdat()
     start_daynum = _find_gain_cutoff(gain_df, period)  # last fully-realized backtest daynum
     exit_daynum  = int(potdat.columns[0])            # most recent price available

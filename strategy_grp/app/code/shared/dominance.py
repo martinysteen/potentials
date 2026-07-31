@@ -56,6 +56,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
+from shared.config import future_gain_file
 from shared.data_loader import load_longi, load_stamdata, daynum_to_date
 from shared.engine import get_gains, get_reference_values
 from shared.report import save_report
@@ -286,11 +287,11 @@ def turnover_stats(hop_results: list[dict], dom_wide: pd.DataFrame) -> dict[str,
 # ---------------------------------------------------------------------------
 
 def _find_start_daynum(gain_df: pd.DataFrame, min_valid: int = 10) -> int:
-    """First daynum (newest first) where future_gain{period}d has sufficient realized data."""
+    """First daynum (newest first) where the forward-gain file has sufficient realized data."""
     for col in gain_df.columns:
         if gain_df[col].dropna().size >= min_valid:
             return int(col)
-    raise ValueError("No valid starting daynum found in future_gain data")
+    raise ValueError("No valid starting daynum found in the forward-gain file")
 
 
 def make_dom_strategy(strategy_name: str, params: dict, dom_col: str):
@@ -335,8 +336,8 @@ def make_dom_strategy(strategy_name: str, params: dict, dom_col: str):
         import preflight
         preflight.ensure_data()
 
-        period: int = params.get("period", 20)
-        gain_df  = load_longi(f"future_gain{period}d.csv")
+        period: int = params.get("period", 22)
+        gain_df  = load_longi(future_gain_file(period))
         dom_wide, cutoffs = _dom_data()
 
         n: int    = params["focusset_size"]

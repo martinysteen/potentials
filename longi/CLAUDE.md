@@ -16,6 +16,7 @@
     │   ├── longi_medians.py
     │   ├── longi_stepup.py
     │   ├── longi_grp_{GICS,Sector2}_per*.py  # Sector-aggregate modules (thin; see aux_grp_shared.py)
+    │   ├── longi_future_performance.py  # Forward-looking twin of longi_performance.py
     │   ├── longi_across.py # Cross-sectional data extraction module
     │   └── longi_upload.py
     ├── input/           # Data from Google Drive
@@ -127,6 +128,51 @@ All tables follow PotDat.csv structure (rows=tickers, columns=daynums):
 32. **longi_sh1yr.csv** - 1-year Sharpe ratio (return/volatility over 265 days) ✓ IMPLEMENTED
 33. **longi_quot1020.csv** - MA10/MA20 quotient ×100, momentum speed (>100 = accelerating) ✓ IMPLEMENTED
 34. **longi_quot2050.csv** - MA20/MA50 quotient ×100, momentum speed (>100 = accelerating) ✓ IMPLEMENTED
+
+### Forward-Looking Tables (longi_future_per*) — the backtest targets
+
+`longi_future_performance.py` is the forward-looking twin of `longi_performance.py` and emits
+the **same six-period ladder**, same day counts, same shape:
+
+| File | Days held | Newest blank columns |
+|------|-----------|----------------------|
+| `longi_future_per1d.csv` | 1 | 2 |
+| `longi_future_per1w.csv` | 5 | 6 |
+| `longi_future_per1m.csv` | 22 | 23 |
+| `longi_future_per3m.csv` | 66 | 67 |
+| `longi_future_per6m.csv` | 132 | 133 |
+| `longi_future_per1y.csv` | 264 | 265 |
+
+Where `longi_per*` assigns a **trailing** gain to the end date, these assign a **forward** gain
+to the **signal date** — at daynum `d` the cell answers "what would a position opened on the
+strength of day d's data have returned?".
+
+**The signal day is not traded.** Day `d`'s close is what the decision is made on, so it cannot
+also be the entry price. Entry is the NEXT trading day and exit is `period_days` after that:
+
+```
+gain[d] = (P[d+1+period_days] - P[d+1]) / P[d+1] * 100
+```
+
+Hence `period_days + 1` blank columns at the newest end, not `period_days`.
+
+This family **replaced `future_gain20d.csv` / `future_gain50d.csv` on 2026-07-31** (scripts moved
+to `_not_used/`). Two things changed at once, so old and new results are not comparable: the
+horizons became 22/66 days rather than 20/50, and entry moved from `P[d]` to `P[d+1]` — the old
+files quietly assumed you could trade the very close you were reading.
+
+**These are NOT per-ticker features, despite the `longi_` prefix.** They are ticker-keyed and
+would join perfectly, which is exactly the danger. `longi_across.py` skips them by the
+`longi_future_` prefix; without that guard a backfilled `across_<daynum>.csv` would carry the
+answer alongside the features. Keep them out of `aux_winloss_shared.FEATURE_FILES` too.
+
+Verified on creation against the trailing family, which is the cheapest correctness check
+available — the two must satisfy `longi_future_perX[i] == longi_perX[i - 1 - days]` exactly.
+It held over all 4.09M overlapping cells.
+
+**QC interaction:** the blank newest columns are legitimate, so `aux_qc_repo.BLANK_LEAD_COLS`
+tells check 3 (data density) to start counting *after* that lead rather than flagging it. Add an
+entry there if the ladder ever gains a period.
 
 ### Sector-Aggregated Tables (Grouped by Stock Attributes)
 Output directory: `app/output/` (same as individual stock tables)
@@ -251,7 +297,9 @@ Follow the same pattern:
 - ✓ Pipeline orchestrator (longi.py) fully implemented
   - Dependency management working
   - Parallel execution capability ready
-  - 46 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_GICS_per1d, grp_GICS_per1w, grp_GICS_per1m, grp_GICS_per3m, grp_GICS_per6m, grp_GICS_per1y, grp_Sector2_per1d, grp_Sector2_per1w, grp_Sector2_per1m, grp_Sector2_per3m, grp_Sector2_per6m, grp_Sector2_per1y, coreindex, coreindexRSI, beta3m, beta6m, beta1yr, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_gain20d, future_gain50d, across
+  - 45 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_GICS_per1d, grp_GICS_per1w, grp_GICS_per1m, grp_GICS_per3m, grp_GICS_per6m, grp_GICS_per1y, grp_Sector2_per1d, grp_Sector2_per1w, grp_Sector2_per1m, grp_Sector2_per3m, grp_Sector2_per6m, grp_Sector2_per1y, coreindex, coreindexRSI, beta3m, beta6m, beta1yr, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_performance, across
+    (`future_gain20d`/`future_gain50d` were retired 2026-07-31 — one `future_performance`
+    module now emits the whole `longi_future_per*` ladder)
 - ✓ longi_price.py fully implemented
   - Outputs: longi_price.csv (byte-exact copy of PotDat.csv via shutil.copyfile, no reformatting)
   - Purpose: (a) reference raw price data under the longi_ naming convention, (b) record the exact PotDat.csv snapshot used to derive all longi_*.csv outputs for this run, since PotDat.csv is updated asynchronously relative to them
@@ -296,8 +344,14 @@ Follow the same pattern:
 - ✓ longi_grp_Sector2_per1d/per1w/per1m/per3m/per6m/per1y.py fully implemented
   - Outputs: output/longi_grp_Sector2_per{1d,1w,1m,3m,6m,1y}.csv (50 Sector2 rows each)
   - Identical to the GICS family but with group_col="Sector2"
+- ✓ longi_future_performance.py fully implemented
+  - Outputs: longi_future_per{1d,1w,1m,3m,6m,1y}.csv — forward gains on the same day
+    counts as longi_performance.py, assigned to the SIGNAL day, entered at signal+1
+  - Independent module (reads only PotDat.csv); nothing depends on it — and `across`
+    deliberately does NOT, see the skip guard in longi_across.py
 - ✓ longi_across.py fully implemented
   - make_across(daynum, target_folder) function for programmatic use
+  - Skips longi_grp_* (sector rows) and longi_future_* (look-ahead) by filename prefix
   - Creates one cross-sectional snapshot per call
   - Called directly from longi.py with max daynum → outputs to app/output
   - Deletes existing across_*.csv files before creating new ones

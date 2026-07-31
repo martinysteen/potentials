@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"//Gandalf/sm-home/potentials/longi/\" 2>&1 | head -50)",
+      "Read(///Gandalf/sm-home/potentials/**)",
+      "Read(///Gandalf/sm-home/potentials/strategy/app/code/**)",
+      "Bash(sed -i 's|\"period\": 20,           # forward horizon in trading days \\(20 or 50\\)|\"period\": 22,           # forward horizon in trading days; must be a key of\\\\n                            # shared.config.FUTURE_PERIOD_LABEL \\(1/5/22/66/132/264\\)|' strategy_Cross1020.py strategy_Cross2050.py strategy_Tally_2050.py strategy_Tally_Rank.py strategy_Tally_RSI.py)",
+      "Bash(cd \"//Gandalf/sm-home/potentials/group_conformity/app/code\" && grep -n 'horizon}d\\\\|future_gain{horizon}d\\\\|{horizon}d' analyze_conformity_gains.py)",
+      "Read(///Gandalf/sm-home/potentials/group_conformity/app/**)",
+      "Bash(sed -i -e 's|f\"future_gain{horizon}d\\\\.csv\"|f\"longi_future_per{horizon}.csv\"|' -e 's|{attr} / {horizon}d|{attr} / {horizon}|g' analyze_conformity_gains.py)",
+      "Read(///Gandalf/sm-home//**)",
+      "Bash(sed -i 's/params\\\\.get\\(\"period\", 20\\)/params.get\\(\"period\", 22\\)/g' strategy/app/code/shared/report.py strategy_grp/app/code/shared/report.py)",
+      "Bash(sed -i 's|future_gain{period}d has sufficient realized data|the forward-gain file has sufficient realized data|; s|No valid starting daynum found in future_gain data|No valid starting daynum found in the forward-gain file|' strategy_grp/app/code/shared/dominance.py strategy_grp/app/code/walkforward.py)",
+      "Bash(sed -i 's|strategy'\\\\''s forward horizon \\(future_gain{period}d\\) is not yet fully realized, it|strategy'\\\\''s forward horizon \\(longi_future_per*\\) is not yet fully realized, it|' strategy/app/code/shared/extension.py strategy_grp/app/code/shared/extension.py)",
+      "Bash(sed -i 's|that reads future_gain{period}d, which by|that reads the realized longi_future_per* matrix, which by|' strategy_grp/app/code/shared/extension.py)",
+      "Bash(cd \"//Gandalf/sm-home/potentials\" && echo \"=== direct readers of future_gain20d/50d.csv anywhere ===\"; grep -rn 'future_gain20d\\\\.csv\\\\|future_gain50d\\\\.csv\\\\|future_gain{\\\\|future_gain[0-9]' --include=*.py --include=*.sh . 2>/dev/null | grep -v 'longi/app/code/future_gain\\\\|/CLAUDE.md'; echo \"\\(above = everything still naming the old files\\)\")",
+      "Bash(ls \"//Gandalf/sm-home/potentials/longi/_not_used/\" 2>&1 | head -12)",
+      "Read(///Gandalf/sm-home/potentials/longi/**)"
+    ]
+  }
+}

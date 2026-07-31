@@ -21,7 +21,8 @@ STRATEGY_NAME = "Tally_Rank"
 PARAMS: dict = {
     "focusset_size": 3,
     "step": 1,
-    "period": 20,           # forward horizon in trading days (20 or 50)
+    "period": 22,           # forward horizon in trading days; must be a key of
+                            # shared.config.FUTURE_PERIOD_LABEL (1/5/22/66/132/264)
     "No_go_GSPC_rsi": 0,
     "corner_bins": 10,      # within-day bins for both corner indicators (10 = deciles)
     "vola_keep_frac": 0.5,  # fraction of the corner kept after the vola100d trim

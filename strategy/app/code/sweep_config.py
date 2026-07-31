@@ -61,8 +61,10 @@ DEFAULTS: dict = {
     "focusset_size":  5,
     "step":           5,            # fixed at 1: finest phase-averaging for the chain;
                                           # step is otherwise second-order for the chain metric.
-    "period":         20,           # forward horizon in trading days (20 or 50). Single
-                                          # value -> one column per strategy in best_strategy.
+    "period":         22,           # forward horizon in trading days; must be a key of
+                                          # shared.config.FUTURE_PERIOD_LABEL (1/5/22/66/132/264).
+                                          # Single value -> one column per strategy in
+                                          # best_strategy.
     "No_go_GSPC_rsi": 50,            # 0 = filter off; 40-50 = typical. Swept so Summary
                                           # metrics (chain_*, avg_gain, N_loss) reflect each.
     "from_rank":      1         # WHERE in the rank-ordered survivor set to draw the
@@ -78,11 +80,15 @@ DEFAULTS: dict = {
 # Keys must match each strategy's STRATEGY_NAME (see `python run_sweep.py --list`).
 STRATEGIES: dict[str, dict] = {
     # --- the Tally advice build (3-step: beta3m top bin x median_30d bottom bin x
-    #     low-vola half), differing only by the chooser; 20d = primary horizon,
-    #     50d = fallback, reported alongside (longi/expAdviceModel report 6l) ---
-    "Tally_Rank": {"period": [20, 50]},
-    "Tally_RSI":  {"period": [20, 50]},
-    "Tally_2050": {"period": [20, 50]},
+    #     low-vola half), differing only by the chooser. These used to sweep
+    #     period [20, 50] — a primary horizon plus a fallback. The fallback was
+    #     RETIRED 2026-07-31 when future_gain{20,50}d.csv gave way to the
+    #     longi_future_per* ladder: they now run the single DEFAULTS horizon
+    #     (22 = "1 month") like every other strategy. Re-add {"period": [22, 66]}
+    #     here to bring a second horizon back. ---
+    "Tally_Rank": {},
+    "Tally_RSI":  {},
+    "Tally_2050": {},
 
     # --- a single cross quotient (1-step) ---
     "Cross1020": {"q10_20_min": 1.03},

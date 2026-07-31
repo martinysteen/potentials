@@ -1,6 +1,6 @@
 """
 Extension runner: shows the "known future" — for every trading day where the
-strategy's forward horizon (future_gain{period}d) is not yet fully realized, it
+strategy's forward horizon (longi_future_per*) is not yet fully realized, it
 lists that day's focusset and its partial realised gain so far.
 
 The horizon is read from params["period"] (20 or 50), so the window is roughly the
@@ -20,10 +20,11 @@ Operational sheet layout (focusset_size = N):
   Rows 4…N+3 : ticker rows
   Row N+4    : per-column "avg_gainXd" labels                       (light green)
   Row N+5    : avg_partial_gain values                              (orange/light-yellow/grey)
-  +2 rows per informational_attributes entry (only for strategies that expose one, e.g.
-               DomGICS): "<attr>_mean"/"<attr>_median" of that day's picked tickers — one pair
-               per name in params["informational_attributes"] (a single name or a list of
-               several); absent entirely when the param is unset, in which case everything
+  +N rows per informational_attributes entry (only for strategies that expose one, e.g.
+               DomGICS), N = focusset_size: "<attr>_1".."<attr>_N", a direct per-stock draw
+               from longi_{attr}.csv for that day's rank-i ticker — no aggregation — one
+               block per name in params["informational_attributes"] (a single name or a list
+               of several); absent entirely when the param is unset, in which case everything
                below shifts up
   +2 rows    : (reserved — 50d labels/results)
   ...        : ref rows (^GSPC_rsi, ^STOXX_rsi, ^HSI_rsi, ^VIX)  (yellow)
@@ -34,7 +35,6 @@ Entry points (from app/code/):
   <strategy>.build_extension(workbook=None)  # extend one strategy directly (standalone file)
 """
 
-import statistics
 from datetime import date
 from pathlib import Path
 from typing import Callable
@@ -45,7 +45,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
-from shared.config import REPORT_ROOT
+from shared.config import REPORT_ROOT, future_gain_file
 from shared.data_loader import load_longi, load_potdat, load_stamdata, daynum_to_date
 from shared.dominance import informational_attr_list
 
@@ -82,11 +82,11 @@ _CTR     = Alignment(horizontal="center")
 # ---------------------------------------------------------------------------
 
 def _find_gain_cutoff(gain_df: pd.DataFrame, period: int, min_valid: int = 10) -> int:
-    """Return the newest daynum where future_gain{period}d has sufficient realized data."""
+    """Return the newest daynum where the forward-gain file has sufficient realized data."""
     for col in gain_df.columns:
         if gain_df[col].dropna().size >= min_valid:
             return int(col)
-    raise ValueError(f"No valid daynum found in future_gain{period}d.csv")
+    raise ValueError(f"No valid daynum found in {future_gain_file(period)}")
 
 
 def _compute_partial_gains(potdat: pd.DataFrame, tickers: list[str],
@@ -121,7 +121,7 @@ def _market_partial_gain(potdat: pd.DataFrame, entry_daynum: int,
     """Benchmark over the SAME open window: equal-weighted cross-sectional mean of every
     ticker's (price[exit]/price[entry] - 1).
 
-    Deliberately NOT shared.report._market_gain — that reads future_gain{period}d, which by
+    Deliberately NOT shared.report._market_gain — that reads the realized longi_future_per* matrix, which by
     definition does not exist yet for these entries (the extension exists precisely because
     the horizon has not closed). Same idea, different source: partial price return over the
     days actually elapsed, so it lines up with avg_partial_gain day for day.
@@ -286,25 +286,25 @@ def _fill_operational(ws, hop_results: list[dict], params: dict,
             cell.fill  = (_GRY_FILL if no_go else
                           (_EXT_NEG_FILL if val < 0 else _EXT_POS_FILL))
 
-    # ---- informational_attributes mean/median rows — one pair per name (only for
-    # strategies that expose one, e.g. DomGICS); row-dynamic so more names never
-    # collide with what follows ----
+    # ---- informational_attributes per-stock rows — N rows per name, N = focusset_size
+    # (only for strategies that expose one, e.g. DomGICS); row-dynamic so more names
+    # never collide with what follows ----
     next_row = bench_row + len(bench_defs)
     for attr in informational_attr_list(params.get("informational_attributes")):
         info_df = load_longi(f"longi_{attr}.csv")
-        mean_row, median_row = next_row, next_row + 1
-        c = ws.cell(mean_row, 1, f"{attr}_mean"); c.font = _BOLD
-        c = ws.cell(median_row, 1, f"{attr}_median"); c.font = _BOLD
-        for j, h in enumerate(hop_results, start=2):
-            col = str(h["daynum"])
-            vals = [float(info_df.at[t, col]) for t in h.get("tickers", [])
-                    if t in info_df.index and col in info_df.columns
-                    and pd.notna(info_df.at[t, col])]
-            cmean, cmedian = ws.cell(mean_row, j), ws.cell(median_row, j)
-            cmean.alignment = cmedian.alignment = _CTR
-            if vals:
-                cmean.value, cmedian.value = round(statistics.mean(vals), 2), round(statistics.median(vals), 2)
-        next_row = median_row + 1
+        for i in range(n):
+            row = next_row + i
+            c = ws.cell(row, 1, f"{attr}_{i + 1}"); c.font = _BOLD
+            for j, h in enumerate(hop_results, start=2):
+                tickers = h.get("tickers", [])
+                col     = str(h["daynum"])
+                cell    = ws.cell(row, j)
+                cell.alignment = _CTR
+                if i < len(tickers):
+                    t = tickers[i]
+                    if t in info_df.index and col in info_df.columns and pd.notna(info_df.at[t, col]):
+                        cell.value = round(float(info_df.at[t, col]), 2)
+        next_row += n
 
     # ---- next 2 rows intentionally blank (reserved for 50d labels / results) ----
 
@@ -384,8 +384,8 @@ def run_extension(
     get_focusset_fn(daynum) → list[str]  — strategy selector with pre-bound DataFrames
     get_ref_fn(daynum)      → dict       — market context (same as get_reference_values)
     """
-    period: int  = int(params.get("period", 20))
-    gain_df      = load_longi(f"future_gain{period}d.csv")
+    period: int  = int(params.get("period", 22))
+    gain_df      = load_longi(future_gain_file(period))
     potdat       = load_potdat()
     beta_df      = _beta_frame()
     start_daynum = _find_gain_cutoff(gain_df, period)  # last fully-realized backtest daynum
