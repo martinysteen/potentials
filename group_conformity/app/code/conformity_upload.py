@@ -1,67 +1,40 @@
 #!/usr/bin/env python3
 """
-conformity_upload.py - Upload the group-conformity Longi factor files to the
-central repositoryRTBI/Longi store on Google Drive, so ../strategy_grp can
-read them via the normal load_longi() path if/when it wires longi_conf_* in
-as a filter. (../strategy was archived 2026-07-31, no further work planned.)
+conformity_upload.py - publish the group-conformity factor files to repositoryRTBI.
 
-Deliberately narrow: only the four Longi-shaped matrices (longi_conf_*,
-longi_sectorbeta_*) go here. conformity_ranking_*.csv, conformity_controls.csv
-and conformity_vs_gain*.csv are analysis/report byproducts, not factor data —
-wrong shape for this folder's contract (every consumer expects ticker x daynum)
-and cheaply reproducible by rerunning analyze_conformity*.py, so they stay local.
+Thin on purpose: the ownership declaration (longi_conf_*, longi_sectorbeta_*),
+the two guards and the scoped rclone sync live in
+~/potentials/shared/app/code/repository.py.
 
-Uses 'rclone copy --update' on purpose, not 'sync': the destination
-(GoogleDrive:PotSystem/repositoryRTBI/Longi) is shared production data this
-project does not own outright — 'sync' deletes anything at the destination
-that isn't in the (filtered) source, the wrong failure mode here. 'copy
---update' only ever adds or refreshes the four named files.
+This script used to run `rclone copy --update` rather than `sync`, on the grounds
+that the destination is shared data this project does not own outright - true,
+but the cost was that a retired output could never be cleaned up. Scoping the
+sync to this family's own patterns gets both: authoritative over these four
+files, blind to every other file in the folder.
+
+The analysis byproducts (conformity_ranking_*.csv, conformity_controls.csv,
+conformity_vs_gain*.csv) stay local, declared as local_only in the registry -
+wrong shape for a folder whose every consumer expects ticker x daynum, and
+cheaply reproducible by rerunning analyze_conformity*.py.
 """
-import subprocess
+import argparse
 import sys
 from pathlib import Path
 
-SOURCE = Path("/home/sm/potentials/group_conformity/app/output")
-DESTINATION = "GoogleDrive:PotSystem/repositoryRTBI/Longi"
-FILES = [
-    "longi_conf_GICS.csv",
-    "longi_conf_Sector2.csv",
-    "longi_sectorbeta_GICS.csv",
-    "longi_sectorbeta_Sector2.csv",
-]
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared" / "app" / "code"))
+import repository  # noqa: E402
 
 
 def main() -> int:
-    missing = [f for f in FILES if not (SOURCE / f).exists()]
-    if missing:
-        print(f"ERROR: missing source file(s), run analyze_conformity.py first: {missing}")
-        return 1
+    parser = argparse.ArgumentParser(
+        description="Publish group_conformity factor files to repositoryRTBI")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="show what rclone would transfer and delete, change nothing")
+    parser.add_argument("--target", choices=("drive", "mirror"), default="drive")
+    args = parser.parse_args()
 
-    include_flags = []
-    for f in FILES:
-        include_flags += ["--include", f]
-
-    cmd = [
-        "rclone", "copy", str(SOURCE), DESTINATION,
-        "--update", "--drive-skip-gdocs", "--verbose",
-    ] + include_flags
-
-    print(f"Uploading {len(FILES)} file(s) from {SOURCE} to {DESTINATION}")
-    print(f"  Files: {FILES}")
-    try:
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    except FileNotFoundError:
-        print("ERROR: rclone command not found. Is rclone installed?")
-        return 127
-
-    if result.stdout:
-        print(result.stdout, end="")
-
-    if result.returncode == 0:
-        print("SUCCESS: conformity factor files uploaded")
-    else:
-        print(f"ERROR: rclone failed with exit code {result.returncode}")
-    return result.returncode
+    return repository.publish(repository.OWNERS["group_conformity"],
+                              target=args.target, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

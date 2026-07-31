@@ -14,7 +14,18 @@
       "Bash(grep -n \"informational\\\\|_mean\\\\|_median\" \"\\\\\\\\\\\\\\\\Gandalf\\\\sm-home\\\\potentials\\\\strategy_grp\\\\app\\\\code\\\\shared\\\\extension.py\")",
       "Bash(grep -n \"^import statistics\\\\|statistics\\\\.\" \"\\\\\\\\\\\\\\\\Gandalf\\\\sm-home\\\\potentials\\\\strategy_grp\\\\app\\\\code\\\\shared\\\\extension.py\")",
       "Read(//Gandalfsm-homepotentialsstrategy_grp/app/**)",
-      "Bash(python -c \"import ast; ast.parse\\(open\\('shared/report.py'\\).read\\(\\)\\); ast.parse\\(open\\('shared/extension.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\('shared/report.py'\\).read\\(\\)\\); ast.parse\\(open\\('shared/extension.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
+      "Bash(grep -iE \"sectorbeta|deleted\" \"//gandalf/sm-home/logs/sync_repositoryRTBI.log\" 2>/dev/null | tail -25)",
+      "Read(///gandalf/sm-home/logs/**)",
+      "Bash(grep -rn \"newest\\\\|coheren\\\\|skew\" \"//gandalf/sm-home/potentials/strategy_grp/app/code/shared/datacheck.py\" | head -40)",
+      "Read(///gandalf/sm-home/potentials/strategy_grp/app/code/shared/**)",
+      "Read(///gandalf/sm-home/potentials/**)",
+      "Read(///gandalf/sm-home/potentials/repositoryRTBI/**)",
+      "Bash(find \"//gandalf/sm-home/potentials/shared\" -type f | head -30; echo \"=== git? ===\"; ls -a \"//gandalf/sm-home/potentials/shared\" \"//gandalf/sm-home/potentials/group_conformity\" | head -30)",
+      "Bash(ls \"//gandalf/sm-home/potentials/longi/app/output/\" | sed 's/[0-9]\\\\+/#/g' | sort -u)",
+      "Read(///gandalf/sm-home/potentials/longi/app/**)",
+      "Read(///gandalf/sm-home/potentials/longi/**)",
+      "Read(///gandalf/sm-home/potentials/group_conformity/**)"
     ],
     "additionalDirectories": [
       "\\\\gandalf\\sm-home\\potentials\\strategy_grp\\app\\code\\shared",

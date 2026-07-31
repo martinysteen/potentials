@@ -28,6 +28,9 @@ env/
 .DS_Store
 shared/app/creds/token.json
 
+# --- Mirror state, rewritten by sync_rtbi.sh on every tick ---
+repositoryRTBI/mirror_status.json
+
 # --- Run-local input snapshots (rebuilt from repositoryRTBI on every run;
 #     see strategy_grp/app/code/shared/datacheck.py) ---
 */app/data/input/

@@ -7,20 +7,22 @@ Why this exists
 `repositoryRTBI/data/` is not a static input — it is rewritten all day long by three
 independent cron jobs that are closely timed but not synchronised:
 
-    :07 / :37   repositoryRTBI/sync_rtbi.sh   `rclone sync` from Google Drive. A *sync*,
+    :07/:37/:55 repositoryRTBI/sync_rtbi.sh   `rclone sync` from Google Drive. A *sync*,
                                               so it DELETES a local file the moment the
                                               Drive side is itself mid-regeneration.
     :15         longi/start_longi.sh          rebuilds the longi_* family
-    :30         group_conformity/run_conf.sh  rebuilds the longi_conf_* / sectorbeta_* family
+    :45         group_conformity/run_conf.sh  rebuilds the longi_conf_* / sectorbeta_* family
 
 A run started at an unlucky minute therefore sees one of two bad states:
 
   (a) a file is simply GONE — pandas raises deep inside a strategy, run_sweep's blanket
       `except Exception` prints one line into a wall of sweep output, and the run vanishes.
 
-  (b) worse: a COMPLETE set of files, from TWO different generations. Between :15 and :30
+  (b) worse: a COMPLETE set of files, from TWO different generations. Between the mirror
+      tick that lands longi's output and the one that lands group_conformity's,
       `longi_rank.csv` already carries today's newest daynum while `longi_conf_GICS.csv`
-      still ends a day earlier. Nothing downstream raises on this, because every consumer
+      still ends a day earlier. Note this window is structural, not a race: conformity
+      CONSUMES longi_per1d, so its files can never be newer than longi's. Nothing downstream raises on this, because every consumer
       treats "this daynum is not a column" as a legitimate no-pick — shared.dominance
       .select_focusset returns [], the report writers write blanks. The run sails through
       the whole sweep producing empty focussets and only detonates much later, in the

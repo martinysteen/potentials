@@ -31,11 +31,13 @@
 
 ## Data Flow
 1. `start_longi.sh` → Activates conda, runs `fetch_input.sh`, then runs `longi.py`
-2. `fetch_input.sh` → Downloads input files from Google Drive to `./app/input/`:
+2. `fetch_input.sh` → Copies input files from the **local mirror** to `./app/input/`:
    - PotDat.csv (stock price data)
    - Stamdata.csv (stock attributes/metadata)
    - Cal.csv (date conversion reference)
-   - Uses rclone to sync from GoogleDrive:PotSystem/repositoryRTBI/
+   - Source is `~/potentials/repositoryRTBI/data/`, **not** Google Drive. One project pulls
+     from Drive (repositoryRTBI/sync_rtbi.sh); every family reads what it produced.
+   - File list and mirror-freshness gate: `shared/app/code/repository.py fetch longi`
 3. `longi.py` orchestrator:
    - Coordinates all processing modules
    - Manages module dependencies (sequential execution)
@@ -46,17 +48,21 @@
 
 ## Key Scripts
 - **fetch_input.sh** - Input data provider ✓ IMPLEMENTED
-  - Downloads PotDat.csv, Stamdata.csv, Cal.csv from Google Drive
-  - Uses rclone with GoogleDrive:PotSystem/repositoryRTBI/
+  - Copies PotDat.csv, Stamdata.csv, Cal.csv out of the local mirror
+  - Delegates to `shared/app/code/repository.py fetch longi` — refuses to run on a mirror
+    that failed its last sync or is over 90 min stale (`--stale-ok` overrides)
   - Called by start_longi.sh before running longi.py
 - **longi.py** - Main orchestrator/manager script ✓ IMPLEMENTED
   - Manages all longi_*.py processing modules
   - Handles dependencies and parallel execution
   - See "Adding New Modules" section below
 - **longi_rsi.py** - RSI14 calculation module ✓ IMPLEMENTED
-- **longi_upload.py** - Upload results to Google Drive ✓ IMPLEMENTED
-  - Syncs output/ directory
-  - Uses rclone sync to GoogleDrive:PotSystem/repositoryRTBI/Longi/
+- **longi_upload.py** - Publish results to repositoryRTBI ✓ IMPLEMENTED
+  - Thin wrapper on `shared/app/code/repository.py publish longi`
+  - `rclone sync` **scoped to longi's declared namespace**: authoritative over longi's own
+    files (so retired outputs are cleaned up), blind to every other family's files in the
+    same folder. Never use an exclude list here — see the registry's docstring for why.
+  - A new output that no declared pattern covers fails the publish loudly
 - **start_longi.sh** - Shell entry point, handles conda activation
 
 ## Application Purpose & Data Model
@@ -373,10 +379,10 @@ Follow the same pattern:
   - Manual historical generation available via CLI or Python import
   - Runs last (depends on all other modules)
 - ✓ longi_upload.py fully implemented
-  - Uses rclone sync to upload output/ directory
-  - Cyclical architecture for easy addition of new upload targets
-  - Excludes .txt and .gdoc files from sync
-  - Destination folders cleaned to match source (old files removed)
+  - Delegates to the shared registry (`shared/app/code/repository.py`), which owns the
+    namespace declaration, the two guards and the scoped rclone sync
+  - Only longi's own files are cleaned up at the destination; other families' files there
+    are invisible to the transfer
 - GDrive integration working (shared gd_download.py, longi_upload.py)
 - Shared modules in /home/sm/potentials/shared/app/code/
 

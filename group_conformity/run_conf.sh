@@ -85,17 +85,13 @@ if [ $UPLOAD_EXIT_CODE -ne 0 ]; then
     echo "ERROR: upload_output.sh failed with exit code $UPLOAD_EXIT_CODE"
 fi
 
-# Pull the freshly-uploaded files back into Ubuntu's repositoryRTBI mirror immediately,
-# rather than waiting for the next scheduled sync_rtbi.sh tick
-echo ""
-echo "--- Synchronize Google Drive's repositoryRTBI with Ubuntu's mirror ---"
-/home/sm/potentials/repositoryRTBI/sync_rtbi.sh
-SYNC_EXIT_CODE=$?
-if [ $SYNC_EXIT_CODE -ne 0 ]; then
-    echo "ERROR: sync_rtbi.sh failed with exit code $SYNC_EXIT_CODE"
-fi
+# Deliberately NOT calling repositoryRTBI/sync_rtbi.sh here. It used to be called
+# to pull these files straight back into the mirror rather than wait for the next
+# tick - convenient, but it made a producer responsible for the consumer's copy of
+# the data. The mirror refreshes on its own cron; this family's outputs arrive
+# there when it does.
 
-FINAL_EXIT_CODE=$SYNC_EXIT_CODE
+FINAL_EXIT_CODE=$UPLOAD_EXIT_CODE
 echo ""
 echo "=== run_conf.sh END: $(date) =========================================================="
 

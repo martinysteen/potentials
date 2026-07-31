@@ -147,18 +147,23 @@ unsynchronised cron jobs rewrite `repositoryRTBI/data/` all day:
 
 | when | what | effect |
 |---|---|---|
-| `:07` / `:37` | `repositoryRTBI/sync_rtbi.sh` | `rclone sync` from Google Drive — a *sync*, so it **deletes** a local file the moment the Drive side is itself mid-regeneration |
+| `:07` / `:37` / `:55` | `repositoryRTBI/sync_rtbi.sh` | `rclone sync` from Google Drive — a *sync*, so it **deletes** a local file the moment the Drive side is itself mid-regeneration |
 | `:15` | `longi/start_longi.sh` | rebuilds the `longi_*` family |
-| `:30` | `group_conformity/run_conf.sh` | rebuilds the `longi_conf_*` / `longi_sectorbeta_*` family |
+| `:45` | `group_conformity/run_conf.sh` | rebuilds the `longi_conf_*` / `longi_sectorbeta_*` family |
 
 A run needs files from **both** families whenever a group-specific factor is configured (a
 `conf` entry pulls in both `longi_conf_GICS.csv` and `longi_conf_Sector2.csv` — see
-"Group-specific factors" below), and between `:15` and `:30` they are never the same generation. Seen live on
-2026-07-30: the `:30` conformity job took 7m50s to upload 89 MB, the `:37` sync landed mid-upload
-and pulled `longi_conf_Sector2.csv` only — so `longi_conf_GICS.csv` was **deleted** locally (a sync
-mirrors deletions) and preflight failed correctly until the job's own trailing sync restored it at
-`:41`. Transient, and exactly what the guard is for. Two bad states
-follow, and **the second is the dangerous one**:
+"Group-specific factors" below), and between the mirror tick that lands longi's output and the
+one that lands conformity's, they are never the same generation. **This window is structural,
+not a race**: group_conformity consumes `longi_per1d`, so its files can never carry a daynum
+that longi's do not already have. Seen live on 2026-07-30, in the sharper form the old
+arrangement allowed: the conformity job took 7m50s to upload 89 MB, the `:37` sync landed
+mid-upload and pulled `longi_conf_Sector2.csv` only — so `longi_conf_GICS.csv` was **deleted**
+locally (a sync mirrors deletions) and preflight failed correctly until the job's own trailing
+sync restored it at `:41`. That trailing sync is gone as of 2026-07-31 (producers no longer
+touch the mirror — see `repositoryRTBI/CLAUDE.md` for the three-layer contract), so the
+recovery path is now the mirror's own next tick. Two bad states follow, and **the second is
+the dangerous one**:
 
 * **A file is gone.** pandas raised deep inside a strategy, `run_sweep.run_strategy`'s blanket
   `except Exception` printed it as one line in a wall of sweep output, and the run vanished.

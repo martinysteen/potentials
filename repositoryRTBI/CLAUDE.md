@@ -3,6 +3,39 @@
 ## Purpose
 Mirrors `GoogleDrive:PotSystem/repositoryRTBI` to local `data/` on Ubuntu (`~/potentials/repositoryRTBI/data`), and exposes the CSV files via a REST API at `https://innovia.dk/rtbi-api/`.
 
+## The three-layer contract (read this before changing any sync)
+`data/` is the authoritative copy on this machine. Three layers, and nothing crosses:
+
+| Layer | Who | Does |
+|-------|-----|------|
+| Producers | `longi`, `group_conformity`, … | compute, then publish **their own namespace** to Drive. Never pull, never trigger anything downstream. |
+| Mirror | this project (`sync_rtbi.sh`) | pulls Drive → `data/` **on its own cron**, for its own reasons |
+| Consumers | `strategy_grp`, and every family's `fetch_input.sh` | read `data/`. **Never Google Drive directly.** |
+
+A producer must not call `sync_rtbi.sh` — both `start_longi.sh` and `run_conf.sh` used to,
+which made every family's timing depend on every other family's. If consumers need fresher
+data, this project changes **its own** cron; that is not a producer's business.
+
+Ownership, publishing and fetching all live in one place:
+`~/potentials/shared/app/code/repository.py`. Each family declares what it **owns** — never
+excludes of other families' files — and its `rclone sync` is scoped to that namespace, so it
+cleans up its own retired outputs and is blind to everything else in the folder. The old
+exclude-based arrangement failed silently: longi's uploader excluded `longi_conf_*.csv` but
+nobody added `longi_sectorbeta_*.csv`, so those two files were deleted at :20 and restored
+at :31, every hour, for weeks.
+
+### mirror_status.json
+`sync_rtbi.sh` writes `~/potentials/repositoryRTBI/mirror_status.json` after every run —
+`{"finished": ISO8601, "exit_code": N, "files": N}` — including on failure. Consumers gate on
+it (`repository.py fetch` refuses a mirror that failed, or is over 90 min stale, unless
+`--stale-ok`). It lives **outside** `data/` on purpose: anything inside `data/` that Drive
+does not have is deleted by the next sync.
+
+### Cron
+`:07`, `:37`, `:55` — three ticks. `:55` exists so `group_conformity`'s `:45` output reaches
+the mirror in the hour it was computed. Full chain:
+`longi :15 → publish ~:17 → mirror :37 → group_conformity :45 → publish ~:47 → mirror :55`.
+
 ## Environment
 - Ubuntu server: `gandalf` (accessed via SSH on `innovia.dk:2222`)
 - Python: conda environment `potsystem_env` — always use this, never pip/requirements.txt
@@ -27,6 +60,14 @@ repositoryRTBI/
 ```bash
 # Manual sync from Google Drive
 bash ~/potentials/repositoryRTBI/sync_rtbi.sh
+
+# Ad-hoc publish / fetch for one family (see shared/app/code/repository.py)
+python3 ~/potentials/shared/app/code/repository.py check              # both guards, all owners
+python3 ~/potentials/shared/app/code/repository.py publish longi --dry-run
+python3 ~/potentials/shared/app/code/repository.py publish group_conformity
+python3 ~/potentials/shared/app/code/repository.py fetch longi        # --stale-ok to override
+# equivalent, from the family's own wrapper (activates conda first):
+bash ~/potentials/longi/upload_output.sh
 
 # API service
 sudo systemctl status rtbi-api

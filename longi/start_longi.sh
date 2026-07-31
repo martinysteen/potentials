@@ -76,14 +76,10 @@ if [ $UPLOAD_EXIT_CODE -ne 0 ]; then
     echo "ERROR: upload_output.sh failed with exit code $UPLOAD_EXIT_CODE"
 fi
 
-# Assure Google Drive consistent with Ubuntu's repositoryRTBI
-echo ""
-echo "--- Synchronize Google Drive-s repositoryRTBI with Ubuntu's mirro ---"
-/home/sm/potentials/repositoryRTBI/sync_rtbi.sh
-UPLOAD_EXIT_CODE=$?
-if [ $UPLOAD_EXIT_CODE -ne 0 ]; then
-    echo "ERROR: sync_rtbi.sh failed with exit code $UPLOAD_EXIT_CODE"
-fi
+# Deliberately NOT calling repositoryRTBI/sync_rtbi.sh here. A producer's job ends
+# when its own outputs are published; refreshing the local mirror is the mirror's
+# business, on the mirror's own cron. Reaching into it from here couples every
+# family to every other family's timing - which is what this used to do.
 
 FINAL_EXIT_CODE=$UPLOAD_EXIT_CODE
 echo ""

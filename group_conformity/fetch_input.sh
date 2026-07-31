@@ -1,39 +1,25 @@
 #!/bin/bash
-# Fetch inputdata from Google Drive to ../input
-# Scoped to exactly what the group-conformity grader needs — not the full
-# Longi/PotDat pull correlation/fetch_input.sh does.
+# Fetch input data from the LOCAL MIRROR (repositoryRTBI/data) to ../input
+#
+# Not from Google Drive - see ~/potentials/shared/app/code/repository.py for the
+# three-layer rule and for this family's declared input list. Scoped to exactly
+# what the group-conformity grader needs, not the full Longi pull.
+#
+# Note the consequence of reading the mirror: this family consumes longi_per1d,
+# which longi publishes to Drive, which the mirror pulls back on its own cron.
+# So this run must be scheduled AFTER a mirror tick that followed longi's
+# publish, or it grades an hour-old vintage. The freshness gate below catches a
+# dead mirror; it cannot catch a badly ordered cron.
 
 echo "=== Fetch input data START: $(date) ==="
 
-# Set source and destination
-SOURCE_1=GoogleDrive:PotSystem/repositoryRTBI/
-SOURCE_2=GoogleDrive:PotSystem/repositoryRTBI/Longi/
-RECEIVER=/home/sm/potentials/group_conformity/app/input/
+python3 /home/sm/potentials/shared/app/code/repository.py fetch group_conformity "$@"
+EXIT_CODE=$?
 
-# Clear destination folder
-echo "Clearing destination folder: $RECEIVER"
-rm -rf "$RECEIVER"*
-
-# Echo the copy operations
-echo "Copying to: $RECEIVER"
-echo "Copying from: $SOURCE_1"
-rclone copy "$SOURCE_1" "$RECEIVER" --include "Stamdata.csv" --update --verbose --drive-skip-gdocs
-RCLONE_EXIT_CODE_1=$?
-
-echo "Copying from: $SOURCE_2"
-rclone copy "$SOURCE_2" "$RECEIVER" \
-    --include "{longi_per1d.csv,longi_grp_GICS_per1d.csv,longi_grp_Sector2_per1d.csv,longi_vola100d.csv,longi_future_per20d.csv,longi_future_per50d.csv}" \
-    --max-depth 1 --update --verbose --drive-skip-gdocs
-RCLONE_EXIT_CODE_2=$?
-
-# Combine exit codes
-if [ $RCLONE_EXIT_CODE_1 -eq 0 ] && [ $RCLONE_EXIT_CODE_2 -eq 0 ]; then
-    echo "SUCCESS: Files copied successfully"
-else
-    echo "ERROR: rclone failed with exit code: $RCLONE_EXIT_CODE_1 or $RCLONE_EXIT_CODE_2"
+if [ $EXIT_CODE -ne 0 ]; then
+    echo "ERROR: fetch failed with exit code: $EXIT_CODE"
 fi
 
 echo "=== fetch_input.sh END: $(date) ==="
 
-RCLONE_EXIT_CODE=$((RCLONE_EXIT_CODE_1 + RCLONE_EXIT_CODE_2))
-exit $RCLONE_EXIT_CODE
+exit $EXIT_CODE

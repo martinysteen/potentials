@@ -23,9 +23,11 @@ cd ~/potentials/group_conformity/app/code
 python analyze_conformity.py          # builds the grade + validity controls
 python analyze_conformity_gains.py    # buckets forward gain by conformity decile
 ```
-Input is fetched by `../fetch_input.sh` (a subset pull: `Stamdata.csv`, `longi_per1d.csv`,
+Input is fetched by `../fetch_input.sh` (a subset: `Stamdata.csv`, `longi_per1d.csv`,
 `longi_grp_{GICS,Sector2}_per1d.csv`, `longi_vola100d.csv`, `longi_future_per{20,50}d.csv` — not the
-full Longi/PotDat set `../correlation/fetch_input.sh` pulls).
+full Longi/PotDat set `../correlation/fetch_input.sh` pulls). It reads the **local mirror**,
+`~/potentials/repositoryRTBI/data/`, not Google Drive; the list itself lives in the registry at
+`~/potentials/shared/app/code/repository.py`.
 
 ### Why correlation, not beta
 `longi_beta*.csv` is beta against the market/core index — a different question. The natural
@@ -106,22 +108,34 @@ mirrors hourly into `repositoryRTBI/data/Longi`, which is what `../strategy_grp`
 via `load_longi()` (`../strategy` was archived 2026-07-31, no further work planned). Everything
 else in `app/output/` (rankings, controls, the
 gains verdict) stays local — wrong shape for that folder's contract, and reproducible on demand.
-Uses `rclone copy --update`, not `sync`: that destination is shared production data this project
-doesn't own outright, so the upload only ever adds/refreshes the four named files, never deletes.
+It is a thin wrapper on `~/potentials/shared/app/code/repository.py`, which holds this
+family's namespace declaration (`/longi_conf_*.csv`, `/longi_sectorbeta_*.csv`) and runs an
+`rclone sync` **scoped to it**. Scoped that way the sync is authoritative over these four
+files — so a retired output is actually cleaned up — and blind to the ~70 longi files sharing
+the folder. This replaced `rclone copy --update`, which was safe for the neighbours but could
+never remove anything. Never add an exclude list here: the previous arrangement required every
+family to know every other family's filenames, and the one that got forgotten
+(`longi_sectorbeta_*`) was silently deleted and restored every hour for weeks.
 
 ```bash
-python conformity_upload.py   # or: bash ../upload_output.sh
+python conformity_upload.py                # or: bash ../upload_output.sh
+python conformity_upload.py --dry-run      # what would transfer and what would be deleted
+python ~/potentials/shared/app/code/repository.py check     # both guards, all families
 ```
 
 ### `run_conf.sh` — the cron entry point
-Chains fetch → `analyze_conformity.py` → `analyze_conformity_gains.py` → `upload_output.sh` →
-`repositoryRTBI/sync_rtbi.sh`, gating each step on the previous one's exit code, logging to
-`~/logs/run_conf.log`. Modeled directly on `~/potentials/longi/start_longi.sh` (same structure:
-conda init, fetch, produce, upload, then an explicit sync-back so the freshly-uploaded files land
-in Ubuntu's local `repositoryRTBI/data/Longi` mirror immediately, rather than waiting for the next
-scheduled `sync_rtbi.sh` tick). Cron-scheduled the same way `start_longi.sh` is (see crontab):
-this is the one entry point that should be cron'ed, not `fetch_input.sh`/`upload_output.sh`
+Chains fetch → `analyze_conformity.py` → `analyze_conformity_gains.py` → `upload_output.sh`,
+gating each step on the previous one's exit code, logging to `~/logs/run_conf.log`. Modeled on
+`~/potentials/longi/start_longi.sh`. It deliberately does **not** call `sync_rtbi.sh` any more:
+a producer's job ends when its own outputs are published, and refreshing the local mirror is
+the mirror's business on the mirror's own cron. Cron-scheduled the same way `start_longi.sh`
+is: this is the one entry point that should be cron'ed, not `fetch_input.sh`/`upload_output.sh`
 individually.
+
+**Cron placement matters now.** `fetch_input.sh` reads `longi_per1d` etc. from the local
+mirror rather than from Drive, so this run must follow a `sync_rtbi.sh` tick that itself
+followed longi's publish, or it grades an hour-old vintage. The chain is
+`longi :15 → publish ~:17 → mirror :37 → run_conf :45 → publish ~:47 → mirror :55`.
 
 ```bash
 bash ~/potentials/group_conformity/run_conf.sh

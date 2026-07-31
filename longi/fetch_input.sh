@@ -1,27 +1,25 @@
 #!/bin/bash
-# Fetch inputdata from Google Drive to ../input
-
+# Fetch input data from the LOCAL MIRROR (repositoryRTBI/data) to ../input
+#
+# Not from Google Drive. The mirror is the authoritative copy on this machine:
+# one place pulls from Drive (repositoryRTBI/sync_rtbi.sh), everybody else reads
+# what it produced. A family reaching past it to Drive would be computing on a
+# different vintage than its neighbours, for no gain.
+#
+# The declared input list lives in the registry at
+# ~/potentials/shared/app/code/repository.py, together with the freshness gate:
+# a mirror that failed its last sync, or has not synced recently, stops the run
+# here rather than feeding it stale data.
 
 echo "* Fetch input data START: $(date)"
 
-# Set source and destination
-SOURCE=GoogleDrive:PotSystem/repositoryRTBI/
-RECEIVER=/home/sm/potentials/longi/app/input/
+python3 /home/sm/potentials/shared/app/code/repository.py fetch longi "$@"
+EXIT_CODE=$?
 
-# Clear destination folder
-# echo "Clearing destination folder: $RECEIVER"
-rm -rf "$RECEIVER"*
-
-# Echo the copy operations
-echo "Copying from $SOURCE to $RECEIVER"
-rclone copy "$SOURCE" "$RECEIVER" --include "{PotDat.csv,Stamdata.csv,Cal.csv}" --update --verbose --drive-skip-gdocs
-RCLONE_EXIT_CODE=$?
-
-# Check result
-if [ $RCLONE_EXIT_CODE -ne 0 ]; then
-    echo "ERROR: rclone failed with exit code: $RCLONE_EXIT_CODE"
+if [ $EXIT_CODE -ne 0 ]; then
+    echo "ERROR: fetch failed with exit code: $EXIT_CODE"
 fi
 
 echo "* fetch_input.sh END: $(date)"
 
-exit $RCLONE_EXIT_CODE
+exit $EXIT_CODE

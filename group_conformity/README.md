@@ -24,8 +24,10 @@ members carry more dispersion in forward gain.
 - **Outputs**: `longi_conf_{GICS,Sector2}.csv`, `longi_sectorbeta_{GICS,Sector2}.csv`,
   `conformity_controls.csv`, `conformity_ranking_{GICS,Sector2}.csv`, `conformity_vs_gain.csv`,
   `conformity_vs_gain_hop_secondary.csv`
-- **Central storage**: `code/conformity_upload.py` pushes the two Longi-shaped grade matrices
-  to `GoogleDrive:PotSystem/repositoryRTBI/Longi` (see `docs/1_group_conformity.md`).
+- **Central storage**: `code/conformity_upload.py` pushes the four Longi-shaped matrices to
+  `GoogleDrive:PotSystem/repositoryRTBI/Longi` via the shared registry
+  (`~/potentials/shared/app/code/repository.py`), scoped to this family's own namespace so it
+  cannot touch longi's files in the same folder (see `docs/1_group_conformity.md`).
 - **Documentation**: [docs/1_group_conformity.md](docs/1_group_conformity.md)
 
 ## Usage
@@ -33,7 +35,7 @@ members carry more dispersion in forward gain.
 ssh -p 2222 sm@innovia.dk
 conda activate potsystem_env
 
-# Full pipeline (fetch -> produce -> upload -> sync-back), this is what's cron'ed:
+# Full pipeline (fetch -> produce -> publish), this is what's cron'ed (:45, see docs):
 bash ~/potentials/group_conformity/run_conf.sh
 
 # Or step by step:
