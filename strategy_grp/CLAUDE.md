@@ -151,8 +151,9 @@ unsynchronised cron jobs rewrite `repositoryRTBI/data/` all day:
 | `:15` | `longi/start_longi.sh` | rebuilds the `longi_*` family |
 | `:30` | `group_conformity/run_conf.sh` | rebuilds the `longi_conf_*` / `longi_sectorbeta_*` family |
 
-A run now needs files from **both** families (`INFORMATIONAL_ATTRIBUTES` includes `conf_GICS` and
-`conf_Sector2`), and between `:15` and `:30` they are never the same generation. Seen live on
+A run needs files from **both** families whenever a group-specific factor is configured (a
+`conf` entry pulls in both `longi_conf_GICS.csv` and `longi_conf_Sector2.csv` — see
+"Group-specific factors" below), and between `:15` and `:30` they are never the same generation. Seen live on
 2026-07-30: the `:30` conformity job took 7m50s to upload 89 MB, the `:37` sync landed mid-upload
 and pulled `longi_conf_Sector2.csv` only — so `longi_conf_GICS.csv` was **deleted** locally (a sync
 mirrors deletions) and preflight failed correctly until the job's own trailing sync restored it at
@@ -203,8 +204,9 @@ python run_sweep.py --live         # read the live repository unguarded (old beh
   (see "Not yet done" below).
 * `preflight.py` — **project-specific**: assembles that list from `run_config`, `sweep_config`
   and the strategy modules (every `PRIORITY_ATTRIBUTE_DICTIONARY` entry, every
-  `DOMINANCE_ATTRIBUTE_OVERRIDES` entry, every informational attribute, each strategy's
-  horizon, any filter-chain CSV). Deliberately a **superset** of what one entry point touches
+  `DOMINANCE_ATTRIBUTE_OVERRIDES` entry, every informational attribute — each expanded through
+  `_twins()` into every group twin that exists — each strategy's horizon, any filter-chain
+  CSV). Deliberately a **superset** of what one entry point touches
   — a superset only makes the guard stricter, and per-entry-point lists are exactly the kind
   of drift that lets a file go unchecked until it is missing.
 
@@ -389,7 +391,8 @@ The preprocessing stage behind both Dom* families — see "Group Domination Stra
 for the full write-up. `make_dom_strategy(strategy_name, params, dom_col)` is this module's
 `make_strategy()` analog: it returns the same `(main, build_extension)` pair, so a Dom* strategy
 file is still a short declaration, just built on this pipeline instead of the filter chain. Also
-holds `turnover_stats` (the flicker diagnostics).
+holds `turnover_stats` (the flicker diagnostics) and `bind_group_attributes`/`TwinUnavailable`
+(the point-of-use twin binding — see "Group-specific factors" below).
 
 ### `extension.py` — build the single combined report
 Standalone daily tool (no sweep needed; the sweep is for development) and the project's one
@@ -831,11 +834,12 @@ naming, not just documentation:**
 4. **Step 3 — informational only (display)**: `informational_attributes` never affects dominance,
    test-set construction, or selection — it only adds `<attr>_mean`/`<attr>_median` rows to
    `run*.xlsx`/extension sheets for insight into what's going on along the timeline. May be a
-   single Longi factor short name or a list. **Keyed by `group_column`** in
-   `run_config.INFORMATIONAL_ATTRIBUTES`, so each family displays its own conformity factor
-   (`conf_GICS` vs `conf_Sector2`) rather than the other one's; `informational_attributes_for()`
-   resolves it. `preflight.required_files()` unions **all** criteria's lists, so both conformity
-   files are always guarded whichever families are configured.
+   single Longi factor short name or a list. `run_config.INFORMATIONAL_ATTRIBUTES` is **one flat
+   list for both families**; `informational_attributes_for(group_column)` binds any group-specific
+   entry to that family's own twin (see "Group-specific factors" below). It was previously a dict
+   keyed by `group_column` — one hand-maintained list per criterion, which put the burden of never
+   crossing the twins on whoever edited it and covered only this role, leaving Steps 1 and 2 with
+   no equivalent at all.
 
 **`dominance_attribute`/`priority_attribute`/`informational_attributes`** are Longi factor **short
 names** (the `longi_<name>.csv` part only, e.g. `"rank"`, `"per1d"`, `"rsi"`, `"beta3m"`) — set
@@ -849,10 +853,53 @@ wins (e.g. rank), `False` = bigger value wins. Get the direction wrong and the "
 ticker-selection choice silently inverts — there is no way to detect the mismatch from the data
 alone. `informational_attributes` has no direction flag — display only, direction is irrelevant.
 
-A `priority_attribute` name is swept for **every** strategy, so a group-specific factor there
-(`conf_GICS`) would have the Sector2 family ranking candidates on GICS conformity — silent
-cross-wiring with nothing visibly wrong in the output. Test one family at a time via a `STRATEGIES`
-override if a conformity factor is ever tried in that role.
+### Group-specific factors are bound to the family automatically (twins)
+
+Some Longi factors are a **twinned family**, one matrix per group criterion:
+`longi_conf_GICS`/`longi_conf_Sector2`, `longi_sectorbeta_GICS`/`longi_sectorbeta_Sector2`.
+Feeding a Sector2 strategy the GICS twin — in **any** of the three roles — is silent
+cross-wiring: every file loads, every number is real, nothing in the output looks wrong. A
+`priority_attribute` name is swept for **every** strategy, so one dictionary entry meets both
+families, and this used to be handled by a comment saying "test one family at a time via a
+`STRATEGIES` override". That advice is dead; it is now mechanical.
+
+`run_config.GROUP_SPECIFIC_FACTORS` lists the stems (`conf`, `sectorbeta`), and
+`resolve_attribute()` binds a name to the running strategy's `group_column`:
+
+* **Write the bare stem** — `"conf"`, not `"conf_GICS"` — in `PRIORITY_ATTRIBUTE_DICTIONARY`,
+  `DOMINANCE_ATTRIBUTE`, `INFORMATIONAL_ATTRIBUTES`. One entry covers both families, each
+  reading its own twin, both testable in a single sweep. This is the intended spelling.
+* **A twin written out explicitly is retargeted**, never used as written: `"conf_GICS"` on a
+  Sector2 strategy becomes `conf_Sector2`. Every twin exists, so nothing is dropped from the
+  comparison for it. The direction in `PRIORITY_ATTRIBUTE_DICTIONARY` belongs to the *factor*,
+  not the criterion, so `priority_direction_for()` accepts either spelling and the twins cannot
+  be given conflicting directions.
+* **The resolved name is what lands in `PARAMS`**, so it is recorded as used — Summary sheet,
+  `summary.csv`, `aggregated_summary.xlsx`, and as a `priority_attribute` row in
+  `best_strategy.xlsx` where a GICS column reading `conf_GICS` sits beside a Sector2 column
+  reading `conf_Sector2`. It is printed in the run header too. **A report never names a factor
+  the run did not read.**
+
+Binding happens at every point a param-set is finalized — `run_config.dom_params()` (resting
+defaults), `run_sweep.build_plan()` (each swept set, which is where a swept name first meets a
+family; `walkforward` reaches it through the same call) — and once more at the point of use in
+`shared.dominance.bind_group_attributes()`, which writes the bound names back into the live
+`PARAMS` **in place**. That last one is the backstop: a `PARAMS` dict assembled by any other
+path is corrected rather than quietly reading the wrong twin.
+
+**Aborting is reserved for a twin that is genuinely blocked**, and it is narrow:
+* No twin to bind to (a `group_column` outside `GROUP_COLUMNS`) → `ValueError` from
+  `resolve_attribute`, rather than defaulting to GICS.
+* The bound twin has no file → `dominance.TwinUnavailable`, raised for **only the strategies
+  that need it**. Deliberately *not* a `DataUnavailable` subclass: that one means the repository
+  is mid-update and every run would fail identically, so `run_sweep` re-raises and stops. A
+  missing twin is one criterion's problem — `run_sweep`'s per-run `except Exception` catches it,
+  prints it, and the other family completes and keeps its columns.
+* `preflight._twins()` guards **every twin that exists** (so the pair falls under the
+  same-newest-daynum rule) and deliberately **omits a missing one from `required`** — failing
+  there would take the working family down with the broken one. This is the single place
+  preflight declines to stop a run, and it must not be generalized to ordinary factors, where a
+  missing file means the repository is mid-update and every run is equally wrong.
 
 **Per-strategy `dominance_attribute` override (`DOMINANCE_ATTRIBUTE_OVERRIDES`)**: the
 strategies of a family normally all share the one global
@@ -900,8 +947,10 @@ strategy's `PARAMS` — the "classic" backtest knobs (`FOCUSSET_SIZE`, `STEP`, `
 `DOMINANCE_ATTRIBUTE_DIRECTION`, `DOMINANCE_THRESHOLD_DECILE`,
 `PERSISTENCE_FRAC`, `DOMINANCE_ATTRIBUTE_OVERRIDES`), the Step-2 test-set knobs
 (`PRIORITY_ATTRIBUTE_DICTIONARY`, `PRIORITY_ATTRIBUTE`/`PRIORITY_ATTRIBUTE_DIRECTION` — the
-resting default, derived from the dictionary's first entry — and `TICKERS_PER_GROUP`), and the
-Step-3 display knob (`INFORMATIONAL_ATTRIBUTES` + `informational_attributes_for()`) — kept separate
+resting default, derived from the dictionary's first entry — and `TICKERS_PER_GROUP`), the
+Step-3 display knob (`INFORMATIONAL_ATTRIBUTES` + `informational_attributes_for()`), and the
+twin-binding rule shared by all three roles (`GROUP_SPECIFIC_FACTORS`, `resolve_attribute()`,
+`resolve_params()`, `attribute_variants()`) — kept separate
 from `sweep_config.py`, which decides *what runs* (which strategies, which grid of overrides for a
 sweep), not these defaults.
 

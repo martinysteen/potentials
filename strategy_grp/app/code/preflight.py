@@ -54,6 +54,32 @@ def _longi(short_name: str) -> str:
     return f"Longi/longi_{short_name}.csv"
 
 
+def _twins(attribute: str) -> list[str]:
+    """Repo-relative paths to guard for one configured attribute name.
+
+    An ordinary factor is itself. A group-specific one (conf, sectorbeta — see
+    run_config.GROUP_SPECIFIC_FACTORS) expands to every twin, since which one a run reads
+    depends on the strategy it lands on and guarding only the configured spelling would leave
+    the other unchecked until a family needed it. Guarding the pair together is also what puts
+    them under evaluate()'s same-newest-daynum rule, which is the check that caught the
+    2026-07-30 skew.
+
+    **A twin absent from the repository is left out of the list rather than failing here.**
+    That is deliberate and is the one place this module knowingly declines to stop a run: a
+    missing twin blocks exactly the family that reads it, and shared.dominance raises
+    TwinUnavailable for those strategies while the other criterion's strategies run to
+    completion and keep their columns in best_strategy.xlsx. Failing here instead would take
+    a working family down with a broken one. Anything that survives this filter is required
+    in full — this is not a general "optional if absent" rule, and must not become one for
+    ordinary factors, where a missing file means the repository is mid-update and every run
+    would be equally wrong.
+    """
+    variants = cfg.attribute_variants(attribute)
+    if len(variants) == 1:
+        return [_longi(variants[0])]
+    return [_longi(v) for v in variants if (config.DATA_ROOT / _longi(v)).exists()]
+
+
 def _csv_names(obj) -> list[str]:
     """Longi filenames a FILTERS/ranker object reads. Covers _Filter/_BinFilter/_Trim/_Ranker
     (`csv_name`) and _CornerFilter (`top_csv`/`bottom_csv`); a quotient_filter's synthetic
@@ -72,28 +98,28 @@ def required_files() -> tuple[list[str], list[str]]:
 
     # --- Step 1/2/3 attributes, from run_config (the resting values AND every candidate a
     # sweep can select, since sweep_config feeds PRIORITY_ATTRIBUTE_DICTIONARY in wholesale)
-    required.add(_longi(cfg.DOMINANCE_ATTRIBUTE))
+    # _twins() expands a group-specific factor (written as the bare stem "conf" or as one
+    # twin) into every twin present — see its docstring for why a missing one is left out
+    # rather than failed on.
+    required.update(_twins(cfg.DOMINANCE_ATTRIBUTE))
     for attribute, _direction in cfg.DOMINANCE_ATTRIBUTE_OVERRIDES.values():
-        required.add(_longi(attribute))
+        required.update(_twins(attribute))
     for attribute in cfg.PRIORITY_ATTRIBUTE_DICTIONARY:
-        required.add(_longi(attribute))
-    # INFORMATIONAL_ATTRIBUTES is keyed by group_column, and the union across ALL criteria is
-    # the point: both longi_conf_GICS.csv and longi_conf_Sector2.csv get checked and frozen
-    # whichever families happen to be configured. They come from the same group_conformity
-    # cron, so the same-newest-daynum rule already covers the pair.
-    for attribute_list in cfg.INFORMATIONAL_ATTRIBUTES.values():
-        for attribute in attribute_list:
-            required.add(_longi(attribute))
+        required.update(_twins(attribute))
+    for attribute in cfg.INFORMATIONAL_ATTRIBUTES:
+        required.update(_twins(attribute))
 
     # --- per-strategy: the forward-gain horizon(s) and any filter-chain sources ---
     for module in _strategy_modules():
         params = getattr(module, "PARAMS", {})
         required.add(f"Longi/{config.future_gain_file(params.get('period', 20))}")
+        # Through _twins() as well: these are already bound to the module's own criterion, but
+        # a bound twin that is missing must stay out of `required` so only that family aborts.
         for key in ("dominance_attribute", "priority_attribute"):
             if params.get(key):
-                required.add(_longi(params[key]))
+                required.update(_twins(params[key]))
         for name in _informational(params):
-            required.add(_longi(name))
+            required.update(_twins(name))
         for item in list(getattr(module, "FILTERS", [])) + list(getattr(module, "TRIMS", [])):
             required |= {f"Longi/{n}" for n in _csv_names(item)}
         ranker = getattr(module, "ranker", None)

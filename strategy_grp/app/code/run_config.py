@@ -30,9 +30,129 @@ family, fixed in the strategy module (see sweep_config.NON_SWEEPABLE).
 # GICS 13 values (~93 tickers each), Sector2 50 (~24 each).
 GROUP_COLUMNS: tuple[str, ...] = ("GICS", "Sector2")
 
+# ---------------------------------------------------------------------------
+# Group-specific Longi factors — bound to the family's own criterion, automatically
+# ---------------------------------------------------------------------------
+# Some Longi factors are not one matrix but a TWINNED FAMILY, one per group criterion:
+# longi_conf_GICS.csv / longi_conf_Sector2.csv, longi_sectorbeta_GICS.csv /
+# longi_sectorbeta_Sector2.csv. Feeding the GICS twin to a Sector2 strategy — in ANY of the
+# three attribute roles — is silent cross-wiring: every file loads, every number is a real
+# number, and nothing in the output looks wrong. It cannot be caught downstream and it cannot
+# be caught by eye, so it is not left to discipline.
+#
+# The rule is USE THE TWIN, not refuse:
+#   * Write the STEM ("conf", "sectorbeta") wherever an attribute name is expected and each
+#     family reads its own twin — conf_GICS for the GICS strategies, conf_Sector2 for the
+#     Sector2 ones. This is the intended spelling: one entry, both families, correct by
+#     construction, both testable in a single sweep.
+#   * Write one twin explicitly ("conf_GICS") and the other family is RETARGETED to its own
+#     ("conf_Sector2"), never run on the foreign one. Every twin exists, so this always works
+#     and no strategy is dropped from the comparison for it.
+#   * Either way the RESOLVED name is what lands in the strategy's PARAMS, so it is recorded
+#     as used — the Summary sheet of run*.xlsx, summary.csv, aggregated_summary.xlsx and the
+#     comparison sheet of best_strategy.xlsx all show it per strategy, so a GICS column reading
+#     conf_GICS sits beside a Sector2 column reading conf_Sector2 and the difference is on the
+#     page. It is printed in the run header too. A report never names a factor the run did not read.
+#   * Aborting is reserved for a twin that is genuinely BLOCKED — an unknown group criterion
+#     (here) or a twin missing from the data (shared/dominance.py's availability check, which
+#     fails only the strategies that needed it and leaves the rest of the sweep to finish).
+#
+# preflight guards whatever a configured run resolves to; see preflight.required_files().
+# Add a stem here when the Longi side publishes a new per-criterion family.
+GROUP_SPECIFIC_FACTORS: tuple[str, ...] = ("conf", "sectorbeta")
+
+
+def split_group_specific(attribute: str) -> tuple[str, str] | None:
+    """(stem, group_column) for a group-specific factor name, else None.
+
+        "conf"         -> ("conf", "")      bare stem: no criterion named, take the family's own
+        "conf_GICS"    -> ("conf", "GICS")  one twin, named explicitly
+        "rank"         -> None              an ordinary factor: one matrix, same for every family
+
+    Classifies only. The second element is "" for a bare stem and may name a criterion that
+    does not exist — rejecting that is resolve_attribute's job.
+    """
+    for stem in GROUP_SPECIFIC_FACTORS:
+        if attribute == stem:
+            return stem, ""
+        if attribute.startswith(f"{stem}_"):
+            return stem, attribute[len(stem) + 1:]
+    return None
+
+
+def resolve_attribute(attribute: str, group_column: str, role: str = "attribute") -> str:
+    """The Longi factor short name a strategy grouping by `group_column` must actually read.
+
+    Ordinary factors pass through untouched. A group-specific one (see GROUP_SPECIFIC_FACTORS)
+    is bound to `group_column`'s own twin, whether it arrived as a bare stem or as the other
+    family's twin. `role` names the caller, for the error message only.
+
+    Raises ValueError when there is no twin to bind to — a criterion outside GROUP_COLUMNS.
+    Falling back to the written name (or to GICS) would produce a complete, plausible, wrong
+    run, which is the one outcome this project treats as worse than stopping.
+    """
+    if not attribute:
+        return attribute
+    split = split_group_specific(attribute)
+    if split is None:
+        return attribute
+    stem, written = split
+    if group_column not in GROUP_COLUMNS:
+        raise ValueError(
+            f"{role}='{attribute}' is a group-specific factor (longi_{stem}_<criterion>.csv), "
+            f"but group_column='{group_column}' is not one of {list(GROUP_COLUMNS)} — there is "
+            f"no twin to bind it to.")
+    if written and written not in GROUP_COLUMNS:
+        raise ValueError(
+            f"{role}='{attribute}' names group criterion '{written}', which is not one of "
+            f"{list(GROUP_COLUMNS)}. Write the bare stem '{stem}' to get each family's own "
+            f"twin automatically.")
+    return f"{stem}_{group_column}"
+
+
+def attribute_variants(attribute: str) -> list[str]:
+    """Every Longi factor name `attribute` can resolve to across all group criteria: the name
+    itself for an ordinary factor, all GROUP_COLUMNS twins for a group-specific one.
+    preflight.required_files() unions these, so the input guard's same-newest-daynum rule
+    covers a twinned pair whichever twin a given run ends up reading."""
+    split = split_group_specific(attribute)
+    if split is None:
+        return [attribute]
+    stem, _written = split
+    return [f"{stem}_{column}" for column in GROUP_COLUMNS]
+
+
+def resolve_params(params: dict) -> dict:
+    """A finished param-set with all three attribute roles bound to its own group_column.
+
+    The one call every path that finalizes params makes: dom_params() below (the resting
+    defaults, at strategy-module import) and run_sweep.build_plan() (every swept parameter-set,
+    since sweep_config feeds PRIORITY_ATTRIBUTE_DICTIONARY in wholesale and a swept name meets
+    no family until then; walkforward reaches it through build_plan too). shared/dominance.py
+    calls it once more at the point of use, which is what catches a PARAMS dict assembled by
+    some future path that forgot.
+
+    Returns a new dict. A set with no group_column passes through untouched — a non-Dom
+    strategy has no criterion to bind to.
+    """
+    group_column = params.get("group_column")
+    out = dict(params)
+    if group_column is None:
+        return out
+    for key in ("dominance_attribute", "priority_attribute"):
+        if out.get(key):
+            out[key] = resolve_attribute(out[key], group_column, key)
+    value = out.get("informational_attributes")
+    if value:
+        names = [value] if isinstance(value, str) else list(value)
+        out["informational_attributes"] = [
+            resolve_attribute(name, group_column, "informational_attributes") for name in names]
+    return out
+
+
 # The "classic" backtest knobs, common to every strategy in this project.
 FOCUSSET_SIZE: int = 5             # tickers picked per hop
-STEP: int = 5                        # daynum step between hops
+STEP: int = 1                        # daynum step between hops
 PERIOD: int = 20                     # forward horizon in trading days. Must be a member of
                                       # shared.config.FUTURE_PERIODS, the "seven-pack" ladder:
                                       # 1, 5, 10, 20, 50, 100, 200. 20 is the primary horizon —
@@ -43,7 +163,7 @@ NO_GO_GSPC_RSI: int = 0             # suppress picks / chain hops when GSPC RSI 
 FROM_RANK: int = 1                   # which end of the (already directionally-graded)
                                       # priority_attribute pool to draw the focusset from:
                                       # 1=best n, -1=worst n. See shared/select.py.
-MIN_CHAIN_LOTS: int = 4              # lots a run's chain must realize before it may
+MIN_CHAIN_LOTS: int = 3              # lots a run's chain must realize before it may
                                       # REPRESENT its strategy in best_strategy.xlsx.
                                       # A reporting rule, not a sweep decision: nothing is
                                       # skipped or refused, every run still produces its
@@ -137,18 +257,23 @@ def dominance_attribute_for(strategy_name: str) -> tuple[str, bool]:
 # sweeps across all of them, one independent test-set (run) per entry, deriving each
 # run's direction from this dict so a name can never be paired with the wrong direction.
 #
-# NOTE on the conformity factors: longi_conf_GICS / longi_conf_Sector2 are group-specific.
-# A name listed here is swept for EVERY strategy, so "conf_GICS" would have the Sector2
-# family ranking its candidates on GICS conformity — silent cross-wiring, and nothing in
-# the output would look wrong. If a conformity factor is ever tested as a priority
-# attribute, test one family at a time via a STRATEGIES override in sweep_config.py.
+# NOTE on the group-specific factors (conf, sectorbeta — see GROUP_SPECIFIC_FACTORS at the
+# top of this module): a name listed here is swept for EVERY strategy, so it meets both
+# families. Write the BARE STEM — "conf", not "conf_GICS" — and each family reads its own
+# twin (longi_conf_GICS.csv for the GICS strategies, longi_conf_Sector2.csv for the Sector2
+# ones), one dictionary entry covering both, each column of best_strategy.xlsx recording
+# which twin it actually read. A twin written out explicitly is retargeted to the running
+# family's own rather than used as written, so it can no longer cross-wire — but the stem is
+# the spelling that says what is meant. The direction below belongs to the FACTOR, not to the
+# criterion: both twins measure the same thing against a different grouping.
 #
 # Sorthand:  True = small is best= small wins
 # ---------------------------------------------------------------------------
 PRIORITY_ATTRIBUTE_DICTIONARY: dict[str, bool] = {
     #"beta3m":         False,
-    #"conf_GICS":      False,    # group-specific — read the NOTE above before enabling
-    #"conf_Sector2":   False,    # Når False (dvs høj er bedst), er der stort set kun US-aktier
+    "conf":           True,    # group-specific: conf_GICS / conf_Sector2 per family, bound
+                               # automatically. Når False (dvs høj er bedst), er der stort set
+                               # kun US-aktier
     #"macd_histogram": False,
     #"median_10d":     True,
     #"median_20d":     True,
@@ -162,7 +287,7 @@ PRIORITY_ATTRIBUTE_DICTIONARY: dict[str, bool] = {
     #"per20d":         False,
     #"quot1020":       False,
     #"quot2050":       False,
-    "rank":           False,       #rank=True (små-er-bedst) giver avg_gain=5% & worst=-36%
+    #"rank":           False,       #rank=True (små-er-bedst) giver avg_gain=5% & worst=-36%
     #"rsi":            False,
     #"sh3m":           False,
     #"spr100d":        False, 
@@ -175,7 +300,25 @@ PRIORITY_ATTRIBUTE_DICTIONARY: dict[str, bool] = {
 PRIORITY_ATTRIBUTE: str = next(iter(PRIORITY_ATTRIBUTE_DICTIONARY))
 PRIORITY_ATTRIBUTE_DIRECTION: bool = PRIORITY_ATTRIBUTE_DICTIONARY[PRIORITY_ATTRIBUTE]
 
-TICKERS_PER_GROUP: int = 3  # top candidates (by PRIORITY_ATTRIBUTE) drawn from EACH
+
+def priority_direction_for(attribute: str) -> bool:
+    """Step-2 direction for a swept priority_attribute name, accepting either spelling of a
+    group-specific factor: the bare stem ("conf") or either twin ("conf_GICS"). The direction
+    is a property of the factor, so both twins resolve to the one dictionary entry and cannot
+    be given conflicting directions.
+
+    KeyError (not a default) on an unregistered name — run_sweep turns it into the "add its
+    direction to PRIORITY_ATTRIBUTE_DICTIONARY first" error, since a wrong direction silently
+    inverts which tickers count as best and is undetectable from the output.
+    """
+    if attribute in PRIORITY_ATTRIBUTE_DICTIONARY:
+        return PRIORITY_ATTRIBUTE_DICTIONARY[attribute]
+    split = split_group_specific(attribute)
+    if split is not None and split[0] in PRIORITY_ATTRIBUTE_DICTIONARY:
+        return PRIORITY_ATTRIBUTE_DICTIONARY[split[0]]
+    raise KeyError(attribute)
+
+TICKERS_PER_GROUP: int = 5  # top candidates (by PRIORITY_ATTRIBUTE) drawn from EACH
                             # dominating group into the pooled test-set — Step 2 only;
                             # distinct from Step 1's DOM_COUNT_THRESHOLD above. Shared by
                             # both group criteria: 2 was tried for Sector2 (where 3 of a
@@ -186,19 +329,22 @@ TICKERS_PER_GROUP: int = 3  # top candidates (by PRIORITY_ATTRIBUTE) drawn from 
 # Step 3 — informational only: shown alongside the picks (mean/median per day in run*.xlsx
 # and the extension tabs) purely for insight into what's going on along the timeline.
 # Never affects which tickers get selected, how test-sets are built, or anything else.
-# Keyed by group_column so each family displays ITS OWN conformity factor rather than the
-# other one's. Each value may be a single Longi factor short name or a list of several.
+#
+# ONE list for every family: a group-specific entry is written as its bare stem ("conf",
+# "sectorbeta") and bound to each family's own twin by resolve_attribute — so the GICS
+# strategies display longi_conf_GICS and the Sector2 ones longi_conf_Sector2 without the list
+# being written twice. (This used to be a dict keyed by group_column, one hand-maintained
+# list per criterion, which put the burden of never crossing the twins on whoever edited it
+# and covered only this role — Steps 1 and 2 had no equivalent at all.)
 # ---------------------------------------------------------------------------
-INFORMATIONAL_ATTRIBUTES: dict[str, list[str]] = {
-    "GICS":    ["per20d", "rank", "rsi", "spr100d"],
-    "Sector2": ["per20d", "rank", "rsi", "spr100d"],
-}
+INFORMATIONAL_ATTRIBUTES: list[str] = ["per20d", "rank", "rsi", "spr100d"]
 
 
 def informational_attributes_for(group_column: str) -> list[str]:
-    """Step-3 display-only factor names for one group criterion. A copy, since it lands in
-    a strategy's live PARAMS dict that run_sweep mutates in place."""
-    return list(INFORMATIONAL_ATTRIBUTES[group_column])
+    """Step-3 display-only factor names, bound to one group criterion's twins. A fresh list,
+    since it lands in a strategy's live PARAMS dict that run_sweep mutates in place."""
+    return [resolve_attribute(name, group_column, "informational_attributes")
+            for name in INFORMATIONAL_ATTRIBUTES]
 
 
 # ---------------------------------------------------------------------------
@@ -213,9 +359,13 @@ def dom_params(strategy_name: str, group_column: str, period: int = PERIOD) -> d
 
     Returns a FRESH dict on every call — run_sweep.run_strategy mutates module.PARAMS in
     place (PARAMS.clear() + update()), so two modules must never share one object.
+
+    Every attribute role is passed through resolve_params(), so a group-specific factor named
+    anywhere above (as a bare stem or as one twin) reaches this strategy as ITS OWN twin —
+    see GROUP_SPECIFIC_FACTORS at the top of this module.
     """
     dominance_attribute, dominance_attribute_direction = dominance_attribute_for(strategy_name)
-    return {
+    return resolve_params({
         "focusset_size": FOCUSSET_SIZE,
         "step": STEP,
         "period": period,           # forward horizon in trading days — see PERIOD above
@@ -232,4 +382,4 @@ def dom_params(strategy_name: str, group_column: str, period: int = PERIOD) -> d
         "priority_attribute": PRIORITY_ATTRIBUTE,
         "priority_attribute_direction": PRIORITY_ATTRIBUTE_DIRECTION,
         "informational_attributes": informational_attributes_for(group_column),
-    }
+    })

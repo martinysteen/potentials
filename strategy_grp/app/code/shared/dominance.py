@@ -47,6 +47,12 @@ swept by sweep_config.py, each defining an independent test-set/run).
 informational_attr_list (Step 3 — display only, see run_config.INFORMATIONAL_ATTRIBUTES)
 normalizes a name-or-list param for shared/report.py and shared/extension.py; it never
 feeds selection.
+
+All three roles are passed through bind_group_attributes() before a run reads anything, so a
+group-specific factor (longi_conf_GICS/longi_conf_Sector2, longi_sectorbeta_*) is always the
+twin matching THIS strategy's group_column — never the other family's. See
+run_config.GROUP_SPECIFIC_FACTORS for the rule and TwinUnavailable for the one case that
+aborts instead of binding.
 """
 
 import sys
@@ -56,11 +62,69 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
-from shared.config import future_gain_file
+import run_config as cfg
+from shared.config import active_longi, future_gain_file
 from shared.data_loader import load_longi, load_stamdata, daynum_to_date
 from shared.engine import get_gains, get_reference_values
 from shared.report import save_report
 from shared.select import pick_by_rank
+
+
+# ---------------------------------------------------------------------------
+# Group-specific attributes — bound to this strategy's own criterion at the point of use
+# ---------------------------------------------------------------------------
+
+class TwinUnavailable(Exception):
+    """A group-specific factor's twin for this strategy's group_column is not in the data.
+
+    Deliberately NOT a DataUnavailable: that one means the repository is mid-update and every
+    remaining run would fail identically, so run_sweep re-raises it and stops. This means one
+    criterion's twin is missing while the other's is fine — the GICS family can complete and
+    only the Sector2 strategies have nothing to read. run_sweep's per-run `except Exception`
+    catches it, prints it, and lets the sweep finish, so the strategies that CAN run still get
+    their columns in best_strategy.xlsx.
+    """
+
+
+def bind_group_attributes(params: dict) -> dict:
+    """Bind every group-specific attribute in a live PARAMS dict to its own group_column.
+
+    Resolution normally happened upstream (run_config.dom_params for the resting defaults,
+    run_sweep.build_plan for a swept set); this is the backstop that makes it unconditional —
+    a PARAMS dict assembled by any other path (a future entry point, a hand-edited module, a
+    row read back from a report) is corrected here rather than quietly reading the wrong twin.
+
+    Writes the resolved names back into `params` IN PLACE — it is the live dict the report is
+    written from, so this is what makes run*.xlsx / summary.csv / best_strategy.xlsx name the
+    twin the run actually read instead of the one that was configured. Returns it for chaining.
+
+    Raises TwinUnavailable when the bound twin has no file; ValueError (from
+    run_config.resolve_attribute) when there is no twin to bind to at all.
+    """
+    resolved = cfg.resolve_params(params)
+    for role in ("dominance_attribute", "priority_attribute"):
+        if resolved.get(role):
+            _require_available(resolved[role], role, params.get("group_column"))
+    for name in informational_attr_list(resolved.get("informational_attributes")):
+        _require_available(name, "informational_attributes", params.get("group_column"))
+    params.update(resolved)
+    return params
+
+
+def _require_available(attribute: str, role: str, group_column: str | None) -> None:
+    """TwinUnavailable if a group-specific factor's bound twin is not on disk. Only checked
+    for group-specific names: an ordinary missing factor is preflight's business (a whole-run
+    input failure), while a missing twin is specific to one family and must not take the
+    other one down with it."""
+    if cfg.split_group_specific(attribute) is None:
+        return
+    path = active_longi() / f"longi_{attribute}.csv"
+    if path.exists():
+        return
+    raise TwinUnavailable(
+        f"{role}='{attribute}': group_column='{group_column}' needs {path.name}, which is not "
+        f"in {active_longi()}. The other criterion's twin is unaffected — its strategies still "
+        f"run. Check that the group_conformity cron published this twin (`python preflight.py`).")
 
 
 # ---------------------------------------------------------------------------
@@ -336,6 +400,9 @@ def make_dom_strategy(strategy_name: str, params: dict, dom_col: str):
         import preflight
         preflight.ensure_data()
 
+        # AFTER the snapshot, so the twin-availability check reads what this run will read.
+        bind_group_attributes(params)
+
         period: int = params.get("period", 20)
         gain_df  = load_longi(future_gain_file(period))
         dom_wide, cutoffs = _dom_data()
@@ -355,6 +422,11 @@ def make_dom_strategy(strategy_name: str, params: dict, dom_col: str):
         # which run is scrolling past.
         print(f"Group by     : {group_column}   "
               f"dom_count_threshold: {params['dom_count_threshold']}")
+        # The BOUND attribute names, so a group-specific factor's twin is visible in the log
+        # as well as in the report (see run_config.GROUP_SPECIFIC_FACTORS): a sweep of "conf"
+        # scrolls past as conf_GICS here and conf_Sector2 there.
+        print(f"Dominance on : {params['dominance_attribute']}   "
+              f"Priority on: {params['priority_attribute']}")
         print()
 
         hop_results: list[dict] = []
@@ -406,6 +478,10 @@ def make_dom_strategy(strategy_name: str, params: dict, dom_col: str):
 
     def build_extension(workbook=None):
         from shared.extension import run_extension
+        # The extension is reached from extension.py, which binds a winning run's params onto
+        # the module without going through the sweep — so it needs the same binding main()
+        # does, or a report sheet could name one twin while the picks came from the other.
+        bind_group_attributes(params)
         dom_wide, _cutoffs = _dom_data()
         return run_extension(strategy_name, params,
                              lambda dn: _selector(dn, dom_wide),

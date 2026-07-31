@@ -102,7 +102,15 @@ def expand_runs(base_params: dict, spec: dict, linked: dict) -> list[dict]:
                 "priority_attribute is being swept — its direction is derived from "
                 "run_config.PRIORITY_ATTRIBUTE_DICTIONARY for each swept name."
             )
-        missing = [v for v in values if v not in run_config.PRIORITY_ATTRIBUTE_DICTIONARY]
+        directions: dict[str, bool] = {}
+        missing: list[str] = []
+        for v in values:
+            try:
+                # Accepts a group-specific factor as its bare stem ("conf") or as either twin
+                # — the direction belongs to the factor, not to the group criterion.
+                directions[v] = run_config.priority_direction_for(v)
+            except KeyError:
+                missing.append(v)
         if missing:
             raise SystemExit(
                 f"sweep_config: priority_attribute value(s) {missing} have no entry in "
@@ -110,7 +118,7 @@ def expand_runs(base_params: dict, spec: dict, linked: dict) -> list[dict]:
                 "(True = smaller wins, False = bigger wins) before sweeping them."
             )
         frags = [{"priority_attribute": v}
-                 | ({"priority_attribute_direction": run_config.PRIORITY_ATTRIBUTE_DICTIONARY[v]}
+                 | ({"priority_attribute_direction": directions[v]}
                     if "priority_attribute_direction" in base_params else {})
                  for v in values]
         axes.append(frags)
@@ -171,7 +179,13 @@ def build_plan(modules: dict[str, object]) -> dict[str, list[dict]]:
                 "fixed multi-value list as a grid axis and split it into separate runs. "
                 "Remove from sweep_config.DEFAULTS/STRATEGIES; set via run_config.py instead."
             )
-        plan[name] = expand_runs(dict(modules[name].PARAMS), spec, linked)
+        # resolve_params binds every group-specific attribute (conf, sectorbeta) to THIS
+        # strategy's group_column. It has to happen here rather than in sweep_config: one
+        # swept name is handed to both families, and until it lands in a parameter-set it
+        # belongs to neither. Without it, "conf" is not a file and "conf_GICS" would have the
+        # Sector2 family ranking on GICS conformity — see run_config.GROUP_SPECIFIC_FACTORS.
+        plan[name] = [run_config.resolve_params(p)
+                      for p in expand_runs(dict(modules[name].PARAMS), spec, linked)]
     return plan
 
 
