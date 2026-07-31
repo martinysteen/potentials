@@ -14,10 +14,11 @@ made on, so it is not tradeable. See longi's `longi_future_performance.py`.
 
 Output is Excel reports — not new data files — stored under `app/report/`.
 
-**This project is a standalone sibling of `../strategy/`.** It shares the same generic backtest
-engine and reporting machinery (copied in verbatim — see below), and reads the same underlying
-data in `../repositoryRTBI/`, but defines and tests its **own** named strategies, selected by
-principles distinct from `strategy`'s. **No strategy, config entry, or report from `strategy` is
+**This project began as a standalone sibling of `../_archive/strategy/`** (archived 2026-07-31 —
+frozen, no further work). It shares the same generic backtest engine and reporting machinery
+(copied in verbatim at the time — see below), and reads the same underlying data in
+`../repositoryRTBI/`, but defines and tests its **own** named strategies, selected by principles
+distinct from `strategy`'s. **No strategy, config entry, or report from `strategy` was ever
 reused as data here** — `strategy`'s strategies (Ranknow, Cross1020/2050, Tally_Rank/RSI/2050) and
 its report history only ever served as a *structural template* for how this pipeline is shaped, and
 have been stripped back out. This project's own named strategies, once defined, are tested one by
@@ -196,8 +197,9 @@ python run_sweep.py --live         # read the live repository unguarded (old beh
 
 ### Division of labour (do not merge these two)
 * `shared/datacheck.py` — **generic** mechanics: inspect, evaluate, snapshot, print. Knows
-  nothing about DomGICS or any strategy; takes the file list as an argument, so it is
-  copyable verbatim to `../strategy/`.
+  nothing about DomGICS or any strategy; takes the file list as an argument, which was
+  designed to make it copyable verbatim to `../strategy/` — moot now that project is archived
+  (see "Not yet done" below).
 * `preflight.py` — **project-specific**: assembles that list from `run_config`, `sweep_config`
   and the strategy modules (every `PRIORITY_ATTRIBUTE_DICTIONARY` entry, every
   `DOMINANCE_ATTRIBUTE_OVERRIDES` entry, every informational attribute, each strategy's
@@ -224,18 +226,20 @@ python run_sweep.py --live         # read the live repository unguarded (old beh
   a new inode and renames; `--inplace` would rewrite the bytes underneath. The required set is
   ~45 MB, so a copy costs under a second and needs no assumption about rclone.
 
-### Not yet done
-`../strategy/` shares the same verbatim `shared/` modules and reads the same repository, so it
-has the identical exposure and none of this guard. Mirroring is a copy of `datacheck.py` +
-`preflight.py` + the `config.py`/`data_loader.py` edits, with `preflight.required_files()`
-rewritten for its filter-chain strategies.
+### Not yet done — now moot
+`../_archive/strategy/` shared the same verbatim `shared/` modules and read the same repository,
+so it had identical exposure and none of this guard. Mirroring would have been a copy of
+`datacheck.py` + `preflight.py` + the `config.py`/`data_loader.py` edits, with
+`preflight.required_files()` rewritten for its filter-chain strategies — but `strategy/` was
+archived 2026-07-31 with no further work planned, so this is no longer worth doing.
 
 ---
 
 ## Data Sources
 
 All input is read from `DATA_ROOT = /home/sm/potentials/repositoryRTBI/data/` (defined in
-`shared/config.py`) — the same data source `../strategy/` reads. Never hardcode paths.
+`shared/config.py`) — the same data source the now-archived `../_archive/strategy/` used to
+read. Never hardcode paths.
 **A run reads a frozen snapshot of it, not the live directory** — see "Input Data Guard" above.
 
 ### Matrix format (all Longi files)
@@ -266,7 +270,7 @@ Full factor set (all in `Longi/`, see `../repositoryRTBI/data/Longi/`): trailing
 quotients (`longi_quot1020`, `longi_quot2050`), composite rank (`longi_rank`), plus normalized
 prices (`PotNdx.csv`), a rich ranking snapshot (`PotRank.csv`), and historical fundamentals
 (`Yfinance/StockData2_stacked.csv` — P/E, margins, growth, analyst targets) not yet tapped by
-any strategy in `../strategy/`.
+any strategy here.
 
 **Do not use** `Longi/longi_grp_*.csv` as per-ticker features — they are sector-row aggregates
 (rows are sector names, not tickers, so an inner join on ticker yields nothing). The current
@@ -281,8 +285,9 @@ be compared against (see "Turnover" in the family section).
 
 ## Shared Modules
 
-(`config.py`/`data_loader.py`/`select.py`/`engine.py`/`chain.py`/`report.py`/`extension.py` are
-identical to `../strategy/shared/` — copied verbatim; keep in sync manually if the engine improves.
+(`config.py`/`data_loader.py`/`select.py`/`engine.py`/`chain.py`/`report.py`/`extension.py` were
+copied verbatim from `../_archive/strategy/shared/` at the time. `strategy/` was archived
+2026-07-31 with no further work planned, so there is no longer a second copy to keep in sync.
 `dominance.py` is new to this project — see below.)
 
 ### `shared/config.py`
@@ -376,7 +381,7 @@ they earn their place in an index selloff, where an open position's loss belongs
 rather than to the picks. Row offsets advance through `next_row`, so inserting the block could
 not desync the informational/ref rows the way it did on the main sheet.
 
-### `shared/dominance.py` — group-domination pipeline (new, not from `../strategy/`)
+### `shared/dominance.py` — group-domination pipeline (new, not from `../_archive/strategy/`)
 The preprocessing stage behind both Dom* families — see "Group Domination Strategy Family" below
 for the full write-up. `make_dom_strategy(strategy_name, params, dom_col)` is this module's
 `make_strategy()` analog: it returns the same `(main, build_extension)` pair, so a Dom* strategy

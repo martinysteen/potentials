@@ -17,7 +17,7 @@ POTDAT_PATH: Final = DATA_ROOT / "PotDat.csv"
 STAMDATA_PATH: Final = DATA_ROOT / "Stamdata.csv"
 CAL_PATH: Final = DATA_ROOT / "Cal.csv"
 
-APP_ROOT: Final = Path(__file__).resolve().parents[2]  # .../strategy/app/
+APP_ROOT: Final = Path(__file__).resolve().parents[2]  # .../strategy_grp/app/
 
 # ---------------------------------------------------------------------------
 # The ACTIVE data root — what data_loader actually opens

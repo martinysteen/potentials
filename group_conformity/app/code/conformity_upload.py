@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 conformity_upload.py - Upload the group-conformity Longi factor files to the
-central repositoryRTBI/Longi store on Google Drive, so ../strategy and
-../strategy_grp can read them via the normal load_longi() path if/when one of
-them wires longi_conf_* in as a filter.
+central repositoryRTBI/Longi store on Google Drive, so ../strategy_grp can
+read them via the normal load_longi() path if/when it wires longi_conf_* in
+as a filter. (../strategy was archived 2026-07-31, no further work planned.)
 
 Deliberately narrow: only the four Longi-shaped matrices (longi_conf_*,
 longi_sectorbeta_*) go here. conformity_ranking_*.csv, conformity_controls.csv

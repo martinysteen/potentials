@@ -99,8 +99,9 @@ beta is still written out (`longi_sectorbeta_*.csv`) as a side-by-side check, no
 ### `conformity_upload.py` — pushing the grade to central storage
 Uploads exactly the four Longi-shaped matrices (`longi_conf_*`, `longi_sectorbeta_*`) to
 `GoogleDrive:PotSystem/repositoryRTBI/Longi` — the same folder `repositoryRTBI/sync_rtbi.sh`
-mirrors hourly into `repositoryRTBI/data/Longi`, which is what `../strategy` and `../strategy_grp`
-actually read via `load_longi()`. Everything else in `app/output/` (rankings, controls, the
+mirrors hourly into `repositoryRTBI/data/Longi`, which is what `../strategy_grp` actually reads
+via `load_longi()` (`../strategy` was archived 2026-07-31, no further work planned). Everything
+else in `app/output/` (rankings, controls, the
 gains verdict) stays local — wrong shape for that folder's contract, and reproducible on demand.
 Uses `rclone copy --update`, not `sync`: that destination is shared production data this project
 doesn't own outright, so the upload only ever adds/refreshes the four named files, never deletes.
