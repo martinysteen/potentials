@@ -337,7 +337,7 @@ TICKERS_PER_GROUP: int = 5  # top candidates (by PRIORITY_ATTRIBUTE) drawn from 
 # list per criterion, which put the burden of never crossing the twins on whoever edited it
 # and covered only this role — Steps 1 and 2 had no equivalent at all.)
 # ---------------------------------------------------------------------------
-INFORMATIONAL_ATTRIBUTES: list[str] = ["per20d", "rank", "rsi", "spr100d"]
+INFORMATIONAL_ATTRIBUTES: list[str] = ["per1d", "rank", "rsi", "spr100d"]
 
 
 def informational_attributes_for(group_column: str) -> list[str]:
