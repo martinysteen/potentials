@@ -219,6 +219,22 @@ def market_series(period: int) -> pd.Series:
 # Scoring one window
 # ---------------------------------------------------------------------------
 
+def _shape(gains: list[float]) -> tuple[float, float]:
+    """(median lot gain, % of lots positive) — the shape behind the mean.
+
+    A mean alone cannot tell a broad edge from one lottery ticket, and this family's
+    returns are right-tail driven by construction (which is also why price stop-losses
+    were found to lose). Seen live on 2026-08-02: a spr100d fold posted mean 61.48 on
+    median 24.29, with 69% of the fold's whole gain in the top 5% of picks and one
+    ticker returning +1552%. Read median beside mean; when they diverge, the mean is a
+    few tickers. hit_rate does the same job for consistency: 97% and 43% can carry the
+    same mean.
+    """
+    if not gains:
+        return float("nan"), float("nan")
+    return float(pd.Series(gains).median()), 100.0 * sum(g > 0 for g in gains) / len(gains)
+
+
 def window_metrics(rows: list[tuple[int, float, float]], params: dict,
                    mkt: pd.Series, floor: int, cap: int) -> dict:
     """Score one parameter-set over one [floor, cap] daynum window (both inclusive).
@@ -243,10 +259,13 @@ def window_metrics(rows: list[tuple[int, float, float]], params: dict,
 
     gains  = [g for g, _m in lots]
     alphas = [g - m for g, m in lots if pd.notna(m)]
+    med, hit = _shape(gains)
     return {
         "chain_annual": annual,
         "chain_n":      n,
         "avg_gain":     sum(gains) / len(gains) if gains else float("nan"),
+        "median_gain":  med,
+        "hit_rate":     hit,
         "alpha":        sum(alphas) / len(alphas) if alphas else float("nan"),
         "n_hops":       len(lots),
         "lots":         lots,
@@ -317,6 +336,7 @@ def walk_strategy(name: str, dom_col: str, grid: list[dict],
                 "fold": fi, "params": label(params),
                 "is_annual": tr["chain_annual"], "is_avg_gain": tr["avg_gain"],
                 "oos_annual": te["chain_annual"], "oos_avg_gain": te["avg_gain"],
+                "oos_median_gain": te["median_gain"], "oos_hit_rate": te["hit_rate"],
                 "oos_alpha": te["alpha"], "oos_n": te["n_hops"],
                 "selected": "",
             })
@@ -354,6 +374,8 @@ def walk_strategy(name: str, dom_col: str, grid: list[dict],
             "is_alpha": tr_sel["alpha"],
             "oos_annual": te_sel["chain_annual"],
             "oos_avg_gain": te_sel["avg_gain"],
+            "oos_median_gain": te_sel["median_gain"],
+            "oos_hit_rate": te_sel["hit_rate"],
             "oos_alpha": te_sel["alpha"],
             "oos_n": te_sel["n_hops"],
             "oos_mean_all": sum(oos_avgs) / len(oos_avgs) if oos_avgs else float("nan"),
@@ -420,9 +442,11 @@ def write_report(results: list[dict], min_train: int, test_len: int,
         g_all, a_all, _n    = _pooled(r["pooled_all"])
         g_is  = _mean_of(r["folds"], "is_avg_gain")
         a_is  = _mean_of(r["folds"], "is_alpha")
+        m_sel, h_sel = _shape([g for g, _m in r["pooled_selected"]])
         summary.append([
             r["strategy"], r["grid_size"], len(r["folds"]), n_sel,
             _r2(g_is), _r2(g_sel), _r2(g_sel - g_is),
+            _r2(m_sel), _r2(h_sel),
             _r2(a_is), _r2(a_sel), _r2(a_sel - a_is),
             _r2(g_all), _r2(a_all),
             _r2(g_sel - g_all), _r2(a_sel - a_all),
@@ -432,6 +456,7 @@ def write_report(results: list[dict], min_train: int, test_len: int,
     _sheet(wb, "Summary",
            ["strategy", "grid", "folds", "oos_lots",
             "is_avg_gain", "oos_avg_gain", "gain_gap",
+            "oos_median_gain", "oos_hit_rate%",
             "is_alpha", "oos_alpha", "alpha_gap",
             "zeroskill_avg_gain", "zeroskill_alpha",
             "selection_skill_gain", "selection_skill_alpha",
@@ -446,14 +471,16 @@ def write_report(results: list[dict], min_train: int, test_len: int,
                 f"{f['train_from']}-{f['train_to']}", f"{f['test_from']}-{f['test_to']}",
                 f["selected"], f["is_n"], f["oos_n"],
                 _r2(f["is_annual"]), _r2(f["oos_annual"]), _r2(f["oos_annual_mean_all"]),
-                _r2(f["oos_avg_gain"]), _r2(f["oos_mean_all"]), _r2(f["oos_oracle"]),
+                _r2(f["oos_avg_gain"]), _r2(f["oos_median_gain"]), _r2(f["oos_hit_rate"]),
+                _r2(f["oos_mean_all"]), _r2(f["oos_oracle"]),
                 _r2(f["oos_alpha"]), _r2(f["oos_alpha_mean_all"]),
             ])
     _sheet(wb, "Folds",
            ["strategy", "fold", "test period", "train dn", "test dn",
             "selected params", "is_n", "oos_n",
             "is_annual", "oos_annual", "oos_annual_mean_all",
-            "oos_avg_gain", "oos_mean_all", "oos_oracle",
+            "oos_avg_gain", "oos_median_gain", "oos_hit_rate%",
+            "oos_mean_all", "oos_oracle",
             "oos_alpha", "oos_alpha_mean_all"],
            fold_rows)
 
@@ -463,13 +490,16 @@ def write_report(results: list[dict], min_train: int, test_len: int,
             cand_rows.append([
                 r["strategy"], c["fold"], c["selected"], c["params"],
                 _r2(c["is_annual"]), _r2(c["is_avg_gain"]),
-                _r2(c["oos_annual"]), _r2(c["oos_avg_gain"]), _r2(c["oos_alpha"]),
-                c["oos_n"],
+                _r2(c["oos_annual"]), _r2(c["oos_avg_gain"]),
+                _r2(c["oos_median_gain"]), _r2(c["oos_hit_rate"]),
+                _r2(c["oos_alpha"]), c["oos_n"],
             ])
     _sheet(wb, "Candidates",
            ["strategy", "fold", "sel", "params",
             "is_annual", "is_avg_gain",
-            "oos_annual", "oos_avg_gain", "oos_alpha", "oos_n"],
+            "oos_annual", "oos_avg_gain",
+            "oos_median_gain", "oos_hit_rate%",
+            "oos_alpha", "oos_n"],
            cand_rows)
 
     ws = wb.create_sheet("About", 0)
@@ -488,6 +518,12 @@ def write_report(results: list[dict], min_train: int, test_len: int,
         ("oos_avg_gain / oos_alpha", "the same set on the untouched test window"),
         ("gain_gap / alpha_gap", "oos - is. How much of the reported edge evaporates. "
                                  "THE overfit measure — read this, not annual_gap."),
+        ("oos_median_gain", "median lot gain out of sample. Read it BESIDE oos_avg_gain: "
+                            "a mean far above its median is a handful of extreme tickers, "
+                            "not a broad edge, and this family's returns are right-tail "
+                            "driven by construction."),
+        ("oos_hit_rate%", "share of out-of-sample lots that made money. The same warning "
+                          "from the other side — 97% and 43% can carry the same mean."),
         ("alpha", "lot gain - that daynum's cross-sectional market mean. Absolute "
                   "return cannot tell a good strategy from a good market."),
         ("is_annual / oos_annual", "chain_annual for continuity with best_strategy.xlsx. "
@@ -529,18 +565,22 @@ def print_console(results: list[dict]) -> None:
         print(f"\n=== {r['strategy']}  ({r['dom_col']}, {r['period']}d)  "
               f"grid={r['grid_size']}  folds={len(r['folds'])} ===")
         print(f"  {'fold':<5}{'test period':<26}{'is_ann':>8}{'is_n':>6}{'oos_ann':>9}"
-              f"{'oos_gain':>10}{'zero':>8}{'oracle':>8}{'alpha':>8}  selected")
+              f"{'oos_gain':>10}{'median':>8}{'hit%':>8}{'zero':>8}{'oracle':>8}"
+              f"{'alpha':>8}  selected")
         for f in r["folds"]:
             print(f"  {f['fold']:<5}{f['test_dates']:<26}"
                   f"{_f(f['is_annual']):>8}{f['is_n']:>6}{_f(f['oos_annual']):>9}"
-                  f"{_f(f['oos_avg_gain']):>10}{_f(f['oos_mean_all']):>8}"
+                  f"{_f(f['oos_avg_gain']):>10}{_f(f['oos_median_gain']):>8}"
+                  f"{_f(f['oos_hit_rate']):>8}{_f(f['oos_mean_all']):>8}"
                   f"{_f(f['oos_oracle']):>8}{_f(f['oos_alpha']):>8}  {f['selected']}")
         g_is = _mean_of(r["folds"], "is_avg_gain")
         a_is = _mean_of(r["folds"], "is_alpha")
         print(f"  in-sample (what the sweep would report)  "
               f"avg_gain {g_is:6.2f}  alpha {a_is:6.2f}")
+        m_sel, h_sel = _shape([g for g, _m in r["pooled_selected"]])
         print(f"  out-of-sample ({n_sel} lots)              "
-              f"avg_gain {g_sel:6.2f}  alpha {a_sel:6.2f}")
+              f"avg_gain {g_sel:6.2f}  alpha {a_sel:6.2f}"
+              f"   median {m_sel:6.2f}  hit {h_sel:5.1f}%")
         print(f"  OVERFIT (oos - is)                       "
               f"avg_gain {g_sel - g_is:+6.2f}  alpha {a_sel - a_is:+6.2f}")
         print(f"  zero-skill baseline                      "

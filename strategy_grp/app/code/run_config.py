@@ -271,7 +271,7 @@ def dominance_attribute_for(strategy_name: str) -> tuple[str, bool]:
 # ---------------------------------------------------------------------------
 PRIORITY_ATTRIBUTE_DICTIONARY: dict[str, bool] = {
     #"beta3m":         False,
-    "conf":           True,    # group-specific: conf_GICS / conf_Sector2 per family, bound
+    #"conf":           True,    # group-specific: conf_GICS / conf_Sector2 per family, bound
                                # automatically. Når False (dvs høj er bedst), er der stort set
                                # kun US-aktier
     #"macd_histogram": False,
@@ -290,7 +290,7 @@ PRIORITY_ATTRIBUTE_DICTIONARY: dict[str, bool] = {
     #"rank":           False,       #rank=True (små-er-bedst) giver avg_gain=5% & worst=-36%
     #"rsi":            False,
     #"sh3m":           False,
-    #"spr100d":        False, 
+    "spr100d":        False, 
     #"spr250d":        False,     #False bedst
     #"vola20d":        False,
     #"vola100d":        False,     #True dur ikke

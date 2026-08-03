@@ -635,6 +635,7 @@ Key columns (Summary sheet):
 |---|---|
 | `is_avg_gain` / `is_alpha` | selected set on its own training window — what the sweep would report |
 | `oos_avg_gain` / `oos_alpha` | same set on the untouched test window |
+| `oos_median_gain` / `oos_hit_rate%` | the **shape** behind that mean — read them beside it. A mean far above its median is a handful of extreme tickers, not a broad edge, and this family's returns are right-tail driven by construction (the same property that makes price stop-losses lose). Present in Summary, Folds and Candidates. Added 2026-08-02 after a `spr100d` fold posted mean 61.48 on median 24.29 at a 97% hit rate, where 69% of the fold's whole gain sat in the top 5% of picks and one ticker (BMNR) returned +1552% — the mean alone made a single lottery ticket read as a validated edge |
 | `gain_gap` / `alpha_gap` | `oos − is`. **The overfit measure.** Negative = the edge evaporates |
 | `zeroskill_*` | mean OOS across *every* candidate — what no selection skill gets |
 | `selection_skill_*` | `oos(selected) − zeroskill`. ~0 means the sweep is fitting noise |
