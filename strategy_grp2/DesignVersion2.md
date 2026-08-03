@@ -57,6 +57,73 @@ We can archive all produced but a database for their storage would be nice. Stor
 
 * Separation of calculations in py files should follow these steps. So looking in the code folder should immidiately envisage the step calculations. Full pipeline is assingned to a separate conductor (like in longi.py).  
 
+## Directions of use
+
+Every `python` call goes through `ssh -p 2222 sm@innovia.dk` then `conda activate potsystem_env`,
+from `~/potentials/strategy_grp2/app/code` — never on the Windows host (see `CLAUDE.md`'s hard
+rules; this section only covers what to type once there).
+
+### The control board
+
+`app/control/control_board.xlsx`, three sheets:
+
+* **`Runs`** — one row per run. `active` (any of `x`/`X`/`yes`/`true`/`1`) is the tick; blank means
+  idle. A blank cell elsewhere falls back to the schema default in `param_spec.py` — a row can be
+  as few as `active` + `group_expression`. `label` names the row everywhere downstream (Step
+  sheets, Step3/4 columns, charts); leave it blank and one is derived from
+  level/group/priority_attribute — give rows their own `label` when several would otherwise derive
+  the same one (e.g. a `from_rank` comparison at the same grouping).
+* **`Settings`** — global knobs, not per run: `min_chain_lots`, `wf_min_train`, `wf_test_len`,
+  `archive_on_run`, `production_strategy_count`.
+* **`Legend`** — generated from `param_spec.py`, never hand-edited: every column's type, default
+  and legal values, one row each. This is the reference for every parameter below.
+
+`python conductor.py --make-board` (re)writes `Runs`/`Settings`/`Legend` from the current schema,
+**preserving every existing row** — safe to run any time the schema has grown a column; a column
+the schema no longer has is reported, not silently dropped.
+
+### Setting up a row
+
+| step | columns | notes |
+|---|---|---|
+| — | `active`, `purpose`, `label`, `note` | `purpose`: `P` (production, steps 0-2) or `D` (development, steps 0-4) |
+| 0 | `group_expression` | e.g. `Stamdata.GICS`, `#ALL`, `Stamdata.Zone .and. Stamdata.GICS`, `Stamdata.Homeland='US'` |
+| 1 | `level`, `persistence_window`, `persistence_frac`, `dominance_attribute`, `dominance_direction`, `dominance_decile`, `dom_count_min`, `dom_count_frac`, `tickers_per_group` | `dominance_direction` is spelled `small_wins`/`big_wins`, not a bare boolean |
+| 2 | `post_filter`, `priority_attribute`, `priority_direction`, `from_rank`, `focusset_size` | `from_rank`: `1` = best n, `-1` = worst n, `"mid"` or a fraction `0<f<1` = pool-relative window (`mid` avoids both ends), an integer `k>=2` = fixed offset |
+| 3 | `period`, `no_go_gspc_rsi`, `informational_attributes` | `period` must be one of the seven-pack: 1/5/10/20/50/100/200 |
+| 4 | `wf_group` | comma-separated `label`s to compare against in the walk-forward test; blank = every other active `D` row sharing this row's `period` |
+
+### Running it
+
+```bash
+python conductor.py --make-board   # write/refresh the board from the schema
+python conductor.py --dry-run      # validate every row; reads no data, writes nothing
+python conductor.py --check        # step 0 only: universe size, group count, resolved attributes
+python conductor.py --production   # steps 0-2 for active P rows -> report/StrategicStocks.xlsx
+python conductor.py                # steps 0-4 for active rows -> report/compare_strategies_<date>.xlsx
+```
+
+Run them in that order when trying a new row for the first time: `--dry-run` catches a typo
+before anything touches data; `--check` confirms the grouping resolves to something sane; then
+`--production` or the bare development tick. Every entry point preflights the live repository
+first and freezes a coherent snapshot before reading anything else; if that fails (the
+repository mid-update, a required file missing or stale), run `python preflight.py` directly for
+a one-screen table of every required file's daynum, age and status.
+
+### Where output lands
+
+* **`report/StrategicStocks.xlsx`** — one sheet per active `P` row: today's gross list,
+  rank-ordered, with the priority attribute's value. The daily-advice artifact for users with no
+  interest in the mechanics.
+* **`report/compare_strategies_<date>.xlsx`** — one workbook per development tick, six sheets:
+  `Runs` (every active row verbatim + status/universe/vintage), `Step1_groups` (elevated groups +
+  member tickers), `Step2_picks` (the gross list, same as `StrategicStocks.xlsx`), `Step3_compare`
+  (transposed metrics, one column per active `D` row, best `chain_annual` leftmost),
+  `Step4_walkforward` (one summary block + fold table per row), `Charts`.
+* **Not yet built**: standalone per-run/per-fold files under `report/backtesting/` and
+  `report/walkforward/` (the folders exist; `outputboard.py` currently only writes the one
+  combined workbook above) — see Status.
+
 ## Refinements agreed during implementation (2026-08-03)
 
 * **The Step-1 qualifying-ticker count becomes relative, not absolute.** v1 fixed an absolute
@@ -145,9 +212,11 @@ three chart objects confirmed embedded and fed by their data tables. Board reset
 afterward — `wf_group="fr_best,fr_mid,fr_worst"` kept on the three template rows as a documented
 default, since it demonstrates exactly the comparison the middle-window design was for.
 
-**Not yet built**: a result database (`app/data/runs.db`, deferred/hook-only per the plan) and
+**Not yet built**: a result database (`app/data/runs.db`, deferred/hook-only per the plan);
 `shared/expression.py` support for `Longi.*` terms inside `group_expression` itself (currently
-`Stamdata`-only, as the design note allows starting with).
+`Stamdata`-only, as the design note allows starting with); standalone per-run/per-fold files under
+`report/backtesting/`/`report/walkforward/` (the folders exist, but `outputboard.py` only writes
+the one combined `compare_strategies_<date>.xlsx` today).
 
 
 
