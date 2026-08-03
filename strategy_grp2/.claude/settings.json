@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(///Gandalf/sm-home/potentials/**)",
+      "Read(///Gandalf/sm-home/potentials/strategy_grp2/**)",
+      "Read(///Gandalf/sm-home/potentials/strategy_grp2/app/**)",
+      "Read(///Gandalf/sm-home/potentials/strategy_grp2/app/code/shared/**)",
+      "Read(///Gandalf/sm-home/potentials/strategy_grp/**)",
+      "Read(///Gandalf/sm-home/potentials/repositoryRTBI/**)",
+      "Read(///Gandalf/sm-home/potentials/repositoryRTBI/data/**)",
+      "Read(///Gandalf/sm-home/potentials/longi/**)",
+      "Read(///Gandalf/sm-home/potentials/group_conformity/**)",
+      "Bash(ssh -p *)"
+    ],
+    "additionalDirectories": [
+      "\\\\gandalf\\sm-home\\potentials\\strategy_grp2\\app\\code\\shared",
+      "\\\\gandalf\\sm-home\\potentials\\strategy_grp2\\app\\code",
+      "\\\\gandalf\\sm-home\\potentials\\strategy_grp2\\app\\control",
+      "\\\\gandalf\\sm-home\\potentials\\strategy_grp2",
+      "\\\\gandalf\\sm-home\\potentials\\strategy_grp",
+      "\\\\gandalf\\sm-home\\tmp"
+    ]
+  }
+}

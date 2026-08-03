@@ -41,3 +41,7 @@ repositoryRTBI/mirror_status.json
 correlation/
 gainsuccess/
 
+# --- strategy_grp2's control board is a hand-edited INPUT, not generated data — track it
+#     despite the blanket *.xlsx rule above (see strategy_grp2/DesignVersion2.md) ---
+!strategy_grp2/app/control/control_board.xlsx
+
