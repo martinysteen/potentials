@@ -31,6 +31,7 @@ import control_board as cb
 import param_spec as spec
 import step2_focusset
 import step3_backtest as bt
+import step3_report
 import step4_walkforward as wf
 from shared import expression as expr
 from shared import market
@@ -50,14 +51,19 @@ _THIN_FILL = PatternFill("solid", fgColor="F8CBAD")
 def _current_picks(active_rows: list["cb.RunRow"]) -> dict[str, dict]:
     """label -> {daynum, tickers, elevated, params, s0, error} for every active row."""
     out: dict[str, dict] = {}
-    for row in active_rows:
+    n = len(active_rows)
+    for i, row in enumerate(active_rows, start=1):
         label = row.resolved.get("label")
+        print(f"[{i}/{n}] {label}: steps 0-2 ...", flush=True)
         try:
             daynum, tickers, elevated, params, s0 = step2_focusset.current_pick(row.resolved)
             out[label] = {"daynum": daynum, "tickers": tickers, "elevated": elevated,
                          "params": params, "s0": s0, "error": None}
+            print(f"    universe={len(s0.universe)} tickers, {len(s0.group_sizes)} group(s), "
+                  f"{len(tickers)} pick(s) at daynum {daynum}", flush=True)
         except (expr.ExpressionError, ValueError) as exc:
             out[label] = {"error": str(exc)}
+            print(f"    FAILED: {exc}", flush=True)
     return out
 
 
@@ -352,23 +358,37 @@ def assemble(board: "cb.BoardResult", settings: dict) -> Path:
     """Build the combined development-tick workbook. Every active row (P and D) gets a
     Runs/Step1_groups/Step2_picks entry; only active D-purpose rows get Step3/Step4."""
     active_rows = [r for r in board.runs if r.active and r.ok]
+    print(f"\n=== Steps 0-2: {len(active_rows)} active row(s) ===", flush=True)
     picks = _current_picks(active_rows)
 
     d_rows = {r.resolved["label"]: r.resolved for r in active_rows
              if r.resolved.get("purpose") == "D"}
 
+    print(f"\n=== Step 3: backtest ({len(d_rows)} row(s)) ===", flush=True)
     backtests: dict[str, "bt.BacktestResult"] = {}
-    for label, row_resolved in d_rows.items():
-        backtests[label] = bt.run_backtest(row_resolved, settings)
+    for i, (label, row_resolved) in enumerate(d_rows.items(), start=1):
+        print(f"[{i}/{len(d_rows)}] {label}: building hops ...", flush=True)
+        backtests[label] = bt.run_backtest(row_resolved, settings, progress_label=label)
+        m = backtests[label].metrics
+        print(f"    chain_annual={m['chain_annual']:.2f}  chain_n={m['chain_n']}  "
+              f"N_hops={m['N_hops']}", flush=True)
 
+    if backtests:
+        run_paths = step3_report.write_run_reports(backtests)
+        for p in run_paths:
+            print(f"    wrote {p}", flush=True)
+
+    print(f"\n=== Step 4: walk-forward ({len(d_rows)} row(s)) ===", flush=True)
     walk_results: dict[str, "wf.GroupResult"] = {}
-    for label, row_resolved in d_rows.items():
+    for i, (label, row_resolved) in enumerate(d_rows.items(), start=1):
         candidates = wf.resolve_candidates(label, row_resolved, d_rows)
+        print(f"[{i}/{len(d_rows)}] {label}: walk-forward vs {len(candidates)} candidate(s) ...", flush=True)
         try:
             walk_results[label] = wf.walk_group(label, candidates, settings)
         except ValueError as exc:
             print(f"[outputboard] walk-forward skipped for '{label}': {exc}")
 
+    print("\n=== Writing workbook ===", flush=True)
     wb = Workbook()
     wb.remove(wb.active)
     _write_runs_sheet(wb, active_rows, picks)

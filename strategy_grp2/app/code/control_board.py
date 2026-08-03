@@ -55,10 +55,14 @@ def _coerce_bool(raw) -> bool:
     return str(raw).strip() in _TRUTHY
 
 
+def _is_blank(raw) -> bool:
+    return raw is None or (isinstance(raw, str) and raw.strip() == "")
+
+
 def coerce(pdef: "spec.ParamDef", raw, row_num: int):
     """Blank cell -> schema default (error if required). Otherwise dtype/parser-driven
     coercion, raising ValueError with the row number so a bad cell is easy to find."""
-    blank = raw is None or (isinstance(raw, str) and raw.strip() == "")
+    blank = _is_blank(raw)
     if blank:
         if pdef.required:
             raise ValueError(f"row {row_num}: '{pdef.name}' is required and blank — {pdef.help}")

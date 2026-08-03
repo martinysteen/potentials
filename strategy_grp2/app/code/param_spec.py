@@ -12,8 +12,8 @@ meta column, not one of the four steps):
     meta   -> active, purpose, label, note
     step 0 -> group_expression
     step 1 -> level, persistence_window, persistence_frac, dominance_attribute,
-              dominance_direction, dominance_decile, dom_count_min, dom_count_frac,
-              tickers_per_group
+              dominance_direction, dominance_decile, dom_count_min, tickers_per_group
+              (dom_count_frac is NOT a board column -- see shared.config.DOM_COUNT_FRAC_MARGIN)
     step 2 -> post_filter, priority_attribute, priority_direction, from_rank, focusset_size
     step 3 -> period, no_go_gspc_rsi, informational_attributes
     step 4 -> wf_group
@@ -179,10 +179,13 @@ PARAMS: list[ParamDef] = [
                   "be within to qualify (0.10 = best decile)."),
     ParamDef("dom_count_min", 1, "int", default=3,
              help="Absolute floor on qualifying tickers a group needs to dominate."),
-    ParamDef("dom_count_frac", 1, "float", default=0.15,
-             help="Qualifying-ticker threshold as a fraction of the group's own size. "
-                  "threshold = max(dom_count_min, ceil(dom_count_frac * group_size)). "
-                  "Set to 0 to reproduce strategy_grp v1's fixed absolute count."),
+    # dom_count_frac is deliberately NOT a board column (SM, 2026-08-03): a group only counts
+    # as dominant when over-represented among today's qualifiers relative to the population
+    # base rate, which means it must always sit above dominance_decile -- there is no
+    # meaningful per-row value for it to hold independently. step1_dominance.py derives it as
+    # dominance_decile + shared.config.DOM_COUNT_FRAC_MARGIN. (v1-parity testing, which used
+    # dom_count_frac=0 to reproduce v1's fixed absolute count exactly, is done and recorded in
+    # DesignVersion2.md -- not an ongoing board capability.)
     ParamDef("tickers_per_group", 1, "int", default=3,
              help="Top candidates drawn from EACH dominating group into the pooled "
                   "test-set (per level: A=3, B=4, C=5 is SM's proposal)."),

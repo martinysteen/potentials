@@ -40,6 +40,8 @@ class Hop:
     ref_values: dict[str, float] = field(default_factory=dict)
     mkt_gain: float = float("nan")     # benchmark for this hop's gain, matching realized/partial
     beta: float = float("nan")
+    n_candidates: int = 0               # pool size before the from_rank/focusset_size window
+    dom_cutoff: float = float("nan")    # that day's Step-1 decile cutoff (reporting only)
 
 
 @dataclass
@@ -58,9 +60,11 @@ def _find_start_daynum(gain_df: pd.DataFrame, min_valid: int = 10) -> int:
     raise ValueError("no valid starting daynum found in the forward-gain file")
 
 
-def build_hops(row_resolved: dict) -> tuple[list[Hop], dict]:
+def build_hops(row_resolved: dict, *, progress_label: str | None = None) -> tuple[list[Hop], dict]:
     """The full fused timeline for one row, newest-first, plus the params actually used
-    (attribute names resolved through Step 0's twin binding)."""
+    (attribute names resolved through Step 0's twin binding). `progress_label`, if given,
+    prints a heartbeat every ~10% of the daynums simulated — this loop (one Step-2
+    selection per daynum) is the expensive part of a tick."""
     s0 = step0_data.resolve_step0(row_resolved)
     params = dict(row_resolved)
     params["dominance_attribute"] = s0.dominance_attribute
@@ -72,7 +76,7 @@ def build_hops(row_resolved: dict) -> tuple[list[Hop], dict]:
     beta_df = market.beta_frame()
     mkt_realized = market.market_gain_realized(period)
 
-    dom_table, _cutoffs = step1_dominance.resolve_dom_table(s0.groups, params)
+    dom_table, cutoffs = step1_dominance.resolve_dom_table(s0.groups, params)
 
     exit_daynum = int(potdat.columns[0])
     start_daynum = _find_start_daynum(gain_df)          # realized/open boundary
@@ -89,18 +93,28 @@ def build_hops(row_resolved: dict) -> tuple[list[Hop], dict]:
     # gain_df.columns is newest-left, so filtering (not reordering) keeps this newest-first.
     realized_daynums = [int(c) for c in gain_df.columns if int(c) <= start_daynum]
 
+    total = len(open_daynums) + len(realized_daynums)
+    tick = max(1, total // 10)
+    n_done = 0
+
     hops: list[Hop] = []
     for daynum in open_daynums:
-        tickers = step2_focusset.select_focusset(daynum, dom_table, s0.groups, params, s0.post_filter)
+        tickers, n_candidates = step2_focusset.select_focusset(
+            daynum, dom_table, s0.groups, params, s0.post_filter)
         gains = market.compute_partial_gains(potdat, tickers, daynum, exit_daynum) if tickers else {}
         hops.append(Hop(
             daynum=daynum, tickers=tickers, gains=gains, realized=False,
             ref_values=market.get_reference_values(daynum),
             mkt_gain=market.market_partial_gain(potdat, daynum, exit_daynum),
             beta=market.hop_beta(beta_df, tickers, daynum),
+            n_candidates=n_candidates, dom_cutoff=cutoffs.get(str(daynum), float("nan")),
         ))
+        n_done += 1
+        if progress_label and (n_done % tick == 0 or n_done == total):
+            print(f"    [{progress_label}] {n_done}/{total} daynums simulated", flush=True)
     for daynum in realized_daynums:
-        tickers = step2_focusset.select_focusset(daynum, dom_table, s0.groups, params, s0.post_filter)
+        tickers, n_candidates = step2_focusset.select_focusset(
+            daynum, dom_table, s0.groups, params, s0.post_filter)
         gains = market.get_gains(gain_df, tickers, daynum) if tickers else {}
         mkt = mkt_realized.get(str(daynum), float("nan"))
         hops.append(Hop(
@@ -108,7 +122,11 @@ def build_hops(row_resolved: dict) -> tuple[list[Hop], dict]:
             ref_values=market.get_reference_values(daynum),
             mkt_gain=float(mkt) if pd.notna(mkt) else float("nan"),
             beta=market.hop_beta(beta_df, tickers, daynum),
+            n_candidates=n_candidates, dom_cutoff=cutoffs.get(str(daynum), float("nan")),
         ))
+        n_done += 1
+        if progress_label and (n_done % tick == 0 or n_done == total):
+            print(f"    [{progress_label}] {n_done}/{total} daynums simulated", flush=True)
 
     return hops, params
 
@@ -205,8 +223,8 @@ def compute_metrics(hops: list[Hop], params: dict, settings: dict,
     }
 
 
-def run_backtest(row_resolved: dict, settings: dict) -> BacktestResult:
+def run_backtest(row_resolved: dict, settings: dict, *, progress_label: str | None = None) -> BacktestResult:
     """The fused realized+open timeline and its full-span summary metrics for one row."""
-    hops, params = build_hops(row_resolved)
+    hops, params = build_hops(row_resolved, progress_label=progress_label)
     metrics = compute_metrics(hops, params, settings)
     return BacktestResult(hops=hops, params=params, metrics=metrics)

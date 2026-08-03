@@ -117,10 +117,11 @@ def walk_group(owner_label: str, candidates: dict[str, dict], settings: dict,
               ) -> GroupResult:
     """Run every fold for one row's declared candidate set. Raises ValueError if the
     candidates mix `period` values."""
+    print(f"    building hops for {len(candidates)} candidate(s) ...", flush=True)
     hops_by_label: dict[str, list[bt.Hop]] = {}
     params_by_label: dict[str, dict] = {}
     for label, row in candidates.items():
-        hops, params = bt.build_hops(row)
+        hops, params = bt.build_hops(row, progress_label=f"{owner_label}/{label}")
         hops_by_label[label] = hops
         params_by_label[label] = params
 
@@ -136,6 +137,7 @@ def walk_group(owner_label: str, candidates: dict[str, dict], settings: dict,
     realized_daynums = [h.daynum for hops in hops_by_label.values() for h in hops if h.realized]
     dn_min, dn_max = min(realized_daynums), max(realized_daynums)
     folds = build_folds(dn_min, dn_max, min_train, test_len, period)
+    print(f"    {len(folds)} fold(s), history {dn_min}..{dn_max}", flush=True)
 
     fold_rows: list[dict] = []
     cand_rows: list[dict] = []
@@ -161,12 +163,16 @@ def walk_group(owner_label: str, candidates: dict[str, dict], settings: dict,
 
         usable = [s for s in scored if pd.notna(s[1]["chain_annual"]) and s[1]["chain_n"] >= min_lots]
         if not usable:
+            print(f"    fold {fi}/{len(folds)}: no usable candidate (skipped)", flush=True)
             continue
         label_sel, tr_sel, te_sel = max(usable, key=lambda s: s[1]["chain_annual"])
         for r in cand_rows[-len(scored):]:
             if r["label"] == label_sel:
                 r["selected"] = True
         pooled_sel.extend(_lots_for(hops_by_label[label_sel], params_by_label[label_sel], te_lo, te_hi))
+        print(f"    fold {fi}/{len(folds)}: train {tr_lo}..{tr_hi}  test {te_lo}..{te_hi}  "
+              f"selected={label_sel}  oos_annual={te_sel['chain_annual']:.2f}  "
+              f"oos_n={te_sel['chain_n']}", flush=True)
 
         oos_annuals = [s[2]["chain_annual"] for s in scored if pd.notna(s[2]["chain_annual"])]
         oos_avgs = [s[2]["avg_gain"] for s in scored if pd.notna(s[2]["avg_gain"])]

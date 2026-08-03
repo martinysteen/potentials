@@ -25,7 +25,7 @@ Group definition drawn from control board plus other data demands from steps bel
 
 Using parameters from control board today-dominance (relabeled level A) as well as 20d-persistent dominance (now level B) and level C for the 50 day persistent dominance can be established using a process identical to the one in version 1.  The A, B and C level should assist in shorter naming of strategies and their results.
 
-Pick number per group (typically 3 in version 1) shall be individual to level. I guess level A will maintain 3, but B get 4 and C thus compensation for the dimishing number of ticker-promotions to each dominance level.  The numbers are of course drawn from control board.
+Pick number per group (typically 3 in version 1) for step 3 and 4 shall be individual to level. I guess level A will maintain 3, but B get 4 and C thus compensation for the dimishing number of ticker-promotions to each dominance level.  The numbers are of course drawn from control board.
 
 The full list of stocks contained in each strategy shall be messaged to output board for this step.
 
@@ -88,7 +88,7 @@ the schema no longer has is reported, not silently dropped.
 |---|---|---|
 | — | `active`, `purpose`, `label`, `note` | `purpose`: `P` (production, steps 0-2) or `D` (development, steps 0-4) |
 | 0 | `group_expression` | e.g. `Stamdata.GICS`, `#ALL`, `Stamdata.Zone .and. Stamdata.GICS`, `Stamdata.Homeland='US'` |
-| 1 | `level`, `persistence_window`, `persistence_frac`, `dominance_attribute`, `dominance_direction`, `dominance_decile`, `dom_count_min`, `dom_count_frac`, `tickers_per_group` | `dominance_direction` is spelled `small_wins`/`big_wins`, not a bare boolean |
+| 1 | `level`, `persistence_window`, `persistence_frac`, `dominance_attribute`, `dominance_direction`, `dominance_decile`, `dom_count_min`, `tickers_per_group` | `dominance_direction` is spelled `small_wins`/`big_wins`, not a bare boolean. `dom_count_frac` is NOT a board column — see Refinements below |
 | 2 | `post_filter`, `priority_attribute`, `priority_direction`, `from_rank`, `focusset_size` | `from_rank`: `1` = best n, `-1` = worst n, `"mid"` or a fraction `0<f<1` = pool-relative window (`mid` avoids both ends), an integer `k>=2` = fixed offset |
 | 3 | `period`, `no_go_gspc_rsi`, `informational_attributes` | `period` must be one of the seven-pack: 1/5/10/20/50/100/200 |
 | 4 | `wf_group` | comma-separated `label`s to compare against in the walk-forward test; blank = every other active `D` row sharing this row's `period` |
@@ -130,8 +130,19 @@ a one-screen table of every required file's daynum, age and status.
   count per group criterion (10 for GICS, 5 for Sector2) and it does not transfer: 10 asks a
   93-member GICS sector for 11% of itself but a 24-member Sector2 sector for 42%. Since group
   size is not known in advance once the group definition is a free expression, the threshold is
-  now `max(dom_count_min, ceil(dom_count_frac * group_size))`. `dom_count_frac=0` reproduces
-  v1's fixed-count behaviour exactly (used for the parity runs against strategy_grp).
+  now `max(dom_count_min, ceil(dom_count_frac * group_size))`.
+* **`dom_count_frac` is not a board column (2026-08-03) — it is derived, always.** A group only
+  counts as dominant when it is *over-represented* among today's qualifiers relative to the
+  population base rate; `dominance_decile` IS that base rate, so `dom_count_frac` must always
+  sit above it to mean anything (equal to it just reproduces the average; below it is close to
+  guaranteed for large groups and pure noise for small ones — see `#ALL`'s structural
+  non-elevation in Status below, the live proof this matters). There is no meaningful per-row
+  value for it independent of `dominance_decile`, so `step1_dominance.py` always computes
+  `dom_count_frac = dominance_decile + shared.config.DOM_COUNT_FRAC_MARGIN` (`0.05`) and the
+  board column was removed (`dom_count_min` stays board-driven — it protects small groups from
+  a single-ticker fluke, an independent concern). The v1-parity escape hatch this replaced
+  (`dom_count_frac=0`, reproducing v1's fixed absolute count exactly) was a one-time
+  verification, already done and recorded below — not an ongoing board capability.
 * **`from_rank` gains a pool-relative middle window**, alongside v1's best-n (`1`) / worst-n
   (`-1`): `"mid"` or a quantile `0<f<1` centres the picked window in that day's candidate pool
   (avoiding both the top supers and the bottom losers), and an integer `k>=2` is a fixed offset
@@ -140,6 +151,17 @@ a one-screen table of every required file's daynum, age and status.
   `param_spec.parse_from_rank`.
 * **Documentation split**: this file is the one living design document (present tense, updated
   in place as phases land); `CLAUDE.md` is only the short entry card Claude Code auto-loads.
+* **Step 2's production output is now a full, uncapped gross list, decoupled from Step 3/4's
+  backtest sampling (2026-08-03).** `tickers_per_group`/`from_rank`/`focusset_size` originally
+  capped Step 2's pooling too, sharing one `select_focusset()` with the backtest hop-builder —
+  but a small dominant group should never lose candidates to an arbitrary per-group pre-cut, and
+  production should always show the best end of the ranking, never a deliberately worst/mid
+  research window. `step2_focusset.production_pick()` now pools EVERY member of every elevated
+  group, applies `post_filter`, sorts best-first by `priority_attribute`, and caps only at
+  `shared.config.PRODUCTION_GROSS_CAP` (20 — a code constant, not a board column: a user should
+  see the whole qualifying list, not something tuned per row). `select_focusset()` is unchanged
+  for Step 3/4 — `tickers_per_group`/`from_rank`/`focusset_size` remain exactly what a backtest
+  hop needs: a fixed, comparable sample size across hundreds of hops.
 
 ## Status
 
@@ -167,7 +189,14 @@ and `--production` (steps 0-2 → `report/StrategicStocks.xlsx`, one sheet per r
   and a Sector2 row (`dom_count_min=5`) reproduce `strategy_grp` v1's live `DomGICS_now`/
   `DomSector2_now` picks exactly, both groupings, read-only (no v1 report files touched).
 - **New capability.** `Stamdata.Zone .and. Stamdata.GICS` resolved to 39 groups, `#ALL` to one
-  group of 1209 — both produce sane picks with no code change.
+  group of 1209 — both parse and run with no code change. `#ALL` is retired from the board
+  (2026-08-03), though: a group can never be over-represented relative to itself, so it
+  structurally never elevates (0 of 661 hops, ever) — it only produced pointless formalities
+  downstream, including a walk-forward section that silently relayed another row's result under
+  its own name (its `wf_group` defaults to "every other active D row", and since `#ALL` never has
+  a usable `chain_annual` it never wins its own comparison — SM: "produce no usable advice to
+  anyone"). `#ALL` the *expression* still parses fine; it just is not a useful `group_expression`
+  choice given how Step 1's dominance threshold works.
 - **The `from_rank` middle window does what it says.** Three otherwise-identical rows
   (`from_rank` = `1` / `"mid"` / `-1`) on the same daynum produced three disjoint focussets,
   strictly ordered on `spr100d` (best ~270-1283, mid ~101-153, worst 0) — direct confirmation
@@ -212,11 +241,32 @@ three chart objects confirmed embedded and fed by their data tables. Board reset
 afterward — `wf_group="fr_best,fr_mid,fr_worst"` kept on the three template rows as a documented
 default, since it demonstrates exactly the comparison the middle-window design was for.
 
+**Per-run detail workbook + progress output done, 2026-08-03.** `step3_report.py` writes
+`report/backtesting/run<N>_<date>.xlsx` — one file per active D-purpose row, N = tick order,
+an "Operational" sheet adapted from strategy_grp v1's (same ticker/avg_gain/mkt_gain/alpha/beta
+row shape) to v2's fused `Hop` timeline: row 1 is the row's `label` (not v1's `No_go_GSPC_rsi`),
+row 2's `A2` is blank (v1's editable-threshold formula dropped — not read by anything), row 3 is
+NEW (`n_candidates` — the Step-3/4 pool size *before* the `from_rank`/`focusset_size` window,
+i.e. how many were available before picking the tested N), row 4 is `dominance_cutoff`, and the
+`informational_attributes` rows are read from the row's own board column (`Hop` gained
+`n_candidates`/`dom_cutoff` fields to carry this without recomputing the pool twice). Called from
+`outputboard.assemble()` right after Step 3's backtests are built. Pre-existing stale files in
+`report/backtesting/` (leftover `strategy_grp` v1 output from before this project's first commit,
+sitting in a folder set up in advance) are archived on each write. `report/walkforward/`'s
+per-fold file remains deferred — not asked for yet.
+
+Every step now prints progress as it runs (`outputboard.py`/`step3_backtest.py`/
+`step4_walkforward.py`): per-row headers, a heartbeat every ~10% of a `build_hops` simulation,
+and per-fold lines in Step 4 — the development tick used to print nothing until the final "Wrote
+...". `run.cmd` (a PC-user launcher, `app/run.cmd`, alongside a `control_board.lnk` shortcut) uses
+`ssh -t` + `python -u` so this actually streams live rather than block-buffering to the end; it
+loops back to its menu after each run instead of exiting.
+
 **Not yet built**: a result database (`app/data/runs.db`, deferred/hook-only per the plan);
 `shared/expression.py` support for `Longi.*` terms inside `group_expression` itself (currently
-`Stamdata`-only, as the design note allows starting with); standalone per-run/per-fold files under
-`report/backtesting/`/`report/walkforward/` (the folders exist, but `outputboard.py` only writes
-the one combined `compare_strategies_<date>.xlsx` today).
+`Stamdata`-only, as the design note allows starting with); `report/walkforward/`'s standalone
+per-fold file (the folder exists, but `outputboard.py` only writes the one combined
+`compare_strategies_<date>.xlsx` today).
 
 
 
