@@ -50,6 +50,33 @@ generations* — which raises nothing and silently produces empty picks. Consume
 preflight and freeze a snapshot before reading (`preflight.py` + `shared/datacheck.py` in both
 strategy projects). Do not add a consumer that reads the live directory unguarded.
 
+## Where the lists live
+
+**A new data file has to be declared twice — once by its producer, once by each consumer.** The
+two lists are in different projects and neither knows about the other, so a file can be perfectly
+published and still be invisible to a run. This has cost real debugging time; check both.
+
+| # | The list | Lives in | Says |
+|---|---|---|---|
+| 1 | **Ownership / publish namespace** | [shared/app/code/repository.py](shared/app/code/repository.py) → `OWNERS[<family>].owns` | which filename patterns this family is authoritative for. Scopes its `rclone sync`. **Includes only, never excludes** |
+| 2 | **Consumer required-files** | each consumer's `app/code/preflight.py` | which files this run needs. Only these are checked for a common vintage and copied into the frozen snapshot the run actually reads |
+
+```bash
+python3 shared/app/code/repository.py check          # list 1: both guards, every family
+python3 <consumer>/app/code/preflight.py --manifest  # list 2: what this tick will snapshot
+```
+
+List 1 is self-enforcing: publishing an output that no pattern covers **fails loudly**. List 2 is
+not, and cannot be — a consumer legitimately reads a subset. So the failure mode to expect is
+**"the file is in `repositoryRTBI/data/` but the run says it does not exist"**: it was never
+requested, so it was never snapshotted. In `strategy_grp2` the request comes from the control
+board, not from code — a factor named in `dominance_attribute`, `priority_attribute`,
+`informational_attributes`, `post_filter`, or implied by `period`. Anything else needs the step
+that consumes it to ask for it.
+
+Adding a *producer* output is a four-list job on the producer side; the checklist is in
+[longi/CLAUDE.md](longi/CLAUDE.md), "Adding New Modules to Pipeline" step 4.
+
 ## System-wide conventions
 
 - **Matrix files:** rows = tickers, columns = daynums as **strings**, **newest left**. Look up

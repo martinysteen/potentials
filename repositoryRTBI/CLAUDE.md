@@ -16,10 +16,23 @@ A producer must not call `sync_rtbi.sh` — both `start_longi.sh` and `run_conf.
 which made every family's timing depend on every other family's. If consumers need fresher
 data, this project changes **its own** cron; that is not a producer's business.
 
-Ownership, publishing and fetching all live in one place:
-`~/potentials/shared/app/code/repository.py`. Each family declares what it **owns** — never
-excludes of other families' files — and its `rclone sync` is scoped to that namespace, so it
-cleans up its own retired outputs and is blind to everything else in the folder. The old
+### Where the ownership list is
+
+**`~/potentials/shared/app/code/repository.py` — the `OWNERS` dict, `owns=(...)` on each family.**
+That tuple of filename patterns *is* the contract; there is no copy of it in any `.md` file, on
+purpose (a second copy is a copy that goes stale). To read it without opening the file:
+
+```bash
+python3 ~/potentials/shared/app/code/repository.py check   # every owner, both guards
+```
+
+**A new output file must be added there or it is never published** — see the full producer-side
+checklist in [../longi/CLAUDE.md](../longi/CLAUDE.md) ("Adding New Modules to Pipeline", step 4),
+and the root [../CLAUDE.md](../CLAUDE.md) for the second list every *consumer* keeps.
+
+Ownership, publishing and fetching all live in that one module. Each family declares what it
+**owns** — never excludes of other families' files — and its `rclone sync` is scoped to that
+namespace, so it cleans up its own retired outputs and is blind to everything else in the folder. The old
 exclude-based arrangement failed silently: longi's uploader excluded `longi_conf_*.csv` but
 nobody added `longi_sectorbeta_*.csv`, so those two files were deleted at :20 and restored
 at :31, every hour, for weeks.

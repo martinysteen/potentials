@@ -189,6 +189,29 @@ correction, having first held over 4.09M cells for the six-period version).
 tells check 3 (data density) to start counting *after* that lead rather than flagging it. Add an
 entry there if the ladder ever gains a period.
 
+### Forward-Looking Risk Tables (longi_future_minaggr*) — the drawdown twin
+
+`longi_future_minaggr.py` answers the risk question beside `longi_future_per*`'s return question:
+not "what did the position make" but **"how far under water did it go first"**.
+
+| File | Days held | Newest blank columns |
+|------|-----------|----------------------|
+| `longi_future_minaggr20d.csv` | 20 | 21 |
+| `longi_future_minaggr50d.csv` | 50 | 51 |
+
+```
+minaggr[d] = min( 0, min over k=1..period_days of (P[d+1+k] - P[d+1]) / P[d+1] * 100 )
+```
+
+Same signal-day convention as the forward-gain family (entry at `d+1`, so `period_days + 1` blank
+newest columns), and the same `min(0, …)` floor — a position that never traded below its entry
+scores 0, not a positive number. **The same look-ahead warning applies**: these are the answer, not
+a feature, and `longi_across.py`'s `longi_future_` prefix guard covers them for free.
+
+Added 2026-08-04 (`dec144e`) as the measurement layer for strategy_grp2's stop-out feature. Note
+that v1 already found **every price-stop variant loses money** on this pipeline (the right tail is
+what pays) — these tables exist to quantify that, not to assume otherwise.
+
 ### Sector-Aggregated Tables (Grouped by Stock Attributes)
 Output directory: `app/output/` (same as individual stock tables)
 
@@ -316,7 +339,7 @@ Follow the same pattern:
 - ✓ Pipeline orchestrator (longi.py) fully implemented
   - Dependency management working
   - Parallel execution capability ready
-  - 34 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_performance, coreindex, coreindexRSI, beta3m, beta6m, beta1yr, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_performance, across
+  - 35 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_performance, coreindex, coreindexRSI, beta3m, beta6m, beta1yr, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_performance, future_minaggr, across
     (`future_gain20d`/`future_gain50d` were retired 2026-07-31 — one `future_performance`
     module now emits the whole `longi_future_per*` "seven-pack" ladder — 1d/5d/10d/20d/50d/100d/200d,
     replacing the earlier six-entry semantic ladder the same day. The 14 `grp_{GICS,Sector2}_per*`
@@ -427,7 +450,36 @@ MODULES: Dict[str, Module] = {
 - **Dependent modules** (depends_on=["rsi"]): Run after dependencies complete
 - **Multiple dependencies** (depends_on=["rsi", "macd"]): Run after all dependencies complete
 
-### 4. Execution
+### 4. Register the new OUTPUT FILE — four lists, all of them, or it does not travel
+
+Writing the CSV is not the same as shipping it. A new `longi_*.csv` must be declared in each of
+these before any other project can read it. **Registering the module (step 2) does none of this.**
+
+| # | Where | What to add | If you forget |
+|---|---|---|---|
+| 1 | `~/potentials/shared/app/code/repository.py`, `OWNERS["longi"].owns` | a pattern covering the filename, e.g. `"/longi_future_minaggr*.csv"` | **The publish fails loudly** — guard 1 rejects an unclaimed output. The one failure mode here that is *not* silent |
+| 2 | `app/code/aux_qc_repo.py`, `EXPECTED_FILES` | the filename | QC check 4 reports it as an unexpected extra file |
+| 3 | `app/code/aux_qc_repo.py`, `BLANK_LEAD_COLS` | `filename: n_blank_newest_cols` — **only** for forward-looking tables | QC check 3 flags the legitimate blank lead as missing data |
+| 4 | **this file** | the table/family, and the module count above | the file exists and nobody knows why |
+
+The pattern in list 1 is what scopes longi's `rclone sync`. It is an **includes** list, never an
+excludes list — see that module's docstring for the n² argument, and
+[../repositoryRTBI/CLAUDE.md](../repositoryRTBI/CLAUDE.md) for the three-layer contract it serves.
+
+Verify the whole set in one call, before trusting a new file downstream:
+
+```bash
+python3 ~/potentials/shared/app/code/repository.py check       # ownership guards, all owners
+python3 ~/potentials/shared/app/code/repository.py publish longi --dry-run
+ls ~/potentials/repositoryRTBI/data/Longi/<newfile>.csv        # after the next mirror tick
+```
+
+**Reaching the mirror is not the same as reaching a consumer.** `strategy_grp`/`strategy_grp2`
+read a *frozen snapshot* of the mirror containing only the files their own preflight asked for, so
+a new file is invisible to a run until that project requests it too. That is the consumer's own
+list, deliberately separate — see the root [../CLAUDE.md](../CLAUDE.md), "Where the lists live".
+
+### 5. Execution
 Simply run `python3 code/longi.py` - the orchestrator handles everything:
 - Validates dependencies (no circular refs, all deps exist)
 - Executes modules in correct order

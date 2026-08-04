@@ -12,6 +12,11 @@ Claude Code auto-loads and does not duplicate anything DesignVersion2.md already
   not installed there.
 - **Never pip / requirements.txt.** Use the `potsystem_env` conda env as-is.
 - **`repositoryRTBI/` is read-only.** Strategy code never writes to it; `app/data/` is scratch.
+- **A run reads the frozen snapshot in `app/data/input/`, not the mirror.** Only files
+  `preflight.required_files_for_rows()` asked for are in it, so a file that exists in
+  `repositoryRTBI/data/` can still be missing from a run. It is requested by being *named on the
+  board* — `dominance_attribute`, `priority_attribute`, `informational_attributes`, `post_filter`,
+  or implied by `period`. `python preflight.py --manifest` prints what this tick will snapshot.
 - **European CSV format:** `sep=';', decimal=','`. No hardcoded paths — use `shared/config.py`.
 - **The control board (`app/control/control_board.xlsx`) is never written by the processor**
   while a tick runs — see DesignVersion2.md's input/output separation principle.
