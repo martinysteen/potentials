@@ -222,6 +222,30 @@ PARAMS: list[ParamDef] = [
 
 PARAMS_BY_NAME: dict[str, ParamDef] = {p.name: p for p in PARAMS}
 
+
+def format_value(name: str, value: Any) -> Any:
+    """A resolved value written back in the spelling the BOARD uses.
+
+    Every report that shows a parameter must go through this. A resolved row holds parsed
+    internals — `dominance_direction` is a bool, `from_rank` is a ("edge", -1) tuple — and
+    writing those straight to a sheet reintroduces exactly the unreadable forms this schema
+    exists to eliminate: `big_wins` came back as Excel's FALSE (a direction cannot be false),
+    and `from_rank` as a raw tuple naming an internal classifier the board never mentions.
+    Both were reported from live output on 2026-08-04.
+    """
+    pdef = PARAMS_BY_NAME.get(name)
+    if pdef is None or value is None:
+        return value
+    if pdef.dtype == "direction":
+        return format_direction(bool(value))
+    if pdef.dtype == "from_rank":
+        return format_from_rank(value) if isinstance(value, tuple) else value
+    if pdef.dtype == "list_str" and isinstance(value, (tuple, list)):
+        return ", ".join(str(v) for v in value)
+    if isinstance(value, tuple):
+        return str(value)
+    return value
+
 # Column order on the Runs sheet — meta first, then step order, declaration order within.
 RUNS_COLUMNS: list[str] = [p.name for p in PARAMS]
 

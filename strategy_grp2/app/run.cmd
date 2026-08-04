@@ -42,6 +42,13 @@ goto menu
 
 :run
 ssh -t -p 2222 sm@innovia.dk "bash -lc 'source /home/sm/miniconda3/etc/profile.d/conda.sh && conda activate potsystem_env && cd ~/potentials/strategy_grp2/app/code && python -u conductor.py %MODE%'"
+REM Hold the window on any non-zero exit, so a stop (exit 2 = board still open in Excel)
+REM is read rather than scrolled away by the menu redrawing underneath it.
+if errorlevel 1 (
+  echo.
+  echo   *** stopped - read the message above before continuing ***
+  pause
+)
 if "%1"=="" goto menu
 goto end
 

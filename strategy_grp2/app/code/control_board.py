@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -40,6 +41,96 @@ _STEP_FILLS = {
     4: PatternFill("solid", fgColor="D9D2E9"),
 }
 _ERROR_FILL = PatternFill("solid", fgColor="FFC7CE")
+
+
+# ---------------------------------------------------------------------------
+# "Did you save the board?" guard
+# ---------------------------------------------------------------------------
+#
+# VBA can ask a workbook `ActiveWorkbook.Saved`; we cannot. That flag lives inside the
+# Excel process on the Windows host, and this code runs on the Ubuntu server over SSH —
+# there is no COM to ask, and the unsaved edits themselves exist only in Excel's memory,
+# so nothing on disk can reveal them. What IS on disk is Excel's owner file, `~$<name>`,
+# written next to a workbook while it is open and deleted on close. It travels over the
+# Samba share, so the server sees it.
+#
+# So this guard is deliberately one notch stricter than VBA's: it stops when the board is
+# OPEN, not when it is provably dirty. An open-but-saved board is stopped too. That is the
+# right trade for the failure it exists to prevent — a tick silently running the previous
+# board because an edit was still sitting in Excel — since the stop costs one keystroke and
+# the silent run costs a whole misread comparison. `--board-open-ok` overrides it.
+
+_LOCK_PREFIX = "~$"
+
+
+class BoardOpenError(RuntimeError):
+    """The control board is open in Excel, so a tick would risk reading unsaved edits."""
+
+
+@dataclass(frozen=True)
+class BoardFileState:
+    path: Path
+    lock_path: Path
+    is_open: bool
+    owner: str | None
+    mtime: float | None
+
+    @property
+    def saved_ago(self) -> str:
+        if self.mtime is None:
+            return "never (file missing)"
+        age = max(0, int(time.time() - self.mtime))
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.mtime))
+        if age < 90:
+            return f"{stamp} ({age}s ago)"
+        if age < 5400:
+            return f"{stamp} ({age // 60} min ago)"
+        return f"{stamp} ({age // 3600}h {age % 3600 // 60}m ago)"
+
+
+def _lock_owner(path: Path) -> str | None:
+    """The user named inside an Excel owner file: a length byte, then the name in ANSI.
+    Best-effort — a corrupt or empty lock file is still a lock file."""
+    try:
+        raw = path.read_bytes()
+        if not raw:
+            return None
+        name = raw[1:1 + raw[0]].decode("latin-1", "replace").strip()
+        return name or None
+    except OSError:
+        return None
+
+
+def board_file_state(path: Path = CONTROL_BOARD_PATH) -> BoardFileState:
+    lock_path = path.with_name(_LOCK_PREFIX + path.name)
+    is_open = lock_path.exists()
+    return BoardFileState(
+        path=path,
+        lock_path=lock_path,
+        is_open=is_open,
+        owner=_lock_owner(lock_path) if is_open else None,
+        mtime=path.stat().st_mtime if path.exists() else None,
+    )
+
+
+def require_saved_board(action: str = "run", *, allow_open: bool = False,
+                       path: Path = CONTROL_BOARD_PATH) -> BoardFileState:
+    """Raise BoardOpenError if the board is open in Excel. `action` names what was about to
+    happen, so the message says what did not run."""
+    state = board_file_state(path)
+    if not state.is_open or allow_open:
+        return state
+    who = f" by '{state.owner}'" if state.owner else ""
+    raise BoardOpenError(
+        f"control_board.xlsx is OPEN in Excel{who} — {action} stopped.\n"
+        f"    Board on disk was last saved: {state.saved_ago}\n"
+        f"    An edit you have not saved is invisible from here, so this would have run\n"
+        f"    the PREVIOUS board without saying so. Save (Ctrl+S) and close it, then retry.\n"
+        f"    If Excel is NOT open, it crashed and left a stray lock file — delete it:\n"
+        f"        rm '{state.lock_path}'\n"
+        f"    To proceed anyway, using the board as it currently sits on disk:\n"
+        f"        add --board-open-ok"
+    )
 
 
 # ---------------------------------------------------------------------------

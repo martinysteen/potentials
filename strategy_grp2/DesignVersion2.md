@@ -103,6 +103,10 @@ python conductor.py --production   # steps 0-2 for active P rows -> report/Strat
 python conductor.py                # steps 0-4 for active rows -> report/compare_strategies_<date>.xlsx
 ```
 
+**Every one of these stops if `control_board.xlsx` is still open in Excel** (exit 2), and
+each prints when the board on disk was last saved. See "the unsaved-board guard" below;
+`--board-open-ok` overrides it.
+
 Run them in that order when trying a new row for the first time: `--dry-run` catches a typo
 before anything touches data; `--check` confirms the grouping resolves to something sane; then
 `--production` or the bare development tick. Every entry point preflights the live repository
@@ -119,7 +123,8 @@ a one-screen table of every required file's daynum, age and status.
   `Runs` (every active row verbatim + status/universe/vintage), `Step1_groups` (elevated groups +
   member tickers), `Step2_picks` (the gross list, same as `StrategicStocks.xlsx`), `Step3_compare`
   (transposed metrics, one column per active `D` row, best `chain_annual` leftmost),
-  `Step4_walkforward` (one summary block + fold table per row), `Charts`.
+  `Step4_walkforward` (one block per *candidate set*: summary + per-candidate table + fold
+  table — see the 2026-08-04 refinement below), `Charts`.
 * **Not yet built**: standalone per-run/per-fold files under `report/backtesting/` and
   `report/walkforward/` (the folders exist; `outputboard.py` currently only writes the one
   combined workbook above) — see Status.
@@ -162,6 +167,107 @@ a one-screen table of every required file's daynum, age and status.
   see the whole qualifying list, not something tuned per row). `select_focusset()` is unchanged
   for Step 3/4 — `tickers_per_group`/`from_rank`/`focusset_size` remain exactly what a backtest
   hop needs: a fixed, comparable sample size across hundreds of hops.
+
+## Refinement 2026-08-04 — Step 4 reports per candidate set, and per candidate
+
+**Symptom:** four active rows, four Step-4 blocks, byte-identical numbers in all four.
+**Cause, not a bug in the fold maths:** a walk-forward test belongs to the *candidate set*,
+not to the row that declared it. With `wf_group` blank everywhere — the documented default,
+"every other active D row sharing my `period`" — all four rows resolve to the same set of
+four candidates, so `walk_group` ran the same experiment four times; and since the block
+reports the *selected* candidate per fold, and the same candidate won every fold, every
+block relayed that one candidate's numbers under a different owner's heading. This is the
+same failure mode already recorded for `#ALL` above, reached from the other direction.
+
+Three changes:
+
+* **One block per distinct candidate set**, headed by every owner that declared it
+  (`GroupResult.owner` → `owners`). Identical sets are no longer re-run or re-printed.
+* **A per-candidate table beside the summary** (`summarize_candidates()`). The Summary row
+  answers *"does picking the training winner survive out of sample?"*, which is one number
+  for the whole set — it never was a per-row result, and is now labelled as such on the
+  sheet. The new table answers *"how did THIS strategy do out of sample?"*: every candidate's
+  own IS/OOS gain, alpha, median, hit-rate and lot count over the same folds, best
+  `oos_avg_gain` first. The data was already being computed per fold per candidate and
+  discarded at the sheet boundary. `Charts`' IS-vs-OOS bar chart reads this too — it
+  previously drew one identical bar pair per owner.
+* **`wf_min_train`/`wf_test_len` from the `Settings` sheet are now actually passed** to
+  `walk_group`; the call had been taking the module defaults, which happen to equal the
+  shipped values (315/63), so changing them on the board did nothing.
+
+Step 4 also **reuses Step 3's hop series** (`hops_cache`) instead of re-running `build_hops`
+per candidate per owner. `build_hops` is deterministic in `row_resolved`, so the four-row
+tick above was paying for 16 identical full-history simulations on top of Step 3's four.
+
+**Beware `oos_lots` when comparing candidates.** In the 2026-08-04 four-row tick, `Middle`
+and `Agressive` show the *best* `oos_avg_gain` (7.95 / 7.13 vs `A_Zone_GICS_spr100d_-1`'s
+7.00) on **19 out-of-sample lots against 315** — both are level-B GICS rows with
+`dom_count_min=10`, which elevates a group on very few days. Their Step-3 `chain_n` (6 and
+4) is at or near `min_chain_lots`. The column is in the table so the sample size cannot be
+read past.
+
+## Refinement 2026-08-04 — the unsaved-board guard
+
+Editing the board and forgetting to save means a tick silently runs the *previous* board —
+a failure with no symptom, since every number produced is internally consistent, just
+answering last version's question. VBA would test `ActiveWorkbook.Saved`; **we cannot**.
+That flag lives in the Excel process on the Windows host, this code runs on the Ubuntu
+server over SSH, and the unsaved edits exist only in Excel's memory — nothing on disk can
+reveal them, so a truly faithful dirty-test is not available at any price here.
+
+What IS on disk is Excel's owner file, `~$control_board.xlsx`, written beside the workbook
+while it is open and deleted on close. It carries the holder's username, and it travels
+over the Samba share, so the server sees it. `control_board.require_saved_board()` therefore
+tests one notch stricter than VBA: **it stops when the board is OPEN, not when it is
+provably dirty** — an open-but-saved board is stopped too. That trade is deliberate: the
+stop costs one keystroke, the silent run costs a whole misread comparison.
+
+* Applies to **every** `conductor.py` entry point, including `--make-board` (which would
+  otherwise overwrite the copy Excel has open). Exit code **2**.
+* The message names who holds it, when the board was last saved, and the `rm` for a stray
+  lock file left by an Excel crash — the one false positive this design can produce.
+* `--board-open-ok` proceeds with the board exactly as it sits on disk.
+* Every run, guarded or not, prints `control_board.xlsx last saved: <when>` — so a forgotten
+  save is visible after the fact as well as before.
+* `app/run.cmd` holds the window open on any non-zero exit, so the stop is read rather than
+  scrolled away by the menu redrawing under it.
+
+## Refinement 2026-08-04 — a report must speak the board's language, and account for every active row
+
+Three steering complaints from live output, all of them reports lying about or hiding what
+the board said:
+
+* **`dominance_direction` came back as Excel `TRUE`/`FALSE`.** The board deliberately spells
+  directions `small_wins`/`big_wins` precisely because a direction cannot be "false" — but
+  `parse_direction` turns that into a bool for internal use, and the Runs sheet wrote the
+  resolved value straight out, undoing the whole point of the spelling.
+* **`from_rank` came back as `('edge', -1)`** — the internal classifier tuple from
+  `parse_from_rank`, naming a concept (`edge`/`offset`/`quantile`) the board never mentions.
+* Fix for both: **`param_spec.format_value(name, value)`** — the board spelling of any
+  resolved value. Every report goes through it (`Runs`, `Step3_compare`); a new display
+  form belongs there, not in a writer.
+
+**Three settings decide which end of a ranking a row picks from, and they are independent** —
+`dominance_direction`, `priority_direction`, `from_rank`. `Step3_compare` now lists all
+three adjacently (with `tickers_per_group` and `post_filter`), because a mismatch is
+invisible in any one of them alone. The trap in the 2026-08-04 board: `priority_attribute=rank`
+with `priority_direction=small_wins` correctly says "a low rank number is good", and then
+`from_rank=-1` draws from the **worst** end of that correctly-sorted list. `from_rank` is not
+a second direction flag — direction sorts the pool, `from_rank` chooses where in the sorted
+pool to draw. `1` is the answer for any row meant to produce advice; `-1`/`mid` are research
+probes (see the `fr_best`/`fr_mid`/`fr_worst` template trio).
+
+**Active rows no longer vanish.** `conductor.cmd_develop` filtered `r.active and r.ok` and
+never mentioned the difference, so a board with 4 active rows produced a 3-row workbook with
+nothing to say where the fourth went. A rejected row now appears on `Runs` with
+`status=REJECTED` and its parse error; board-level errors (duplicate active labels, bad
+`Settings`) get a red banner above the table; and the tick prints both before it starts.
+Separately, `Step1_groups`/`Step2_picks` now emit an explicit `(no group elevated at this
+daynum)` / `(no pick — cash hop)` line, since an absent label was indistinguishable from a
+missing result — for a strict level-B row that elevates nothing today, "nothing" is the
+answer, not a failure. The 2026-08-04 counts (4 active → 3 on `Runs` → 2 on `Step1_groups`
+→ 3 on `Step3_compare`) decompose exactly this way: `Middle` was rejected by validation and
+dropped silently, and of the three that ran, `Agressive` elevated no group that daynum.
 
 ## Status
 

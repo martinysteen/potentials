@@ -20,6 +20,9 @@ Claude Code auto-loads and does not duplicate anything DesignVersion2.md already
 - **European CSV format:** `sep=';', decimal=','`. No hardcoded paths — use `shared/config.py`.
 - **The control board (`app/control/control_board.xlsx`) is never written by the processor**
   while a tick runs — see DesignVersion2.md's input/output separation principle.
+- **Every entry point stops (exit 2) if the board is open in Excel**, detected via Excel's
+  `~$control_board.xlsx` owner file — the closest thing to VBA's `Saved` flag that is
+  visible from the server. `--board-open-ok` overrides.
 
 ## Directory map
 

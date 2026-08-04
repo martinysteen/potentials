@@ -34,6 +34,14 @@ from shared.data_loader import daynum_to_date, load_stamdata
 _HEADER_FILL = PatternFill("solid", fgColor="BDD7EE")
 
 
+def _report_board_freshness() -> None:
+    """Print when the board on disk was last saved. Cheap, and it is the one line that
+    makes 'I forgot to save' visible after the fact as well as before."""
+    state = control_board.board_file_state()
+    open_note = " — STILL OPEN IN EXCEL" if state.is_open else ""
+    print(f"control_board.xlsx last saved: {state.saved_ago}{open_note}\n")
+
+
 def cmd_make_board() -> int:
     path = control_board.write_board()
     print(f"Wrote {path}")
@@ -205,8 +213,14 @@ def cmd_develop() -> int:
     board = control_board.read_board()
     active = [r for r in board.runs if r.active and r.ok]
     if not active:
-        print("No active, cleanly-parsing rows.")
-        return 0
+        rejected = [r for r in board.runs if r.active and not r.ok]
+        print(f"No active, cleanly-parsing rows ({len(rejected)} active row(s) rejected).")
+        for row in rejected:
+            print(f"  ! row {row.row_num} '{row.resolved.get('label')}': "
+                  f"{'; '.join(row.errors)}")
+        for msg in board.board_errors:
+            print(f"  ! BOARD: {msg}")
+        return 1 if rejected or board.board_errors else 0
 
     preflight.ensure_data(board.runs)
     path = outputboard.assemble(board, board.settings)
@@ -217,15 +231,26 @@ def cmd_develop() -> int:
 def main() -> int:
     args = set(sys.argv[1:])
 
-    if "--make-board" in args:
-        return cmd_make_board()
-    if "--dry-run" in args:
-        return cmd_dry_run()
-    if "--check" in args:
-        return cmd_check()
-    if "--production" in args:
-        return cmd_production()
-    return cmd_develop()
+    commands = {
+        "--make-board": (cmd_make_board, "--make-board (it would overwrite your open copy)"),
+        "--dry-run": (cmd_dry_run, "--dry-run"),
+        "--check": (cmd_check, "--check"),
+        "--production": (cmd_production, "the production tick"),
+    }
+    fn, action = cmd_develop, "the development tick"
+    for flag, (candidate_fn, candidate_action) in commands.items():
+        if flag in args:
+            fn, action = candidate_fn, candidate_action
+            break
+
+    # Every entry point reads the board, so every entry point checks it was saved first.
+    try:
+        control_board.require_saved_board(action, allow_open="--board-open-ok" in args)
+    except control_board.BoardOpenError as exc:
+        print(f"\n*** {exc}\n")
+        return 2
+    _report_board_freshness()
+    return fn()
 
 
 if __name__ == "__main__":

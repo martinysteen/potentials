@@ -12,11 +12,20 @@ reconstruct, only a different set of candidates to pick from.
 until d + period, so training up to T would let a hop closing inside the test window vote
 on the candidate choice.
 
-One GroupResult is produced per active D-purpose row (the row "owns" its own walk-forward
-test), scored against the candidates named in its `wf_group` (row labels, comma-separated;
-blank = every other active D row sharing its `period`). All candidates in a test must
-share one `period` — a mixed-horizon comparison is rejected, mirroring strategy_grp v1's
-rule that a comparison never mixes holding lengths.
+One GroupResult is produced per distinct CANDIDATE SET, not per row: a walk-forward test
+is a property of the set of candidates being chosen between, so rows whose `wf_group`
+resolves to the same set share one test and are listed together as its owners. (With
+`wf_group` blank on every row — the default, "every other active D row sharing my
+`period`" — all rows resolve to one identical set, and reporting that test once per owner
+printed the same fold table N times under N different headings.) All candidates in a test
+must share one `period` — a mixed-horizon comparison is rejected, mirroring strategy_grp
+v1's rule that a comparison never mixes holding lengths.
+
+A test's Summary describes the SELECTED candidate each fold, so it says how well
+selection-by-training-performance travels — it is not any one row's own out-of-sample
+result. `summarize_candidates()` gives that: every candidate's own IS/OOS numbers over the
+same folds, which is what a "how did each of my four strategies do out of sample?"
+comparison needs.
 """
 
 from __future__ import annotations
@@ -89,14 +98,19 @@ def _shape(gains: list[float]) -> tuple[float, float]:
 
 @dataclass
 class GroupResult:
-    owner: str                              # the row that declared this walk-forward test
+    owners: list[str]                       # every row that declared THIS candidate set
     candidate_labels: list[str]
     period: int
     folds: list[dict] = field(default_factory=list)
     candidates: list[dict] = field(default_factory=list)
     pooled_selected: list[tuple[float, float]] = field(default_factory=list)
     pooled_all: list[tuple[float, float]] = field(default_factory=list)
+    pooled_by_label: dict[str, list[tuple[float, float]]] = field(default_factory=dict)
     span: tuple[int, int] = (0, 0)
+
+    @property
+    def owner(self) -> str:
+        return self.owners[0]
 
 
 def resolve_candidates(owner_label: str, owner_row: dict, d_rows: dict[str, dict]) -> dict[str, dict]:
@@ -112,23 +126,36 @@ def resolve_candidates(owner_label: str, owner_row: dict, d_rows: dict[str, dict
     return candidates
 
 
-def walk_group(owner_label: str, candidates: dict[str, dict], settings: dict,
-              min_train: int = DEFAULT_MIN_TRAIN, test_len: int = DEFAULT_TEST_LEN
+def walk_group(owners: list[str], candidates: dict[str, dict], settings: dict,
+              min_train: int = DEFAULT_MIN_TRAIN, test_len: int = DEFAULT_TEST_LEN,
+              hops_cache: dict[str, tuple[list["bt.Hop"], dict]] | None = None
               ) -> GroupResult:
-    """Run every fold for one row's declared candidate set. Raises ValueError if the
-    candidates mix `period` values."""
-    print(f"    building hops for {len(candidates)} candidate(s) ...", flush=True)
+    """Run every fold for one candidate set, owned by `owners`. Raises ValueError if the
+    candidates mix `period` values.
+
+    `hops_cache` (label -> the `build_hops` pair Step 3 already produced for that row) is
+    reused as-is: `build_hops` is deterministic in `row_resolved`, so re-simulating a
+    candidate here would only redo the tick's most expensive loop for an identical answer.
+    """
+    hops_cache = hops_cache or {}
     hops_by_label: dict[str, list[bt.Hop]] = {}
     params_by_label: dict[str, dict] = {}
+    missing = [lbl for lbl in candidates if lbl not in hops_cache]
+    if missing:
+        print(f"    building hops for {len(missing)} candidate(s) "
+              f"({len(candidates) - len(missing)} reused from Step 3) ...", flush=True)
     for label, row in candidates.items():
-        hops, params = bt.build_hops(row, progress_label=f"{owner_label}/{label}")
+        if label in hops_cache:
+            hops, params = hops_cache[label]
+        else:
+            hops, params = bt.build_hops(row, progress_label=f"{owners[0]}/{label}")
         hops_by_label[label] = hops
         params_by_label[label] = params
 
     periods = {p["period"] for p in params_by_label.values()}
     if len(periods) > 1:
         raise ValueError(
-            f"wf_group for '{owner_label}' mixes period values {sorted(periods)} — a "
+            f"wf_group for '{owners[0]}' mixes period values {sorted(periods)} — a "
             f"walk-forward comparison needs one shared holding horizon."
         )
     period = int(next(iter(periods)))
@@ -143,6 +170,7 @@ def walk_group(owner_label: str, candidates: dict[str, dict], settings: dict,
     cand_rows: list[dict] = []
     pooled_sel: list[tuple[float, float]] = []
     pooled_all: list[tuple[float, float]] = []
+    pooled_by_label: dict[str, list[tuple[float, float]]] = {lbl: [] for lbl in hops_by_label}
 
     for fi, (tr_lo, tr_hi, te_lo, te_hi) in enumerate(folds, start=1):
         scored: list[tuple[str, dict, dict]] = []
@@ -154,12 +182,15 @@ def walk_group(owner_label: str, candidates: dict[str, dict], settings: dict,
             cand_rows.append({
                 "fold": fi, "label": label,
                 "is_annual": tr["chain_annual"], "is_avg_gain": tr["avg_gain"],
+                "is_alpha": tr["avg_alpha"],
                 "oos_annual": te["chain_annual"], "oos_avg_gain": te["avg_gain"],
                 "oos_median_gain": te["median_gain"], "oos_hit_rate%": te["hit_rate%"],
                 "oos_alpha": te["avg_alpha"], "oos_n": te["chain_n"],
                 "selected": False,
             })
-            pooled_all.extend(_lots_for(hops, params, te_lo, te_hi))
+            lots = _lots_for(hops, params, te_lo, te_hi)
+            pooled_all.extend(lots)
+            pooled_by_label[label].extend(lots)
 
         usable = [s for s in scored if pd.notna(s[1]["chain_annual"]) and s[1]["chain_n"] >= min_lots]
         if not usable:
@@ -194,21 +225,25 @@ def walk_group(owner_label: str, candidates: dict[str, dict], settings: dict,
             "oos_oracle": max(oos_avgs) if oos_avgs else float("nan"),
         })
 
-    return GroupResult(owner=owner_label, candidate_labels=list(candidates), period=period,
+    return GroupResult(owners=list(owners), candidate_labels=list(candidates), period=period,
                        folds=fold_rows, candidates=cand_rows,
-                       pooled_selected=pooled_sel, pooled_all=pooled_all, span=(dn_min, dn_max))
+                       pooled_selected=pooled_sel, pooled_all=pooled_all,
+                       pooled_by_label=pooled_by_label, span=(dn_min, dn_max))
 
 
 def summarize(result: GroupResult) -> dict:
-    """The one Summary-sheet row for a row's walk-forward test — mirrors strategy_grp
-    v1's per-strategy Summary row (write_report's "Summary" sheet)."""
+    """The one Summary row for a candidate set's walk-forward test — mirrors strategy_grp
+    v1's per-strategy Summary row (write_report's "Summary" sheet). This describes the
+    SELECTED candidate per fold, i.e. how well selection travels out of sample; for one
+    row's own OOS result see `summarize_candidates`."""
     g_sel, a_sel, n_sel = _pooled(result.pooled_selected)
     g_all, a_all, _n = _pooled(result.pooled_all)
     g_is = _mean_of(result.folds, "is_avg_gain")
     a_is = _mean_of(result.folds, "is_alpha")
     m_sel, h_sel = _shape([g for g, _m in result.pooled_selected])
     return {
-        "owner": result.owner, "candidates": len(result.candidate_labels),
+        "owner": result.owner, "owners": ", ".join(result.owners),
+        "candidates": len(result.candidate_labels),
         "folds": len(result.folds), "oos_lots": n_sel,
         "is_avg_gain": g_is, "oos_avg_gain": g_sel, "gain_gap": g_sel - g_is,
         "oos_median_gain": m_sel, "oos_hit_rate%": h_sel,
@@ -219,6 +254,43 @@ def summarize(result: GroupResult) -> dict:
         "is_annual": _mean_of(result.folds, "is_annual"),
         "oos_annual": _mean_of(result.folds, "oos_annual"),
     }
+
+
+def summarize_candidates(result: GroupResult) -> list[dict]:
+    """One row per CANDIDATE — each strategy's own in-sample and out-of-sample numbers over
+    the same folds, best pooled `oos_avg_gain` first.
+
+    The Summary block above answers "does picking the training winner work?", which is one
+    number for the whole set. This answers "how did THIS strategy do out of sample?", which
+    is the per-strategy comparison. Gains/alpha/median/hit are pooled over every OOS lot the
+    candidate produced across all folds (so a fold with more lots weighs more, matching how
+    Summary pools the selected); the annual figures are means over folds, matching the fold
+    table. `folds_selected` is how often this candidate won its training window.
+    """
+    by_label: dict[str, list[dict]] = {}
+    for c in result.candidates:
+        by_label.setdefault(c["label"], []).append(c)
+
+    out: list[dict] = []
+    for label, rows in by_label.items():
+        lots = result.pooled_by_label.get(label, [])
+        g_oos, a_oos, n_oos = _pooled(lots)
+        m_oos, h_oos = _shape([g for g, _m in lots])
+        g_is = _mean_of(rows, "is_avg_gain")
+        a_is = _mean_of(rows, "is_alpha")
+        out.append({
+            "candidate": label,
+            "folds_selected": sum(1 for r in rows if r["selected"]),
+            "oos_lots": n_oos,
+            "is_avg_gain": g_is, "oos_avg_gain": g_oos, "gain_gap": g_oos - g_is,
+            "oos_median_gain": m_oos, "oos_hit_rate%": h_oos,
+            "is_alpha": a_is, "oos_alpha": a_oos, "alpha_gap": a_oos - a_is,
+            "is_annual": _mean_of(rows, "is_annual"),
+            "oos_annual": _mean_of(rows, "oos_annual"),
+        })
+    out.sort(key=lambda d: d["oos_avg_gain"] if pd.notna(d["oos_avg_gain"]) else float("-inf"),
+             reverse=True)
+    return out
 
 
 def _mean_of(folds: list[dict], key: str) -> float:
