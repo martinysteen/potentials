@@ -199,6 +199,11 @@ MODULES: Dict[str, Module] = {
         script="longi_future_performance.py",
         depends_on=[],  # Independent - reads only PotDat.csv
     ),
+    "future_minaggr": Module(
+        name="Future Min Aggregated Gain / worst drawdown ahead (20d/50d)",
+        script="longi_future_minaggr.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
     # RETIRED 2026-07-31: future_gain20d / future_gain50d were replaced by the
     # future_performance family above. Scripts moved to _not_used/. Their two CSVs are
     # removed from Drive by longi_upload's rclone SYNC on the next run; every consumer

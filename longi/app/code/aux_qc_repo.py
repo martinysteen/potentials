@@ -43,6 +43,11 @@ BLANK_LEAD_COLS: dict[str, int] = {
     "longi_future_per50d.csv": 51,
     "longi_future_per100d.csv": 101,
     "longi_future_per200d.csv": 201,
+    # Same rule, same reason: minaggr needs the entry day plus the whole held path
+    # before its minimum is known, so its blank lead is period_days + 1 as well
+    # (matching longi_future_minaggr.PERIODS).
+    "longi_future_minaggr20d.csv": 21,
+    "longi_future_minaggr50d.csv": 51,
 }
 
 # Canonical file set — update here when modules are added or removed
@@ -52,6 +57,8 @@ EXPECTED_FILES: set[str] = {
     "longi_beta6m.csv",
     "longi_coreindex.csv",
     "longi_coreindexRSI.csv",
+    "longi_future_minaggr20d.csv",
+    "longi_future_minaggr50d.csv",
     "longi_future_per1d.csv",
     "longi_future_per5d.csv",
     "longi_future_per10d.csv",
