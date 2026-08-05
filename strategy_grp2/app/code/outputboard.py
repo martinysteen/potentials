@@ -30,6 +30,7 @@ from openpyxl.utils import get_column_letter
 
 import control_board as cb
 import param_spec as spec
+import step1_dominance
 import step2_focusset
 import step3_backtest as bt
 import step3_report
@@ -123,9 +124,25 @@ def _write_runs_sheet(wb: Workbook, active_rows: list["cb.RunRow"],
         ws.column_dimensions[get_column_letter(c)].width = 16
 
 
+_ELITE_LIST_CAP = 60
+
+
 def _write_step1_sheet(wb: Workbook, picks: dict[str, dict]) -> None:
+    """One row per elevated group: `dom_group` (renamed from `group`, SM 2026-08-05 --
+    "dominance" is what elevates it), `n_members` (gross group size, unchanged),
+    `n_elites` and `elite_members` -- the group's own qualifying-ticker roster, sorted
+    best-first (no numbering prefix -- SM, 2026-08-05: "my eyes get tired of all the extra
+    numbers"). NOT the gross membership: "I am absolutely not interested in gross
+    members but a list of elite members" (SM). Reuses step1_dominance.elite_members(),
+    the SAME per-ticker test group_dominance_now sums into its per-group counts, so
+    n_elites here always matches what actually elevated the group.
+
+    n_elites summed across the rows shown is NOT the universe's total elite count (~10%
+    of the whole universe, e.g. 120 of 1199) -- only ELEVATED groups get a row here, so
+    non-elevated groups' elites are not counted in that sum. It is the per-GROUP figure
+    that is exactly the count Step 1 tested against dom_count_threshold."""
     ws = wb.create_sheet("Step1_groups")
-    headers = ["label", "daynum", "group", "n_members", "members"]
+    headers = ["label", "daynum", "dom_group", "n_members", "n_elites", "elite_members"]
     for c, h in enumerate(headers, start=1):
         cell = ws.cell(1, c, h); cell.font, cell.fill = _BOLD, _HEAD
     r = 2
@@ -144,18 +161,28 @@ def _write_step1_sheet(wb: Workbook, picks: dict[str, dict]) -> None:
             ws.cell(r, 2, info["daynum"])
             ws.cell(r, 3, "(no group elevated at this daynum)").font = _NOTE
             ws.cell(r, 4, 0)
+            ws.cell(r, 5, 0)
             r += 1
             continue
+        params = info["params"]
+        elite_by_group = step1_dominance.elite_members(
+            s0.groups, params["dominance_attribute"], params["dominance_direction"],
+            params["dominance_decile"], info["daynum"])
         for group in info["elevated"]:
-            members = s0.groups.index[s0.groups == group].tolist()
+            n_members = int(s0.group_sizes.get(group, 0))
+            elites = elite_by_group.get(group, [])
+            elite_list_str = ", ".join(elites[:_ELITE_LIST_CAP])
+            if len(elites) > _ELITE_LIST_CAP:
+                elite_list_str += f" ... (+{len(elites) - _ELITE_LIST_CAP} more)"
             ws.cell(r, 1, label)
             ws.cell(r, 2, info["daynum"])
             ws.cell(r, 3, group)
-            ws.cell(r, 4, len(members))
-            ws.cell(r, 5, ", ".join(members[:30]) + (" ..." if len(members) > 30 else ""))
+            ws.cell(r, 4, n_members)
+            ws.cell(r, 5, len(elites))
+            ws.cell(r, 6, elite_list_str)
             r += 1
     ws.freeze_panes = "A2"
-    for c, w in zip("ABCDE", (24, 10, 16, 10, 90)):
+    for c, w in zip("ABCDEF", (24, 10, 16, 10, 10, 90)):
         ws.column_dimensions[c].width = w
 
 

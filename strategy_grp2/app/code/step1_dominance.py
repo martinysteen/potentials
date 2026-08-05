@@ -123,3 +123,30 @@ def elevated_groups(dom_table: pd.DataFrame, daynum: int) -> list[str]:
 def elevated_members(group_keys: list[str], groups: pd.Series) -> dict[str, list[str]]:
     """group key -> member tickers, restricted to the elevated groups passed in."""
     return {key: groups.index[groups == key].tolist() for key in group_keys}
+
+
+def elite_members(groups: pd.Series, dominance_attribute: str, dominance_direction: bool,
+                  dominance_decile: float, daynum: int) -> dict[str, list[str]]:
+    """group key -> ELITE tickers only (those that individually cleared today's decile
+    cutoff — the same per-ticker test group_dominance_now sums into its per-group
+    `counts`), best-first within each group. For reporting the actual roster behind an
+    elevated group's count, not its gross membership (SM, 2026-08-05: "I am absolutely
+    not interested in gross members but a list of elite members").
+
+    Uses the SAME daily_decile_cutoff() as group_dominance_now, so a ticker counted here
+    is exactly a ticker counted there — no separate definition of "elite" to drift out of
+    sync. [] when the daynum has no column."""
+    signal = load_longi(f"longi_{dominance_attribute}.csv")
+    col = str(daynum)
+    if col not in signal.columns:
+        return {}
+    cutoff = daily_decile_cutoff(signal, dominance_decile, dominance_direction)[col]
+    common = signal.index.intersection(groups.index)
+    vals = signal.loc[common, col].dropna()
+    qualifying = vals[vals.lt(cutoff) if dominance_direction else vals.gt(cutoff)]
+    qualifying = qualifying.sort_values(ascending=dominance_direction)   # best-first
+
+    out: dict[str, list[str]] = {}
+    for t in qualifying.index:
+        out.setdefault(str(groups.loc[t]), []).append(t)
+    return out
