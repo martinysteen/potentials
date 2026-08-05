@@ -91,6 +91,7 @@ the schema no longer has is reported, not silently dropped.
 | 1 | `level`, `persistence_window`, `persistence_frac`, `dominance_attribute`, `dominance_direction`, `dominance_decile`, `dom_count_min`, `tickers_per_group` | `dominance_direction` is spelled `small_wins`/`big_wins`, not a bare boolean. `dom_count_frac` is NOT a board column — see Refinements below |
 | 2 | `post_filter`, `priority_attribute`, `priority_direction`, `from_rank`, `focusset_size` | `from_rank`: `1` = best n, `-1` = worst n, `"mid"` or a fraction `0<f<1` = pool-relative window (`mid` avoids both ends), an integer `k>=2` = fixed offset |
 | 3 | `period`, `no_go_gspc_rsi`, `informational_attributes` | `period` must be one of the seven-pack: 1/5/10/20/50/100/200 |
+| 3a | `stop_loss` | Exit level, e.g. `-10`. Requires `period` in `{20, 50}` — see the 2026-08-05 refinement below |
 | 4 | `wf_group` | comma-separated `label`s to compare against in the walk-forward test; blank = every other active `D` row sharing this row's `period` |
 
 ### Running it
@@ -119,12 +120,13 @@ a one-screen table of every required file's daynum, age and status.
 * **`report/StrategicStocks.xlsx`** — one sheet per active `P` row: today's gross list,
   rank-ordered, with the priority attribute's value. The daily-advice artifact for users with no
   interest in the mechanics.
-* **`report/compare_strategies_<date>.xlsx`** — one workbook per development tick, six sheets:
+* **`report/compare_strategies_<date>.xlsx`** — one workbook per development tick, seven sheets:
   `Runs` (every active row verbatim + status/universe/vintage), `Step1_groups` (elevated groups +
   member tickers), `Step2_picks` (the gross list, same as `StrategicStocks.xlsx`), `Step3_compare`
   (transposed metrics, one column per active `D` row, best `chain_annual` leftmost),
-  `Step4_walkforward` (one block per *candidate set*: summary + per-candidate table + fold
-  table — see the 2026-08-04 refinement below), `Charts`.
+  `Step3a_stopout` (cost/benefit sweep across stop levels, one block per eligible `D` row — see
+  the 2026-08-05 refinement below), `Step4_walkforward` (one block per *candidate set*: summary +
+  per-candidate table + fold table — see the 2026-08-04 refinement below), `Charts`.
 * **Not yet built**: standalone per-run/per-fold files under `report/backtesting/` and
   `report/walkforward/` (the folders exist; `outputboard.py` currently only writes the one
   combined workbook above) — see Status.
@@ -269,6 +271,94 @@ answer, not a failure. The 2026-08-04 counts (4 active → 3 on `Runs` → 2 on 
 → 3 on `Step3_compare`) decompose exactly this way: `Middle` was rejected by validation and
 dropped silently, and of the three that ran, `Agressive` elevated no group that daynum.
 
+## Refinement 2026-08-05 — Step 3a: stop-out
+
+Step 3 holds every picked stock for the full `period` horizon no matter what happens in
+between — a hop's gain is `longi_future_per<period>d.csv[t, daynum]`, and nothing can exit
+early. `longi_future_minaggr20d/50d.csv` (built in longi, dec144e) is a "foresight eye": at
+signal day `d` it already holds the lowest gain the path reached before the horizon closed
+(<= 0, floored at 0). That makes an exit simulable after the fact — SM: *"if a parameter
+called STOP on say -10 is available, we can set the final end gain of that stock to -10"* —
+and SM asked for it as a **separate operation late in Step 3, not threaded into the
+simulation**, since stops have a price (a stopped stock might have recovered past `STOP` by
+the horizon) and that cost has to be measured, not assumed away.
+
+**Kept as a pure post-transform on the hop series** (`step3a_stopout.apply_stop`), for a
+practical reason as much as a conceptual one: `build_hops` is the expensive part of a tick
+(one Step-2 selection per daynum) and does not depend on where a stop is set, so **one
+simulation can be re-scored at every stop level**, making a sweep across levels nearly free.
+`step3_backtest.BacktestResult` now carries both `.hops` (what Step3_compare, the charts and
+`step3_report` show — stop-applied when the row's own `stop_loss` is set, unchanged
+otherwise) and `.hops_raw` (always the pre-stop timeline, what `step3a_stopout.sweep()`
+re-scores at every level).
+
+The clamp is unconditional, not `max(gain, STOP)`: a breached stock is being simulated as
+**exited**, so a later recovery past `STOP` is not available to it — that forgone recovery is
+exactly the "cost" side, not something to award back by taking the better of the two numbers.
+Still-open hops have no `minaggr` value yet (its newest `period+1` columns are blank by
+construction, the same realized/open boundary `longi_future_per*.csv` has); `shared.market.
+partial_min_gains` covers them instead, reading the *elapsed* part of PotDat's price path —
+realized history, not foresight.
+
+**New board column** (step 3a): `stop_loss`, float, `<= 0`, default `0`/blank = off (today's
+behaviour). Requires `period` in `{20, 50}` — the only horizons `longi_future_minaggr*.csv`
+covers (`shared.config.MINAGGR_PERIODS`) — checked in `control_board.resolve_row` since it
+is a cross-column constraint, not a single cell's type. **New Settings**: `stop_sweep` (the
+comma-separated ladder every eligible `D` row is swept at regardless of its own `stop_loss`,
+default `-5,-7.5,-10,-15,-20`; blank = no sweep) and `stop_annual_tolerance` (default `5`,
+see Ranking below).
+
+**Ranking (SM's choice, 2026-08-05): risk-first, not return-first.** A population-level pass
+over all 762,348 realized (ticker, daynum) positions in history shows *why* this needed
+asking rather than assuming: at `stop=-10`, 19.7% of positions are stopped, avoiding 630,698
+points of loss against 508,772 forgone — mean gain improves (+1.71 -> +1.87) but the median
+collapses (+0.87 -> +0.53) and hit-rate drops (54.6% -> 52.6%). Mean and risk point opposite
+ways, so `step3a_stopout.best_level()` ranks candidate levels by `Worst` (least negative
+first) then `N_loss` (fewest first), and flags the best-ranked level whose `chain_annual`
+gives up no more than `stop_annual_tolerance` percent of the unstopped baseline — return is
+shown beside risk on the sheet, but risk is what picks the flagged row.
+
+**Reporting**: `Step3a_stopout` (new sheet) — one block per eligible active `D` row (period in
+`{20, 50}` and something to sweep at: the row's own `stop_loss`, the board's `stop_sweep`, or
+both), the sweep table (`n_positions`/`n_stopped`/`benefit`/`cost`/`net`/`net_per_position`
+beside the full Step-3 metric set per level), with the flagged row highlighted. `stop_loss`,
+`n_stopped` and `stop_net_per_position` also ride on `Step3_compare` beside the row's other
+parameters. `Charts` gained a fourth block, `chain_annual`/`Worst` vs. stop level per eligible
+row. `step3_report`'s per-run Operational sheet gained an `n_stopped` row and marks an exited
+ticker's cell in dark red, so the timeline shows *where* a stop bit, not just the count.
+
+**Prior to keep in view**: `strategy_grp` v1 found *all* price-stop variants lost money —
+a different mechanism (an intraday price stop in the sandbox, pre-cutover same-day-entry
+convention). This one reads the exact realized path under the current entry-is-signal+1
+convention, so it is a cleaner measurement, but if the sweep comes back negative across the
+live board's rows that is a real answer, not a bug — the feature ships with `stop_loss=0` as
+the default precisely so a negative verdict changes nothing by default.
+
+**Not in scope**: no stop on the production path (`StrategicStocks.xlsx` stays the entry-time
+gross list — a stop is an exit rule, not a selection rule) and no trailing / peak-to-trough
+stop (`minaggr` is drawdown *from entry*; that would need a different longi measurement).
+
+### Fold stability (same day, 2026-08-05)
+
+SM, on Step 4: *"the only thing on step 4 I really understand is the folds ... that could
+be done on stop-corrected lots as well as on intact lots."* Right, and simpler than the
+walk-forward candidate-selection test first proposed for this: no training window, no
+in-sample winner, no selection-skill scoring — those exist in Step 4 to answer "would
+picking the in-sample winner among several *different strategies* have survived", and stop
+levels are not that: they're the same picks, same days, different clamps, so a
+training-window pick between them would mostly measure noise. What's wanted instead is
+plainer — for each of Step 4's own fold windows, score every level (not select one) and
+read the row of numbers across folds directly for stability.
+
+`step3a_stopout.levels_hops()` now applies each level to a row's `hops_raw` exactly once,
+shared by both the full-span sweep table and this one; `fold_metrics()` reruns
+`bt.compute_metrics` restricted to each fold's *test* window only, for every level. The
+fold boundaries are not recomputed — `outputboard._compute_stopout` reuses the row's own
+`GroupResult.folds` from the walk-forward step already run for Step 4, so the windows are
+identical to what `Step4_walkforward` already shows. `Step3a_stopout` gained a second
+sub-table per eligible row, `fold` x `stop`, with `avg_gain`/`median_gain`/`hit_rate%`/
+`chain_annual`/`chain_n`/`Worst`/`N_loss` per cell.
+
 ## Status
 
 **Phase 1 (skeleton) done, 2026-08-03.** In place: directory layout under `app/`; `shared/`
@@ -373,6 +463,33 @@ loops back to its menu after each run instead of exiting.
 `Stamdata`-only, as the design note allows starting with); `report/walkforward/`'s standalone
 per-fold file (the folder exists, but `outputboard.py` only writes the one combined
 `compare_strategies_<date>.xlsx` today).
+
+**Step 3a (stop-out) built and verified against live data, 2026-08-05.** In place:
+`step3a_stopout.py` (`levels_hops`, `metrics_rows`, `sweep`, `fold_metrics`, `best_level`);
+the `stop_loss` board column and `stop_sweep`/`stop_annual_tolerance` Settings;
+`step3_backtest.run_backtest` applying a row's own stop after `build_hops`; `preflight.py`
+requiring `longi_future_minaggr<period>d.csv` when a row's `stop_loss` or the board's
+`stop_sweep` calls for it; the `Step3a_stopout` sheet (full-history sweep table + per-fold
+stability table, both per eligible row), `Step3_compare` additions and `Charts`' fourth
+block; `step3_report`'s `n_stopped` row and stopped-ticker fill. See the two 2026-08-05
+refinements above for the design, the risk-first ranking rule, and the fold-stability table.
+
+**Verified against live data (daynum 2205, 2026-08-05):** board regenerated cleanly (no
+columns dropped); `--dry-run` clean on all 13 rows; a synthetic unit pass confirmed
+`apply_stop`'s benefit/cost decomposition and the unconditional clamp (not
+`max(gain, stop)`) on constructed hops; `run_backtest(stop_loss=-10)` and
+`sweep(...)[-10]` agreed on every headline metric on the live `A_GICS_rank` row (no forked
+path) — `chain_annual`/`chain_n`/`Worst`/`N_loss`/`avg_gain`/`median_gain`/`hit_rate%`/
+`n_stopped` all matched exactly; `step3_report`'s Operational sheet rendered the
+`n_stopped` row and dark-red stopped-ticker fill correctly. A full development tick with
+both live active rows (`A_GICS_rank`, `A_Sector2_rank`, both `stop_loss` off) produced
+`chain_annual`=45.54/71.91, matching the pre-change baseline exactly — the off-path is a
+provable no-op (`apply_stop` is never called when `stop_loss` is falsy). The fold-stability
+table immediately surfaced a real finding: `A_GICS_rank`'s full-history-flagged `-5` level
+*underperforms* the unstopped baseline in fold 3 (51.6 vs 56.5) and barely breaks even in
+fold 4, despite winning comfortably on the full-history sweep and in the other three
+folds — direct, concrete evidence that a full-history "best" stop level is not
+automatically fold-stable, which is exactly the question this table exists to answer.
 
 
 

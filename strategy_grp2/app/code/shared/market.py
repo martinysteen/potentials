@@ -130,6 +130,36 @@ def compute_partial_gains(potdat: pd.DataFrame, tickers: list[str],
     return result
 
 
+def partial_min_gains(potdat: pd.DataFrame, tickers: list[str],
+                      entry_daynum: int, exit_daynum: int) -> dict[str, float]:
+    """Worst (<=0) gain reached so far in a still-OPEN hop, over the ELAPSED part of the
+    window only -- step3a_stopout's counterpart to compute_partial_gains' single final-day
+    figure, for the trailing ~period hops longi_future_minaggr*.csv has no value for yet
+    (its newest period+1 columns are blank by construction, same boundary as the realized
+    gain file). Same (entry_daynum, exit_daynum) pair as compute_partial_gains, so the two
+    stay consistent about what counts as "entry" and "as of today". NaN when the entry
+    price is unavailable."""
+    ec = str(entry_daynum)
+    window_cols = [c for c in potdat.columns if entry_daynum <= int(c) <= exit_daynum]
+    result: dict[str, float] = {}
+    for t in tickers:
+        try:
+            pe = (float(potdat.at[t, ec])
+                  if t in potdat.index and ec in potdat.columns and pd.notna(potdat.at[t, ec])
+                  else float("nan"))
+        except (KeyError, ValueError):
+            pe = float("nan")
+        if pd.isna(pe) or pe == 0 or t not in potdat.index:
+            result[t] = float("nan")
+            continue
+        prices = pd.to_numeric(potdat.loc[t, window_cols], errors="coerce").dropna()
+        if prices.empty:
+            result[t] = float("nan")
+            continue
+        result[t] = min(0.0, (float(prices.min()) - pe) / pe * 100)
+    return result
+
+
 def market_partial_gain(potdat: pd.DataFrame, entry_daynum: int, exit_daynum: int) -> float:
     """Benchmark for an OPEN hop, over the SAME still-elapsed window: equal-weighted
     cross-sectional mean of every ticker's partial price return. Deliberately not

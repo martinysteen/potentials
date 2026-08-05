@@ -116,3 +116,22 @@ def future_gain_file(period: int) -> str:
             f"Valid periods: {list(FUTURE_PERIODS)}"
         )
     return f"longi_future_per{period}d.csv"
+
+
+# longi_future_minaggr*.csv (the Step-3a stop-out "foresight eye") exists for only two of
+# the seven-pack horizons -- see longi/app/code/longi_future_minaggr.py's PERIODS list.
+MINAGGR_PERIODS: Final[tuple[int, ...]] = (20, 50)
+
+
+def minaggr_file(period: int) -> str:
+    """Longi filename holding the worst-drawdown-from-entry path for a `period`-day hold
+    (<= 0, floored at 0). Raises on a period with no counterpart, same reasoning as
+    future_gain_file: a silently-wrong file would produce a plausible but meaningless stop.
+    """
+    period = int(period)
+    if period not in MINAGGR_PERIODS:
+        raise ValueError(
+            f"period={period} has no longi_future_minaggr*.csv counterpart. "
+            f"Valid periods: {list(MINAGGR_PERIODS)}"
+        )
+    return f"longi_future_minaggr{period}d.csv"

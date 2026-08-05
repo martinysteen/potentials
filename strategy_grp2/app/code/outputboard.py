@@ -33,10 +33,11 @@ import param_spec as spec
 import step2_focusset
 import step3_backtest as bt
 import step3_report
+import step3a_stopout as stopout
 import step4_walkforward as wf
 from shared import expression as expr
 from shared import market
-from shared.config import REPORT_ROOT
+from shared.config import MINAGGR_PERIODS, REPORT_ROOT
 
 _BOLD = Font(bold=True)
 _HEAD = PatternFill("solid", fgColor="BDD7EE")
@@ -216,6 +217,7 @@ _STEP3_ROWS: list[str] = [
     "avg_gain", "median_gain", "hit_rate%", "avg_alpha", "avg_beta",
     "chain_ret", "chain_annual", "chain_n", "origin_sens%", "N_loss", "Worst",
     "avg_partial_gain", "avg_partial_alpha", "n_open_hops",
+    "stop_loss", "n_stopped", "stop_net_per_position",
 ]
 
 
@@ -247,6 +249,140 @@ def _write_step3_sheet(wb: Workbook, backtests: dict[str, "bt.BacktestResult"]) 
     ws.column_dimensions["A"].width = 22
     for c in range(2, len(order) + 2):
         ws.column_dimensions[get_column_letter(c)].width = 16
+
+
+# ---------------------------------------------------------------------------
+# Step3a_stopout — cost/benefit sweep across stop levels, one block per D-purpose row
+# ---------------------------------------------------------------------------
+
+_STOPOUT_COLS: list[str] = [
+    "stop", "n_positions", "n_stopped", "benefit", "cost", "net", "net_per_position",
+    "chain_annual", "chain_n", "Worst", "N_loss", "avg_gain", "median_gain", "hit_rate%",
+]
+_STOPOUT_FOLD_COLS: list[str] = [
+    "fold", "test_dates", "stop", "avg_gain", "median_gain", "hit_rate%",
+    "chain_annual", "chain_n", "Worst", "N_loss",
+]
+
+
+def _compute_stopout(backtests: dict[str, "bt.BacktestResult"], settings: dict,
+                     walk_results: list["wf.GroupResult"]) -> dict[str, dict]:
+    """Per D-row Step3a sweep, computed ONCE and shared by the sheet and the Charts
+    section below — step3a_stopout.levels_hops() applies each stop level to a row's
+    hops_raw exactly once, reused by both the full-span sweep table and the per-fold
+    stability table, and never re-simulates (it works off the already-built hops).
+
+    A row is only eligible when its period is one longi_future_minaggr*.csv covers
+    (20/50 — see shared.config.MINAGGR_PERIODS) AND there is something to show it at:
+    the board's Settings.stop_sweep ladder, the row's own stop_loss, or both.
+
+    The fold-stability table reuses each row's OWN GroupResult.folds from Step 4 (SM,
+    2026-08-05: "the only thing on step 4 I really understand is the folds ... that
+    could be done on stop-corrected lots as well as on intact lots") — same boundaries
+    already on Step4_walkforward, no new fold geometry, no training-window selection."""
+    tolerance = float(settings.get("stop_annual_tolerance", 5.0))
+    sweep_levels = stopout.parse_sweep_levels(settings.get("stop_sweep", ""))
+
+    folds_by_label: dict[str, list[dict]] = {}
+    for result in walk_results:
+        for owner in result.owners:
+            folds_by_label[owner] = result.folds
+
+    out: dict[str, dict] = {}
+    for label, result in backtests.items():
+        period = int(result.params["period"])
+        if period not in MINAGGR_PERIODS:
+            out[label] = {"period": period, "eligible": False, "rows": [], "flagged": None,
+                         "fold_rows": []}
+            continue
+        own_stop = result.params.get("stop_loss")
+        levels = sorted(set(sweep_levels) | ({own_stop} if own_stop else set()))
+        if not levels:
+            out[label] = {"period": period, "eligible": False, "rows": [], "flagged": None,
+                         "fold_rows": []}
+            continue
+
+        by_level = stopout.levels_hops(result.hops_raw, period, levels)
+        rows_ = stopout.metrics_rows(by_level, result.params, settings)
+        folds = folds_by_label.get(label, [])
+        fold_rows = stopout.fold_metrics(by_level, result.params, settings, folds) if folds else []
+
+        out[label] = {"period": period, "eligible": True, "rows": rows_,
+                      "flagged": stopout.best_level(rows_, tolerance), "fold_rows": fold_rows}
+    return out
+
+
+def _write_step3a_sheet(wb: Workbook, stopout_data: dict[str, dict], settings: dict) -> None:
+    """The sweep table (step3a_stopout.sweep) plus the risk-first flagged level
+    (step3a_stopout.best_level, highlighted) per eligible row. A row outside {20, 50} or
+    with nothing to sweep gets a one-line note instead of an empty block, matching the
+    "no group elevated" / "no pick" convention on Step1_groups/Step2_picks — an absent
+    block must not read as a missing result."""
+    ws = wb.create_sheet("Step3a_stopout")
+    tolerance = float(settings.get("stop_annual_tolerance", 5.0))
+    r = 1
+    for label, info in stopout_data.items():
+        cell = ws.cell(r, 1, label); cell.font = Font(bold=True, size=12)
+        r += 1
+        if not info["eligible"]:
+            note = (f"(no longi_future_minaggr*.csv for period={info['period']} — "
+                    f"only {list(MINAGGR_PERIODS)} covered)"
+                    if info["period"] not in MINAGGR_PERIODS else
+                    "(no stop_loss set and Settings.stop_sweep is blank — nothing to sweep)")
+            ws.cell(r, 1, note).font = _NOTE
+            r += 2
+            continue
+
+        for c, h in enumerate(_STOPOUT_COLS, start=1):
+            cell = ws.cell(r, c, h); cell.font, cell.fill = _BOLD, _HEAD
+        r += 1
+        for row_ in info["rows"]:
+            is_flagged = info["flagged"] is not None and row_["stop"] == info["flagged"]
+            for c, key in enumerate(_STOPOUT_COLS, start=1):
+                val = row_.get(key)
+                if key == "stop":
+                    val = "off" if val is None else val
+                elif isinstance(val, float) and pd.notna(val):
+                    val = round(val, 4)
+                cell = ws.cell(r, c, val)
+                if is_flagged:
+                    cell.fill = _OK_FILL
+            r += 1
+        flagged_txt = (info["flagged"] if info["flagged"] is not None
+                      else f"(none within {tolerance:.0f}% chain_annual tolerance)")
+        ws.cell(r, 1, f"flagged (risk-first: best Worst/N_loss within "
+                      f"{tolerance:.0f}% chain_annual giveback): {flagged_txt}").font = _NOTE
+        r += 2
+
+        # ---- fold stability: the SAME folds already on Step4_walkforward, every stop
+        # level scored (not selected) on each one -- no training window, just "how does
+        # this level's own out-of-sample number move across time slots" (SM, 2026-08-05).
+        ws.cell(r, 1, "Fold stability — Step 4's own folds, stop-corrected vs intact "
+                      "(no selection, every level scored on every fold)").font = _NOTE
+        r += 1
+        if not info["fold_rows"]:
+            ws.cell(r, 1, "(no Step 4 folds for this row — walk-forward produced none, "
+                          "e.g. too little history for even one fold)").font = _NOTE
+            r += 2
+        else:
+            for c, h in enumerate(_STOPOUT_FOLD_COLS, start=1):
+                cell = ws.cell(r, c, h); cell.font, cell.fill = _BOLD, _HEAD
+            r += 1
+            for fr in info["fold_rows"]:
+                for c, key in enumerate(_STOPOUT_FOLD_COLS, start=1):
+                    val = fr.get(key)
+                    if key == "stop":
+                        val = "off" if val is None else val
+                    elif isinstance(val, float) and pd.notna(val):
+                        val = round(val, 4)
+                    ws.cell(r, c, val)
+                r += 1
+            r += 2
+
+    ws.freeze_panes = "A1"
+    ws.column_dimensions["A"].width = 18
+    for c in range(2, len(_STOPOUT_COLS) + 1):
+        ws.column_dimensions[get_column_letter(c)].width = 14
 
 
 # ---------------------------------------------------------------------------
@@ -344,7 +480,8 @@ def _greedy_chain_lots(hops: list["bt.Hop"], period: int, threshold) -> list[tup
 
 
 def _write_charts_sheet(wb: Workbook, backtests: dict[str, "bt.BacktestResult"],
-                       walk_results: list["wf.GroupResult"]) -> None:
+                       walk_results: list["wf.GroupResult"],
+                       stopout_data: dict[str, dict]) -> None:
     ws = wb.create_sheet("Charts")
     labels = list(backtests)
 
@@ -434,6 +571,37 @@ def _write_charts_sheet(wb: Workbook, backtests: dict[str, "bt.BacktestResult"],
         chart3.set_categories(cats)
         ws.add_chart(chart3, f"E{row2}")
 
+    # --- Table 4: chain_annual & Worst across stop levels, per eligible row (Step 3a) ---
+    row3 = row2 + max(len(labels), 6) + 20
+    eligible = {lbl: info for lbl, info in stopout_data.items() if info["eligible"]}
+    ws.cell(row3, 1, "Step 3a: chain_annual & Worst across stop levels").font = Font(bold=True, size=12)
+    r = row3 + 1
+    for label, info in eligible.items():
+        ws.cell(r, 1, label).font = _BOLD
+        r += 1
+        cats_row = r
+        ws.cell(r, 1, "stop")
+        for c, row_ in enumerate(info["rows"], start=2):
+            ws.cell(r, c, "off" if row_["stop"] is None else row_["stop"])
+        r += 1
+        data_top = r
+        for key in ("chain_annual", "Worst"):
+            ws.cell(r, 1, key).font = _BOLD
+            for c, row_ in enumerate(info["rows"], start=2):
+                val = row_.get(key)
+                ws.cell(r, c, round(val, 4) if isinstance(val, float) and pd.notna(val) else None)
+            r += 1
+        n_levels = len(info["rows"])
+        if n_levels:
+            chart4 = LineChart()
+            chart4.title = f"{label}: chain_annual & Worst vs stop level"
+            data = Reference(ws, min_col=1, max_col=1 + n_levels, min_row=data_top, max_row=r - 1)
+            cats = Reference(ws, min_col=2, max_col=1 + n_levels, min_row=cats_row, max_row=cats_row)
+            chart4.add_data(data, titles_from_data=True, from_rows=True)
+            chart4.set_categories(cats)
+            ws.add_chart(chart4, f"{get_column_letter(3 + n_levels)}{data_top - 1}")
+        r += 2
+
     ws.column_dimensions["A"].width = 24
 
 
@@ -512,6 +680,16 @@ def assemble(board: "cb.BoardResult", settings: dict) -> Path:
         except ValueError as exc:
             print(f"[outputboard] walk-forward skipped for '{owners[0]}': {exc}")
 
+    stopout_data: dict[str, dict] = {}
+    if backtests:
+        print(f"\n=== Step 3a: stop-out sweep ===", flush=True)
+        stopout_data = _compute_stopout(backtests, settings, walk_results)
+        for label, info in stopout_data.items():
+            if info["eligible"]:
+                n_folds = len(set(fr["fold"] for fr in info["fold_rows"]))
+                print(f"    {label}: {len(info['rows']) - 1} level(s), flagged={info['flagged']}, "
+                      f"{n_folds} fold(s) scored", flush=True)
+
     print("\n=== Writing workbook ===", flush=True)
     wb = Workbook()
     wb.remove(wb.active)
@@ -520,10 +698,11 @@ def assemble(board: "cb.BoardResult", settings: dict) -> Path:
     _write_step2_sheet(wb, picks)
     if backtests:
         _write_step3_sheet(wb, backtests)
+        _write_step3a_sheet(wb, stopout_data, settings)
     if walk_results:
         _write_step4_sheet(wb, walk_results)
     if backtests:
-        _write_charts_sheet(wb, backtests, walk_results)
+        _write_charts_sheet(wb, backtests, walk_results, stopout_data)
 
     _archive_prior()
     REPORT_ROOT.mkdir(parents=True, exist_ok=True)

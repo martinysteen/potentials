@@ -42,13 +42,16 @@ class Hop:
     beta: float = float("nan")
     n_candidates: int = 0               # pool size before the from_rank/focusset_size window
     dom_cutoff: float = float("nan")    # that day's Step-1 decile cutoff (reporting only)
+    stopped: set[str] = field(default_factory=set)   # tickers Step 3a capped, if any
 
 
 @dataclass
 class BacktestResult:
-    hops: list[Hop]
+    hops: list[Hop]              # what was actually traded -- stop-applied when stop_loss is set
     params: dict
     metrics: dict[str, object]
+    hops_raw: list[Hop] = field(default_factory=list)     # pre-stop, for step3a_stopout.sweep()
+    stop_profile: object = None                            # step3a_stopout.StopProfile, or None
 
 
 def _find_start_daynum(gain_df: pd.DataFrame, min_valid: int = 10) -> int:
@@ -224,7 +227,30 @@ def compute_metrics(hops: list[Hop], params: dict, settings: dict,
 
 
 def run_backtest(row_resolved: dict, settings: dict, *, progress_label: str | None = None) -> BacktestResult:
-    """The fused realized+open timeline and its full-span summary metrics for one row."""
-    hops, params = build_hops(row_resolved, progress_label=progress_label)
+    """The fused realized+open timeline and its full-span summary metrics for one row.
+
+    When the row sets `stop_loss` (Step 3a), `.hops`/`.metrics` are the STOP-APPLIED
+    numbers -- what Step3_compare, the charts and step3_report show, so nothing
+    downstream needs to know a stop exists. `.hops_raw`/`.stop_profile` keep the
+    pre-stop timeline and its cost/benefit decomposition for step3a_stopout.sweep(),
+    which re-scores hops_raw at every level in the board's stop_sweep ladder -- deferred
+    import here since step3a_stopout imports this module back for Hop/compute_metrics.
+    """
+    hops_raw, params = build_hops(row_resolved, progress_label=progress_label)
+
+    stop = params.get("stop_loss")
+    if stop:
+        import step3a_stopout
+        hops, stop_profile = step3a_stopout.apply_stop(hops_raw, stop, int(params["period"]))
+    else:
+        hops, stop_profile = hops_raw, None
+
     metrics = compute_metrics(hops, params, settings)
-    return BacktestResult(hops=hops, params=params, metrics=metrics)
+    if stop_profile is not None:
+        # Surfaced on Step3_compare beside stop_loss itself -- the sweep table on
+        # Step3a_stopout carries the full benefit/cost breakdown for every level.
+        metrics["n_stopped"] = stop_profile.n_stopped
+        metrics["stop_net_per_position"] = stop_profile.net_per_position
+
+    return BacktestResult(hops=hops, params=params, metrics=metrics,
+                          hops_raw=hops_raw, stop_profile=stop_profile)

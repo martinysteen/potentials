@@ -29,7 +29,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import param_spec as spec
-from shared.config import CONTROL_BOARD_PATH, CONTROL_ROOT
+from shared.config import CONTROL_BOARD_PATH, CONTROL_ROOT, MINAGGR_PERIODS
 
 _HEADER_FILL = PatternFill("solid", fgColor="BDD7EE")
 _META_FILL = PatternFill("solid", fgColor="D6DCE4")
@@ -246,6 +246,18 @@ def resolve_row(raw: dict[str, object], row_num: int) -> RunRow:
             row.resolved[pdef.name] = coerce(pdef, raw.get(pdef.name), row_num)
         except ValueError as exc:
             row.errors.append(str(exc))
+
+    # stop_loss (Step 3a) leans on longi_future_minaggr<period>d.csv, which exists for
+    # only two of the seven-pack horizons -- a row asking for a stop at, say, period=100
+    # would silently have nothing to apply it to (see shared.config.minaggr_file).
+    stop_loss = row.resolved.get("stop_loss")
+    period = row.resolved.get("period")
+    if stop_loss and period is not None and int(period) not in MINAGGR_PERIODS:
+        row.errors.append(
+            f"row {row_num}: stop_loss={stop_loss} requires period in {list(MINAGGR_PERIODS)} "
+            f"(longi_future_minaggr*.csv only exists for those horizons), got period={period}"
+        )
+
     if not row.resolved.get("label"):
         try:
             row.resolved["label"] = _derive_label(row.resolved)

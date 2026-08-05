@@ -15,7 +15,7 @@ meta column, not one of the four steps):
               dominance_direction, dominance_decile, dom_count_min, tickers_per_group
               (dom_count_frac is NOT a board column -- see shared.config.DOM_COUNT_FRAC_MARGIN)
     step 2 -> post_filter, priority_attribute, priority_direction, from_rank, focusset_size
-    step 3 -> period, no_go_gspc_rsi, informational_attributes
+    step 3 -> period, no_go_gspc_rsi, informational_attributes, stop_loss
     step 4 -> wf_group
 
 `from_rank` accepts more than v1's {1, -1} — see `parse_from_rank()` below: a pool-relative
@@ -129,6 +129,26 @@ def format_direction(value: bool) -> str:
 
 
 # ---------------------------------------------------------------------------
+# stop_loss — Step 3a's exit level. Matches longi_future_minaggr*.csv's sign convention
+# (a drawdown is <= 0), so a positive cell is almost certainly the level typed as a bare
+# magnitude ("10" meaning -10%) -- rejected rather than silently negated, since guessing
+# the sign is exactly the kind of silent inversion this schema exists to catch.
+# ---------------------------------------------------------------------------
+
+
+def parse_stop_loss(raw: Any) -> float:
+    if isinstance(raw, bool):
+        raise ValueError(f"stop_loss={raw!r} is not valid — see param_spec.parse_stop_loss")
+    value = float(raw)
+    if value > 0:
+        raise ValueError(
+            f"stop_loss={value} must be <= 0 (minaggr's sign convention: a drawdown is "
+            f"never positive). 0 = off; did you mean {-value}?"
+        )
+    return value
+
+
+# ---------------------------------------------------------------------------
 # The schema itself
 # ---------------------------------------------------------------------------
 
@@ -213,6 +233,11 @@ PARAMS: list[ParamDef] = [
     ParamDef("informational_attributes", 3, "list_str", default=(),
              help="Comma-separated Longi factor names shown for insight only; never "
                   "affects selection."),
+    ParamDef("stop_loss", 3, "float", default=0.0, parser=parse_stop_loss,
+             help="Step 3a exit level, e.g. -10. A ticker whose longi_future_minaggr<period>d "
+                  "(worst drawdown from entry) breaches this has its lot gain capped here for "
+                  "the rest of the hold. 0/blank = off (today's behaviour). Requires "
+                  "period in {20, 50} -- the only horizons minaggr covers."),
 
     # --- step 4: forward-walk ----------------------------------------------------
     ParamDef("wf_group", 4, "str", default="",
@@ -269,6 +294,14 @@ SETTINGS: list[SettingDef] = [
                "Move prior dated output workbooks to _archive/ once new output exists."),
     SettingDef("production_strategy_count", "int", 3,
                "How many P-purpose rows' gross lists ship in StrategicStocks.xlsx."),
+    SettingDef("stop_sweep", "str", "-5,-7.5,-10,-15,-20",
+               "Comma-separated stop_loss levels Step3a_stopout re-scores each D row at "
+               "(period in {20,50} only), alongside its own board stop_loss. Blank = no "
+               "sweep sheet."),
+    SettingDef("stop_annual_tolerance", "float", 5.0,
+               "Step3a_stopout's risk-first pick: the tightest stop (best Worst/N_loss) "
+               "whose chain_annual gives up no more than this many percent of the "
+               "unstopped baseline is flagged best."),
 ]
 
 SETTINGS_BY_NAME: dict[str, SettingDef] = {s.name: s for s in SETTINGS}

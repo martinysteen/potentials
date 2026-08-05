@@ -42,6 +42,7 @@ _PCT_FMT = '+0.00;-0.00;"-"'
 _OPEN_HDR_FILL = PatternFill("solid", fgColor="DDEBF7")   # lighter blue — open/extension day
 _EXT_POS_FILL = PatternFill("solid", fgColor="FFFF99")    # light yellow — open, positive gain
 _EXT_NEG_FILL = PatternFill("solid", fgColor="FFC000")    # orange — open, negative gain
+_STOP_FILL = PatternFill("solid", fgColor="C00000")       # dark red — Step 3a exited this ticker
 
 
 def _gain_fill(val: float, realized: bool = True) -> PatternFill:
@@ -62,7 +63,10 @@ def _write_operational(ws, hops: list["bt.Hop"], label: str, params: dict) -> No
     Row 2: (blank)              | date1   | date2   | ...
     Row 3: n_candidates         | pool size before picking, per hop
     Row 4: dominance_cutoff     | that day's Step-1 decile cutoff
-    Rows 5..5+n-1: ticker_rank1..N  (n = focusset_size)
+    Row 5: n_stopped            | tickers Step 3a exited this hop (0 when stop_loss is off)
+    Rows 6..6+n-1: ticker_rank1..N  (n = focusset_size) — a Step-3a-exited ticker gets a
+                   dark-red fill (h.stopped), so the timeline shows WHERE a stop bit, not
+                   just the count
     +1: avg_gain
     +2: mkt_gain, alpha  (+beta when longi_beta3m.csv is available)
     +len(attrs)*n: informational_attributes per-stock rows, from the row's own board column
@@ -76,8 +80,8 @@ def _write_operational(ws, hops: list["bt.Hop"], label: str, params: dict) -> No
     n = int(params["focusset_size"])
     threshold = params.get("no_go_gspc_rsi")
 
-    label_row, date_row, cand_row, cutoff_row = 1, 2, 3, 4
-    ticker_top = 5
+    label_row, date_row, cand_row, cutoff_row, stopped_row = 1, 2, 3, 4, 5
+    ticker_top = 6
     avg_row = ticker_top + n
     mkt_row, alpha_row = avg_row + 1, avg_row + 2
     has_beta = any(pd.notna(h.beta) for h in hops)
@@ -108,11 +112,23 @@ def _write_operational(ws, hops: list["bt.Hop"], label: str, params: dict) -> No
         cell = ws.cell(cutoff_row, j, round(val, 2) if pd.notna(val) else None)
         cell.fill, cell.alignment = _CAND_FILL, _CTR
 
-    # ---- ticker rows ----
+    # ---- n_stopped row (NEW) ----
+    lbl = ws.cell(stopped_row, 1, "n_stopped"); lbl.font, lbl.fill = _BOLD, _CAND_FILL
+    for j, h in enumerate(hops, start=2):
+        cell = ws.cell(stopped_row, j, len(h.stopped) or None)
+        cell.fill, cell.alignment = _CAND_FILL, _CTR
+
+    # ---- ticker rows (a Step-3a-exited ticker gets a dark-red fill) ----
     for i in range(n):
         row = ticker_top + i
         for j, h in enumerate(hops, start=2):
-            ws.cell(row, j, h.tickers[i] if i < len(h.tickers) else None)
+            if i >= len(h.tickers):
+                continue
+            ticker = h.tickers[i]
+            cell = ws.cell(row, j, ticker)
+            if ticker in h.stopped:
+                cell.fill = _STOP_FILL
+                cell.font = Font(color="FFFFFF")
 
     # ---- avg_gain row ----
     lbl = ws.cell(avg_row, 1, "avg_gain"); lbl.font = _BOLD

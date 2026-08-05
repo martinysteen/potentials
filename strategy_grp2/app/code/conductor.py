@@ -94,7 +94,7 @@ def cmd_check() -> int:
         print("No active, cleanly-parsing rows to check.")
         return 0
 
-    preflight.ensure_data(board.runs)
+    preflight.ensure_data(board.runs, settings=board.settings)
 
     bad = 0
     for row in active:
@@ -180,7 +180,7 @@ def cmd_production() -> int:
         print("No active P-purpose rows.")
         return 0
 
-    preflight.ensure_data(board.runs)
+    preflight.ensure_data(board.runs, settings=board.settings)
 
     picks = []
     bad = 0
@@ -222,7 +222,7 @@ def cmd_develop() -> int:
             print(f"  ! BOARD: {msg}")
         return 1 if rejected or board.board_errors else 0
 
-    preflight.ensure_data(board.runs)
+    preflight.ensure_data(board.runs, settings=board.settings)
     path = outputboard.assemble(board, board.settings)
     print(f"Wrote {path}")
     return 0

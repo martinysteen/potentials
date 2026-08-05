@@ -46,13 +46,19 @@ def _longi(short_name: str) -> str:
     return f"Longi/longi_{short_name}.csv"
 
 
-def required_files_for_rows(rows: list["cb.RunRow"]) -> tuple[list[str], list[str]]:
+def required_files_for_rows(rows: list["cb.RunRow"],
+                            settings: dict | None = None) -> tuple[list[str], list[str]]:
     """(required, optional) repo-relative paths for every ACTIVE, cleanly-parsing row.
 
     A row whose group_expression or attribute names don't even resolve is skipped here —
     raising it is step0_data's job when that row actually runs, not preflight's job to
-    guard around. A row's own resolution errors surface from --dry-run / --check."""
+    guard around. A row's own resolution errors surface from --dry-run / --check.
+
+    `settings` (Settings sheet, e.g. `stop_sweep`) is needed too: whether Step3a_stopout's
+    sweep runs — and therefore whether longi_future_minaggr<period>d.csv is required — is a
+    board-level knob, not something a single row's own columns decide."""
     required: set[str] = set(_ALWAYS_REQUIRED)
+    sweep_on = bool(str((settings or {}).get("stop_sweep", "")).strip())
     for row in rows:
         if not row.active or not row.ok:
             continue
@@ -65,10 +71,17 @@ def required_files_for_rows(rows: list["cb.RunRow"]) -> tuple[list[str], list[st
                 required.add(_longi(s0.resolve_group_specific(name, gspec.dimensions)))
         except expr.ExpressionError:
             continue   # unresolvable row — its own error surfaces elsewhere, not here
-        required.add(f"Longi/{config.future_gain_file(r['period'])}")
+        period = int(r["period"])
+        required.add(f"Longi/{config.future_gain_file(period)}")
         if r.get("post_filter"):
             for t in expr.parse_post_filter(r["post_filter"]).terms:
                 required.add(_longi(t.column))
+        # Step 3a: a row's own stop_loss always needs the minaggr file; a D row with no
+        # stop_loss set still gets one when the board-wide sweep is on (outputboard runs
+        # it for every eligible D row, not just ones already configured with a stop).
+        wants_minaggr = r.get("stop_loss") or (sweep_on and r.get("purpose") == "D")
+        if period in config.MINAGGR_PERIODS and wants_minaggr:
+            required.add(f"Longi/{config.minaggr_file(period)}")
 
     optional = [rel for rel in _OPTIONAL if rel not in required]
     return sorted(required), optional
@@ -86,8 +99,8 @@ def mode_from_argv(argv: list[str] | None = None) -> str:
 _ensured: Path | None = None
 
 
-def ensure_data(rows: list["cb.RunRow"] | None = None, mode: str | None = None,
-                verbose: bool = True, force: bool = False) -> Path:
+def ensure_data(rows: list["cb.RunRow"] | None = None, settings: dict | None = None,
+                mode: str | None = None, verbose: bool = True, force: bool = False) -> Path:
     """Preflight + freeze the inputs, and point shared.config at what the run should read.
 
     Call this FIRST in every entry point, before anything opens a CSV. Idempotent within a
@@ -96,9 +109,11 @@ def ensure_data(rows: list["cb.RunRow"] | None = None, mode: str | None = None,
     global _ensured
     if _ensured is not None and not force:
         return _ensured
-    if rows is None:
-        rows = cb.read_board().runs
-    required, optional = required_files_for_rows(rows)
+    if rows is None or settings is None:
+        board = cb.read_board()
+        rows = rows if rows is not None else board.runs
+        settings = settings if settings is not None else board.settings
+    required, optional = required_files_for_rows(rows, settings)
     _ensured = datacheck.ensure_data(required, optional,
                                      mode=mode or mode_from_argv(), verbose=verbose)
     return _ensured
@@ -106,7 +121,7 @@ def ensure_data(rows: list["cb.RunRow"] | None = None, mode: str | None = None,
 
 def main() -> int:
     board = cb.read_board()
-    required, optional = required_files_for_rows(board.runs)
+    required, optional = required_files_for_rows(board.runs, board.settings)
 
     if "--manifest" in sys.argv[1:]:
         print(f"Required ({len(required)}):")
