@@ -187,8 +187,11 @@ def _write_step1_sheet(wb: Workbook, picks: dict[str, dict]) -> None:
 
 
 def _write_step2_sheet(wb: Workbook, picks: dict[str, dict]) -> None:
+    """One row per pick. `dom_group` (column E, SM 2026-08-05 — "just to make sure" each
+    ticker's own dominant group is visible next to it, not just inferable from Step1_groups)
+    is the elevated group `production_pick()` actually drew that ticker from."""
     ws = wb.create_sheet("Step2_picks")
-    headers = ["label", "daynum", "rank", "ticker", "priority_attribute", "value"]
+    headers = ["label", "daynum", "rank", "ticker", "dom_group", "priority_attribute", "value"]
     for c, h in enumerate(headers, start=1):
         cell = ws.cell(1, c, h); cell.font, cell.fill = _BOLD, _HEAD
     r = 2
@@ -205,6 +208,7 @@ def _write_step2_sheet(wb: Workbook, picks: dict[str, dict]) -> None:
             r += 1
             continue
         params = info["params"]
+        s0 = info["s0"]
         try:
             from shared.data_loader import load_longi
             prio_df = load_longi(f"longi_{params['priority_attribute']}.csv")
@@ -219,11 +223,12 @@ def _write_step2_sheet(wb: Workbook, picks: dict[str, dict]) -> None:
             ws.cell(r, 2, info["daynum"])
             ws.cell(r, 3, i)
             ws.cell(r, 4, ticker)
-            ws.cell(r, 5, params["priority_attribute"])
-            ws.cell(r, 6, val)
+            ws.cell(r, 5, s0.groups.get(ticker))
+            ws.cell(r, 6, params["priority_attribute"])
+            ws.cell(r, 7, val)
             r += 1
     ws.freeze_panes = "A2"
-    for c, w in zip("ABCDEF", (24, 10, 6, 12, 18, 12)):
+    for c, w in zip("ABCDEFG", (24, 10, 6, 12, 12, 18, 12)):
         ws.column_dimensions[c].width = w
 
 

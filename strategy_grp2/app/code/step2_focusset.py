@@ -6,11 +6,12 @@ Step 2 — filtering and sorting. Two distinct outputs share Step 1's elevated g
   need a stable sample size across hundreds of hops; this is that knob, board-driven.
 
   production_pick() — the actual gross list a user sees (StrategicStocks.xlsx,
-  Step1_groups/Step2_picks): every currently-elevated group's FULL membership, filtered and
-  priority-sorted, capped only by shared.config.PRODUCTION_GROSS_CAP. tickers_per_group,
-  from_rank and focusset_size do not apply here (SM, 2026-08-03) — a small dominant group
-  should never lose candidates to an arbitrary per-group pre-cut, and production always
-  wants the best end of the ranking, never a deliberately worst/mid research window.
+  Step1_groups/Step2_picks): EACH currently-elevated group's own top `tickers_per_group`
+  by priority_attribute, unconditionally included (SM, 2026-08-05 — restoring the board's
+  stated intent, "3 picked from each"). Not a global top-N pool: a genuinely dominant
+  group is never shut out by another group's stronger candidates. from_rank/focusset_size
+  still do not apply here — production always wants each group's best end of the ranking,
+  never a deliberately worst/mid research window.
 """
 
 from __future__ import annotations
@@ -19,7 +20,6 @@ import pandas as pd
 
 from shared.data_loader import load_longi
 from shared.select import pick_by_rank
-from shared.config import PRODUCTION_GROSS_CAP
 from shared import expression as expr
 import step0_data
 import step1_dominance
@@ -92,10 +92,24 @@ def select_focusset(daynum: int, dom_table: pd.DataFrame, groups: pd.Series, par
 
 def production_pick(daynum: int, dom_table: pd.DataFrame, groups: pd.Series, params: dict,
                     post_filter: expr.PostFilterSpec) -> list[str]:
-    """The gross list for one day: EVERY member of every elevated group (no per-group cap),
-    post_filter applied, sorted best-first by priority_attribute, capped at
-    PRODUCTION_GROSS_CAP. Always best-first — from_rank's worst/mid research windows do not
-    apply to what a user actually gets shown."""
+    """The gross list for one day: EACH elevated group's own top `tickers_per_group` by
+    priority_attribute, unconditionally included — total is num_elevated_groups *
+    tickers_per_group (or less, when a group has fewer qualifying members than that), never
+    truncated by competition against another elevated group's stronger candidates.
+
+    Restored 2026-08-05 (SM): the prior rule (2026-08-03) pooled every elevated group's
+    FULL membership and kept only the global top `shared.config.PRODUCTION_GROSS_CAP` by
+    priority_attribute — meant to stop a small dominant group losing candidates to an
+    arbitrary per-group pre-cut, but its actual effect was the opposite of the point of
+    calling a group "dominant": a genuinely elevated group could get ZERO production picks
+    if its tickers didn't rank well globally (live evidence: Basi, one of 5 elevated GICS
+    sectors, got none against Tech/Fina/Indu). `tickers_per_group` is the board's own
+    stated per-group intent ("we have specified... that we want 3 picked from each") and
+    now governs this the same way it already governs Step 3/4's select_focusset() pool —
+    same per-group-cap-then-post_filter order as `_pool()` above, for consistency.
+
+    Always best-first per group — from_rank's worst/mid research windows do not apply to
+    what a user actually gets shown."""
     elevated = elevated_groups(dom_table, daynum)
     if not elevated:
         return []
@@ -105,21 +119,26 @@ def production_pick(daynum: int, dom_table: pd.DataFrame, groups: pd.Series, par
     if col not in info.columns:
         return []
 
+    ascending = params["priority_direction"]      # True = small_wins
     members = elevated_members(elevated, groups)
-    all_tickers = [t for tickers in members.values() for t in tickers]
-    vals = info.loc[info.index.isin(all_tickers), col].dropna()
-    if vals.empty:
+    pools: list[pd.Series] = []
+    for tickers in members.values():
+        vals = info.loc[info.index.isin(tickers), col].dropna()
+        if vals.empty:
+            continue
+        pools.append(vals.sort_values(ascending=ascending).head(params["tickers_per_group"]))
+    if not pools:
         return []
+    pooled = pd.concat(pools)
 
-    candidates = vals.index.tolist()
+    candidates = pooled.index.tolist()
     if post_filter.terms:
         candidates = expr.apply_post_filter(post_filter, daynum, candidates)
         if not candidates:
             return []
-        vals = vals.loc[candidates]
+        pooled = pooled.loc[candidates]
 
-    ascending = params["priority_direction"]      # True = small_wins
-    return vals.sort_values(ascending=ascending).head(PRODUCTION_GROSS_CAP).index.tolist()
+    return pooled.sort_values(ascending=ascending).index.tolist()
 
 
 def current_pick(row_resolved: dict):

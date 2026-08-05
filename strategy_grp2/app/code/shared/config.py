@@ -71,13 +71,6 @@ def active_cal() -> Path:
 REPORT_ROOT: Final = APP_ROOT / "report"
 SUMMARY_CSV: Final = REPORT_ROOT / "summary.csv"
 
-# Step 2's production/display gross list (StrategicStocks.xlsx, Step1_groups/Step2_picks) is
-# every currently-elevated group's FULL membership, filtered and priority-sorted, capped only
-# here -- not by tickers_per_group or focusset_size, which are Step 3/4's backtest-sampling
-# knobs and stay on the control board. Deliberately a code constant, not a board column (SM,
-# 2026-08-03): a user should see the whole qualifying list, not a value they might tune per row.
-PRODUCTION_GROSS_CAP: Final = 20
-
 
 # Tickers read from PotDat.csv for market context in summary reports.
 REFERENCE_TICKERS: Final[list[str]] = ["^GSPC", "^STOXX", "^HSI", "^VIX"]

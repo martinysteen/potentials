@@ -225,16 +225,38 @@ is no longer what the code does. Left in place as history, not as current behavi
 * **Documentation split**: this file is the one living design document (present tense, updated
   in place as phases land); `CLAUDE.md` is only the short entry card Claude Code auto-loads.
 * **Step 2's production output is now a full, uncapped gross list, decoupled from Step 3/4's
-  backtest sampling (2026-08-03).** `tickers_per_group`/`from_rank`/`focusset_size` originally
-  capped Step 2's pooling too, sharing one `select_focusset()` with the backtest hop-builder —
-  but a small dominant group should never lose candidates to an arbitrary per-group pre-cut, and
-  production should always show the best end of the ranking, never a deliberately worst/mid
-  research window. `step2_focusset.production_pick()` now pools EVERY member of every elevated
-  group, applies `post_filter`, sorts best-first by `priority_attribute`, and caps only at
+  backtest sampling (2026-08-03).** **SUPERSEDED 2026-08-05 — see the correction below.**
+  `tickers_per_group`/`from_rank`/`focusset_size` originally capped Step 2's pooling too,
+  sharing one `select_focusset()` with the backtest hop-builder — but a small dominant group
+  should never lose candidates to an arbitrary per-group pre-cut, and production should always
+  show the best end of the ranking, never a deliberately worst/mid research window.
+  `step2_focusset.production_pick()` pooled EVERY member of every elevated group, applied
+  `post_filter`, sorted best-first by `priority_attribute`, and capped only at
   `shared.config.PRODUCTION_GROSS_CAP` (20 — a code constant, not a board column: a user should
   see the whole qualifying list, not something tuned per row). `select_focusset()` is unchanged
   for Step 3/4 — `tickers_per_group`/`from_rank`/`focusset_size` remain exactly what a backtest
   hop needs: a fixed, comparable sample size across hundreds of hops.
+
+## Correction 2026-08-05 — production_pick guarantees tickers_per_group per group
+
+The 2026-08-03 decoupling above traded away something SM had actually specified: pooling
+every elevated group's full membership and keeping only the GLOBAL top
+`PRODUCTION_GROSS_CAP` by `priority_attribute` meant a genuinely dominant group could get
+**zero** production picks if its tickers didn't rank well against other dominant groups'
+candidates — the opposite of what calling a group "dominant" is supposed to mean. Live
+evidence: with 5 elevated GICS sectors (Basi, C-Di, Fina, Indu, Tech) and
+`tickers_per_group=3`, the old rule gave Tech 7, Fina 6, Indu 6, C-Di 1, and **Basi 0** — a
+sector Step 1 had just certified as dominant, invisible in the output. SM: *"we have
+specified in control board that we want 3 picked from each, which makes 15 in total."*
+
+`step2_focusset.production_pick()` now takes EACH elevated group's own top
+`tickers_per_group` by `priority_attribute`, unconditionally — the same per-group-cap logic
+`_pool()` already used for Step 3/4, applied here too. Total is
+`num_elevated_groups * tickers_per_group` (or less only when a group itself has fewer
+qualifying members than that), never truncated by competition against another group's
+stronger candidates. `shared.config.PRODUCTION_GROSS_CAP` is removed — nothing reads it
+anymore. Verified live: 5 groups x 3 = 15 picks, every group represented exactly 3 times,
+Basi included.
 
 ## Refinement 2026-08-04 — Step 4 reports per candidate set, and per candidate
 
