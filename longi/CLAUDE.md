@@ -102,7 +102,7 @@ All tables follow PotDat.csv structure (rows=tickers, columns=daynums):
 
 1. **longi_price.csv** - Exact copy of PotDat.csv (snapshot of prices used for this pipeline run) ✓ IMPLEMENTED
 2. **longi_rsi.csv** - RSI14 using Wilder's method ✓ IMPLEMENTED
-3. **longi_macd.csv** - MACD(4,15,9) indicator ✓ IMPLEMENTED
+3. **longi_macd_line.csv**, **longi_macd_signal.csv**, **longi_macd_histogram.csv** - MACD(4,15,9), three components from one module (there is no `longi_macd.csv`) ✓ IMPLEMENTED
 4. **longi_macd_Z.csv** - MACD histogram zero-crossings (ZOP/ZNED) ✓ IMPLEMENTED
 5. **longi_per1d.csv** - 1-day performance ✓ IMPLEMENTED
 6. **longi_per5d.csv** - 5-day performance ✓ IMPLEMENTED
@@ -118,7 +118,7 @@ All tables follow PotDat.csv structure (rows=tickers, columns=daynums):
 16. **longi_median_40d.csv** - 40-day rolling median of rank ✓ IMPLEMENTED
 17. **longi_median_50d.csv** - 50-day rolling median of rank ✓ IMPLEMENTED
 18. **longi_median_100d.csv** - 100-day rolling median of rank ✓ IMPLEMENTED
-19. **longi_stepup.csv** - Step-up count (0-3) as uptrend measure ✓ IMPLEMENTED
+19. **longi_stepup40.csv**, **longi_stepup100.csv** - Step-up count (0-3) as uptrend measure, on a short and a long median ladder ✓ IMPLEMENTED
 20. **longi_spr100d.csv** - Spread to 100-day maximum (% growth needed) ✓ IMPLEMENTED
 21. **longi_spr250d.csv** - Spread to 250-day maximum (% growth needed) ✓ IMPLEMENTED
 22. **longi_vola20d.csv** - 20-day volatility (returns-based stdev in %) ✓ IMPLEMENTED
@@ -135,6 +135,20 @@ All tables follow PotDat.csv structure (rows=tickers, columns=daynums):
 33. **longi_sh1yr.csv** - 1-year Sharpe ratio (return/volatility over 265 days) ✓ IMPLEMENTED
 34. **longi_quot1020.csv** - MA10/MA20 quotient ×100, momentum speed (>100 = accelerating) ✓ IMPLEMENTED
 35. **longi_quot2050.csv** - MA20/MA50 quotient ×100, momentum speed (>100 = accelerating) ✓ IMPLEMENTED
+
+**Index-relative and event-relative tables** — same shape, but the value is borrowed from or
+measured against something other than the ticker's own price history:
+
+36. **longi_coreindex.csv** - The price row of the ticker's CoreIndex (from `Stamdata.csv`), copied onto every ticker that belongs to it ✓ IMPLEMENTED
+37. **longi_coreindexRSI.csv** - Same, but the CoreIndex's RSI row (from `longi_rsi.csv`) ✓ IMPLEMENTED
+38. **longi_beta3m.csv** - Beta vs the ticker's CoreIndex over 67 days ✓ IMPLEMENTED
+39. **longi_beta6m.csv** - Beta over 133 days ✓ IMPLEMENTED
+40. **longi_beta1yr.csv** - Beta over 265 days ✓ IMPLEMENTED
+41. **longi_trump.csv** - Price index rebased to daynum **1863** (2 Apr 2025, the retaliatory-tariff announcement); origin = 1.0, older daynums blank ✓ IMPLEMENTED
+42. **longi_iran.csv** - Price index rebased to daynum **2094** (27 Feb 2026, last ordinary session before the Iran War); origin = 1.0, older daynums blank ✓ IMPLEMENTED
+
+Beta is `Cov(stock returns, index returns) / Var(index returns)`, the index being the ticker's own
+CoreIndex — so these are per-ticker features despite reading a shared row.
 
 ### Forward-Looking Tables (longi_future_per*) — the backtest targets
 
@@ -298,12 +312,16 @@ Main orchestrator that manages all processing modules with intelligent execution
 
 #### longi_stepup.py - Step-up Count Module ✓ IMPLEMENTED
 - Counts step-ups as measure of uptrend strength
-- Reads all six median files (median_10d, median_20d, median_30d, median_40d, median_50d, median_100d) → outputs longi_stepup.csv
+- Reads all six median files (median_10d, median_20d, median_30d, median_40d, median_50d, median_100d)
+  → outputs **two** files, same logic on two different median ladders:
 - **Step-up logic** (each comparison adds +1):
-  1. median_10d > median_20d → +1
-  2. median_20d > median_50d → +1
-  3. median_50d > median_100d → +1
-- Score range: 0-3 (higher = stronger uptrend)
+
+  | Output | Comparisons |
+  |---|---|
+  | `longi_stepup40.csv` | median_10d > 20d, 20d > 30d, 30d > 40d |
+  | `longi_stepup100.csv` | median_10d > 20d, 20d > 50d, 50d > 100d |
+
+- Score range: 0-3 each (higher = stronger uptrend)
 - NaN where any median is missing (first 99 columns from right have insufficient 100d history)
 - First 20 days (from left) are usable for correlation with 20-day forward gains
 
@@ -344,7 +362,7 @@ Follow the same pattern:
     module now emits the whole `longi_future_per*` "seven-pack" ladder — 1d/5d/10d/20d/50d/100d/200d,
     replacing the earlier six-entry semantic ladder the same day. The 14 `grp_{GICS,Sector2}_per*`
     modules were consolidated into a single `grp_performance` module the same day too — was 47
-    modules briefly, now 34.)
+    modules briefly. `future_minaggr` was added 2026-08-04, bringing the count to the 35 above.)
 - ✓ longi_price.py fully implemented
   - Outputs: longi_price.csv (byte-exact copy of PotDat.csv via shutil.copyfile, no reformatting)
   - Purpose: (a) reference raw price data under the longi_ naming convention, (b) record the exact PotDat.csv snapshot used to derive all longi_*.csv outputs for this run, since PotDat.csv is updated asynchronously relative to them
@@ -359,7 +377,7 @@ Follow the same pattern:
 - ✓ longi_medians.py fully implemented
   - Outputs: longi_median_10d.csv, longi_median_20d.csv, longi_median_30d.csv, longi_median_40d.csv, longi_median_50d.csv, longi_median_100d.csv
 - ✓ longi_stepup.py fully implemented
-  - Outputs: longi_stepup.csv (step-up counts 0-3)
+  - Outputs: longi_stepup40.csv, longi_stepup100.csv (step-up counts 0-3, one module, two ladders)
 - ✓ longi_spr100d.py fully implemented
   - Formula: ((max_100d - current_price) / current_price) * 100
 - ✓ longi_spr250d.py fully implemented
@@ -410,7 +428,10 @@ Follow the same pattern:
 - Shared modules in /home/sm/potentials/shared/app/code/
 
 ### Unregistered/Experimental Modules (in code/, not yet in pipeline)
-- **longi_beta1yr.py**, **longi_beta6m.py** - Beta (market sensitivity) over 265/133 days; same pattern as beta3m
+None. Every `longi_*.py` in `code/` is a registered module, except `longi_upload.py`, which is the
+publish step and is called by `longi.py` directly rather than through the MODULES registry.
+(`longi_beta6m.py`/`longi_beta1yr.py` were listed here as experimental long after they were
+registered — if you add a module, retire its entry here.)
 
 ## Development Notes
 - VS Code connected via Remote-SSH from Windows
