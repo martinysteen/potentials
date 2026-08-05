@@ -7,7 +7,7 @@ outputboard.py. See DesignVersion2.md for the full step write-up.
     python conductor.py --dry-run      # parse + validate every row; touches no data
     python conductor.py --check        # step 0 only: universe/group counts, data guard
     python conductor.py                # development tick: steps 0-4 for active rows -> compare_strategies_<date>.xlsx
-    python conductor.py --production   # steps 0-2 for active P rows -> StrategicStocks.xlsx
+    python conductor.py --production   # steps 0-2 for EVERY active row (P and D) -> StrategicStocks.xlsx
 """
 
 from __future__ import annotations
@@ -122,7 +122,7 @@ def cmd_check() -> int:
 # ---------------------------------------------------------------------------
 
 def _production_pick(row: "control_board.RunRow"):
-    """(label, daynum, tickers, params, s0) for one P-purpose row's current gross list."""
+    """(label, daynum, tickers, params, s0) for one active row's current gross list."""
     daynum, tickers, _elevated, params, s0 = step2_focusset.current_pick(row.resolved)
     return row.resolved.get("label"), daynum, tickers, params, s0
 
@@ -175,9 +175,9 @@ def _write_strategic_stocks(picks: list[tuple]) -> Path:
 
 def cmd_production() -> int:
     board = control_board.read_board()
-    active = [r for r in board.runs if r.active and r.ok and r.resolved.get("purpose") == "P"]
+    active = [r for r in board.runs if r.active and r.ok]
     if not active:
-        print("No active P-purpose rows.")
+        print("No active rows.")
         return 0
 
     preflight.ensure_data(board.runs, settings=board.settings)
