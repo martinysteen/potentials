@@ -135,7 +135,17 @@ def _coerce_compare(series: pd.Series, value: str) -> tuple[pd.Series, object]:
 
 
 def apply_stamdata_filters(stamdata: pd.DataFrame, filters: list[Term]) -> pd.Index:
-    mask = pd.Series(True, index=stamdata.index)
+    """Stamdata.index, filtered by every `.and.`-joined universe filter -- with
+    caret-prefixed benchmark/index tickers (^GSPC, ^VIX, ^BTC, ...) excluded first,
+    unconditionally, even under `#ALL` or an explicit filter that would otherwise admit
+    them. They are reference instruments, not tradeable stocks, and have no place in a
+    lot simulation's universe (SM, 2026-08-05) -- this was a real bug, not a design
+    choice: a GICS/Sector2 value on a caret ticker in Stamdata was forming a spurious
+    ~14-member "Index" pseudo-sector (see DesignVersion2.md's 2026-08-05 correction).
+    Reference use elsewhere (market context rows, benchmark returns in shared/market.py)
+    reads these by ticker name directly and never goes through group_expression, so it
+    is unaffected."""
+    mask = ~stamdata.index.to_series().astype(str).str.startswith("^")
     for t in filters:
         if t.column not in stamdata.columns:
             raise ExpressionError(

@@ -2,21 +2,23 @@
 Step 1 — group dominance, levels A / B / C.
 
 Generalizes strategy_grp v1's shared/dominance.py: the group key comes from Step 0's
-resolved `groups` Series (any Stamdata expression, not a fixed column name), and the
-qualifying-ticker threshold is RELATIVE to each group's own size — see DesignVersion2.md's
-"Refinements agreed during implementation" (dom_count_min, board-driven; dom_count_frac,
-NOT board-driven — derived from dominance_decile, see shared.config.DOM_COUNT_FRAC_MARGIN).
+resolved `groups` Series (any Stamdata expression, not a fixed column name). The
+qualifying-ticker COUNT threshold is `dom_count_min` for a group at or above
+`2 * dom_count_min` members; below that it is HALVED relative to the group's own size
+(`group_size / 2`, decimals kept, no rounding) rather than raised — SM's original
+prototype rule, restored 2026-08-05 after a 2026-08-03 refinement replaced it with a
+size-INCREASING formula that inverted the intent (see DesignVersion2.md's 2026-08-05
+correction). `dominance_decile` is unrelated to this threshold — it only decides which
+INDIVIDUAL tickers qualify as "elite" that day (`daily_decile_cutoff`); how many of them
+a group needs is `dom_count_min` alone.
 Levels A/B/C replace v1's dom_now/dom_20d/dom_50d naming (today / persistent-over-a-trailing-
 window), per SM's design; only the ONE table a row's own `level` needs is computed.
 """
 
 from __future__ import annotations
 
-import math
-
 import pandas as pd
 
-from shared.config import DOM_COUNT_FRAC_MARGIN
 from shared.data_loader import load_longi
 
 _DEFAULT_WINDOW: dict[str, int] = {"B": 20, "C": 50}
@@ -34,22 +36,37 @@ def daily_decile_cutoff(signal: pd.DataFrame, decile: float, direction: bool) ->
     return signal.quantile(q, axis=0)
 
 
-def dom_count_threshold(group_size: int, dom_count_min: int, dom_count_frac: float) -> int:
-    """threshold = max(dom_count_min, ceil(dom_count_frac * group_size))."""
-    return max(dom_count_min, math.ceil(dom_count_frac * group_size))
+def dom_count_threshold(group_size: int, dom_count_min: int) -> float:
+    """threshold = dom_count_min for a group at/above 2*dom_count_min members; below that,
+    HALF the group's own size (decimals kept -- an 8-member group needs 4.0, a 9-member
+    group needs 4.5, so 5 qualifiers clear it and 4 do not; no ceil/round is applied since
+    the >= comparison against an integer count already resolves it).
+
+    Equivalent to min(dom_count_min, group_size / 2) -- the two branches agree exactly at
+    the group_size == 2*dom_count_min boundary, so there is no discontinuity there. SM's
+    original design: a big sector needs a real, size-independent headcount of qualifiers
+    to count as dominant; a small sector needs proportionally FEWER, not more, since it
+    has fewer members to draw qualifiers from in the first place. This is the opposite
+    direction from the 2026-08-03 formula it replaces, which raised the bar for LARGE
+    groups (and excluded e.g. a 227-member GICS sector with 34 qualifiers while admitting
+    a 201-member one with 31) -- see DesignVersion2.md's 2026-08-05 correction."""
+    if group_size >= 2 * dom_count_min:
+        return float(dom_count_min)
+    return group_size / 2
 
 
 def group_dominance_now(groups: pd.Series, dominance_attribute: str, dominance_direction: bool,
                         dominance_decile: float, dom_count_min: int
                         ) -> tuple[pd.DataFrame, pd.Series]:
-    """group-key x daynum boolean: True where the group has >= its own (size-relative)
-    qualifying-ticker threshold beating that day's own best-decile cutoff. Also returns
-    the per-daynum cutoff Series (Step 1's day-by-day threshold, for reporting).
+    """group-key x daynum boolean: True where the group has >= its own qualifying-ticker
+    threshold (dom_count_threshold — dom_count_min flat, halved for a small group) of
+    tickers beating that day's own best-decile cutoff. Also returns the per-daynum cutoff
+    Series (Step 1's day-by-day threshold, for reporting).
 
-    dom_count_frac is not a caller-supplied parameter: a group only counts as dominant when
-    over-represented among today's qualifiers relative to the population base rate
-    (dominance_decile IS that base rate), so it is always dominance_decile + a fixed margin —
-    see shared.config.DOM_COUNT_FRAC_MARGIN."""
+    Two independent decisions, deliberately not entangled (SM's original design, restored
+    2026-08-05): dominance_decile decides which INDIVIDUAL tickers count as "elite" today;
+    dom_count_min decides how MANY of them a group needs to count as "dominant". Neither
+    parameter derives the other."""
     signal = load_longi(f"longi_{dominance_attribute}.csv")
     cutoffs = daily_decile_cutoff(signal, dominance_decile, dominance_direction)
     common = signal.index.intersection(groups.index)
@@ -58,9 +75,8 @@ def group_dominance_now(groups: pd.Series, dominance_attribute: str, dominance_d
     group_keys = groups.loc[common]
     counts = qualifying.groupby(group_keys).sum()
     group_sizes = group_keys.value_counts()
-    dom_count_frac = dominance_decile + DOM_COUNT_FRAC_MARGIN
     thresholds = group_sizes.reindex(counts.index).apply(
-        lambda n: dom_count_threshold(int(n), dom_count_min, dom_count_frac)
+        lambda n: dom_count_threshold(int(n), dom_count_min)
     )
     dom_now = counts.ge(thresholds, axis=0)
     return dom_now, cutoffs

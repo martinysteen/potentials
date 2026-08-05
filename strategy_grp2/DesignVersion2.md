@@ -131,7 +131,73 @@ a one-screen table of every required file's daynum, age and status.
   `report/walkforward/` (the folders exist; `outputboard.py` currently only writes the one
   combined workbook above) — see Status.
 
+## Correction 2026-08-05 — dom_count_min restored to SM's original halving rule
+
+The 2026-08-03 refinement below (`dom_count_frac`, size-INCREASING) was built on a wrong
+assumption about what v1's "fixed absolute count" actually was. SM's real prototype rule
+was never a flat 10-for-GICS/5-for-Sector2 applied uniformly — it already had a small-group
+carve-out, just in the opposite direction from what got implemented:
+
+    threshold = dom_count_min                  for a group >= 2 * dom_count_min members
+    threshold = group_size / 2 (not rounded)    below that
+
+Equivalently `min(dom_count_min, group_size / 2)` — the two branches agree exactly at the
+boundary. A big sector needs a real, size-independent headcount to count as dominant; a
+*small* sector needs proportionally FEWER qualifiers, not more, since it has fewer members
+to draw them from in the first place.
+
+**Concrete evidence this had gone wrong:** on live GICS data (daynum 2205, `dominance_attribute
+=rank`, `decile=0.10`), Indu (227 members) had MORE qualifying tickers (34) than Tech (201
+members, 31) — genuinely stronger sector-wide concentration by any absolute reading — yet
+the 2026-08-03 formula excluded Indu (needed 35, size-scaled) while admitting Tech (needed
+31). That inversion is exactly backwards from "domination is on Tech and Indu, primarily"
+(SM). The two questions were also wrongly entangled: `dominance_decile` was feeding
+`dom_count_frac` (`decile + 0.05`), so it silently decided BOTH which individual tickers
+count as elite that day AND how many a group needs — they are independent decisions and
+`dom_count_min` alone now carries the second one.
+
+**Verified after the fix** (same daynum, same row): `dom_count_threshold` is a real,
+monotonic lever again --
+
+| `dom_count_min` | elevated GICS sectors |
+|---|---|
+| 1 | Basi, C-Di, C-St, Ener, Fina, Heal, Indu, Tech |
+| 3 | Basi, C-Di, Fina, Heal, Indu, Tech |
+| 10 (SM's original design value) | Basi, C-Di, Fina, Indu, Tech |
+| 20 | Indu, Tech |
+| 40 | (none) |
+
+`shared.config.DOM_COUNT_FRAC_MARGIN` and the `dom_count_frac` derivation are removed —
+`step1_dominance.dom_count_threshold(group_size, dom_count_min)` is the whole rule now, and
+`dominance_decile` no longer feeds it. Also verified separately: today's elite population is
+120 of 1199 GICS-grouped tickers (10.01%), matching `dominance_decile=0.10` almost exactly —
+the decile math itself was never in question, only the group-count threshold.
+
+**Caret-prefixed tickers excluded from the universe, same day.** 14 benchmark/index tickers
+(`^GSPC`, `^VIX`, `^BTC`, ...) carried a GICS value in Stamdata and were forming their own
+spurious 14-member "Index" pseudo-sector — explaining why `Index` never elevated in the
+2026-08-04 Status notes (it was never a real sector). `shared/expression.py::
+apply_stamdata_filters` now excludes any ticker starting with `^` unconditionally, before
+any user filter runs — universe drops from 1213 to 1199 tickers, GICS group count from 13
+to 12, real elevated sectors unaffected (the pseudo-sector never elevated anyway). This is
+the one choke point every `group_expression` resolves through (Steps 0-4 all key off
+`Step0Result.universe`/`.groups`), so the fix is system-wide, not GICS-specific. SM,
+2026-08-05: *"caret-ones has nothing to do in lot simulation. They might be needed for
+reference ... but this could be added later on"* — reference paths (market context rows,
+benchmark returns in `shared/market.py`) read these tickers by name directly and never go
+through `group_expression`, so they are untouched by this change, by design.
+
+**Still open, deliberately not touched:** `longi_future_per<period>d.csv` (and presumably
+its siblings) still carries the same 14 caret rows, and `market.market_gain_realized()`
+averages over every row in that file — so Step 3's "average stock you could have picked
+that day" benchmark is very slightly diluted by ~14 index/crypto rows among ~1200 (a small
+weight, but the same category of issue). Not in scope for this fix; flagged for later.
+
 ## Refinements agreed during implementation (2026-08-03)
+
+**SUPERSEDED 2026-08-05 — see the correction above.** The two `dom_count_frac` bullets below
+record what was decided and why at the time; the formula itself (`max(...)`, size-increasing)
+is no longer what the code does. Left in place as history, not as current behavior.
 
 * **The Step-1 qualifying-ticker count becomes relative, not absolute.** v1 fixed an absolute
   count per group criterion (10 for GICS, 5 for Sector2) and it does not transfer: 10 asks a
