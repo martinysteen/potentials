@@ -12,11 +12,15 @@ meta column, not one of the four steps):
     meta   -> active, purpose, label, note
     step 0 -> group_expression
     step 1 -> level, persistence_window, persistence_frac, dominance_attribute,
-              dominance_direction, dominance_decile, dom_count_min, tickers_per_group
+              dominance_direction, dominance_decile, dom_count_min
               (dom_count_min is a flat headcount at/above 2x itself in group size, HALVED
               below that -- see step1_dominance.dom_count_threshold)
-    step 2 -> post_filter, priority_attribute, priority_direction, from_rank, focusset_size
-    step 3 -> period, no_go_gspc_rsi, informational_attributes, stop_loss
+    step 2 -> tickers_per_group, post_filter, priority_attribute, priority_direction,
+              from_rank, focusset_size, stop_loss
+              (tickers_per_group and stop_loss moved here from steps 1/3, SM 2026-08-06:
+              both decide how the priority list is drawn from / exited, same as
+              post_filter/from_rank -- board header colour now matches)
+    step 3 -> period, no_go_gspc_rsi, informational_attributes
     step 4 -> wf_group
 
 `from_rank` accepts more than v1's {1, -1} — see `parse_from_rank()` below: a pool-relative
@@ -204,11 +208,11 @@ PARAMS: list[ParamDef] = [
                   "relative to the group's own size (group_size/2, not rounded), not "
                   "raised -- a small group needs proportionally FEWER qualifiers, not "
                   "more. See step1_dominance.dom_count_threshold."),
-    ParamDef("tickers_per_group", 1, "int", default=3,
-             help="Top candidates drawn from EACH dominating group into the pooled "
-                  "test-set (per level: A=3, B=4, C=5 is SM's proposal)."),
 
     # --- step 2: filtering, sorting, gross list --------------------------------
+    ParamDef("tickers_per_group", 2, "int", default=3,
+             help="Top candidates drawn from EACH dominating group into the pooled "
+                  "test-set (per level: A=3, B=4, C=5 is SM's proposal)."),
     ParamDef("post_filter", 2, "expr", default="",
              help="e.g. Longi.per1d>0. Applied after Step-1 pooling; blank = none."),
     ParamDef("priority_attribute", 2, "str", default="rank",
@@ -221,6 +225,11 @@ PARAMS: list[ParamDef] = [
                   "an integer k>=2=fixed offset. See param_spec.parse_from_rank."),
     ParamDef("focusset_size", 2, "int", default=5,
              help="Tickers in the final pick (gross-list size 10-20 typical in production)."),
+    ParamDef("stop_loss", 2, "float", default=0.0, parser=parse_stop_loss,
+             help="Step 3a exit level, e.g. -10. A ticker whose longi_future_minaggr<period>d "
+                  "(worst drawdown from entry) breaches this has its lot gain capped here for "
+                  "the rest of the hold. 0/blank = off (today's behaviour). Requires "
+                  "period in {20, 50} -- the only horizons minaggr covers."),
 
     # --- step 3: backtest -------------------------------------------------------
     ParamDef("period", 3, "int", default=20, choices=tuple(str(p) for p in FUTURE_PERIODS),
@@ -231,11 +240,6 @@ PARAMS: list[ParamDef] = [
     ParamDef("informational_attributes", 3, "list_str", default=(),
              help="Comma-separated Longi factor names shown for insight only; never "
                   "affects selection."),
-    ParamDef("stop_loss", 3, "float", default=0.0, parser=parse_stop_loss,
-             help="Step 3a exit level, e.g. -10. A ticker whose longi_future_minaggr<period>d "
-                  "(worst drawdown from entry) breaches this has its lot gain capped here for "
-                  "the rest of the hold. 0/blank = off (today's behaviour). Requires "
-                  "period in {20, 50} -- the only horizons minaggr covers."),
 
     # --- step 4: forward-walk ----------------------------------------------------
     ParamDef("wf_group", 4, "str", default="",
