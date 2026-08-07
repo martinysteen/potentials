@@ -8,18 +8,17 @@ wider dispersion / fatter tails in forward gain — not just a different mean.
 Every stat is repeated on the first vs. second half of history: a pattern that
 only holds in one half is not a finding (see docs/1_group_conformity.md).
 
-A secondary, explicitly low-power check reads the existing DomGICS_* run*.xlsx
-reports (../../../_archive/strategy_grp/app/report/) to see whether a hop's realized
-gain correlates with its focusset's mean/min conformity. With ~30 independent lots
-this can only corroborate the panel result, never decide it on its own. strategy_grp
-was retired on 2026-08-07, so those reports are frozen — this check no longer moves
-from run to run, and it degrades quietly (skipped, warning only) if they go away.
+REMOVED 2026-08-07: a secondary, explicitly low-power hop-level check used to read
+strategy_grp v1's DomGICS_* run*.xlsx and correlate each hop's realized gain against
+its focusset's mean/min conformity. v1 was retired to _archive/ that day, and nothing
+outside _archive/ may read from inside it — an archived folder has to be deletable
+without breaking a thing. Its last result is banked in docs/1_group_conformity.md
+(finding 3); it was corroborative only and never decided anything on its own.
 
 Usage:
     python analyze_conformity_gains.py
 """
 import argparse
-import glob
 import os
 
 import numpy as np
@@ -119,119 +118,10 @@ def _monotonicity_note(stats_df):
     return f"no clear monotone pattern (rho={corr:.2f})"
 
 
-def _secondary_hop_check(conf_dir, strategy_grp_report_dir):
-    """
-    Low-power corroboration: for each DomGICS_* strategy's latest run*.xlsx,
-    pull the focusset per hop from the Operational sheet's ticker grid and the
-    hop's realized gain from HopData (both raw values, no formulas involved),
-    then correlate hop gain against the focusset's mean/min conformity.
-    """
-    try:
-        import openpyxl
-    except ImportError:
-        print("\n[secondary check] openpyxl not available, skipping.")
-        return None
-
-    conf_mats = {}
-    for attr in ATTRS:
-        p = os.path.join(conf_dir, f"longi_conf_{attr}.csv")
-        if os.path.exists(p):
-            conf_mats[attr] = _read_matrix(p)
-
-    if not conf_mats:
-        print("\n[secondary check] no conformity matrices found, skipping.")
-        return None
-
-    results = []
-    strategy_dirs = sorted(glob.glob(os.path.join(strategy_grp_report_dir, "DomGICS_*")))
-    for sdir in strategy_dirs:
-        strategy = os.path.basename(sdir)
-        runs = sorted(glob.glob(os.path.join(sdir, "run*.xlsx")))
-        if not runs:
-            continue
-        run_path = runs[-1]
-        try:
-            hopdata = pd.read_excel(run_path, sheet_name="HopData")
-        except Exception as e:
-            print(f"[secondary check] {strategy}: could not read HopData ({e}), skipping.")
-            continue
-        if "daynum" not in hopdata.columns or "gain" not in hopdata.columns:
-            print(f"[secondary check] {strategy}: HopData missing daynum/gain columns, skipping.")
-            continue
-
-        try:
-            wb = openpyxl.load_workbook(run_path, data_only=True)
-            ws = wb["Operational"]
-        except Exception as e:
-            print(f"[secondary check] {strategy}: could not read Operational sheet ({e}), skipping.")
-            continue
-
-        # daynum header row is row 1, columns B..
-        max_col = ws.max_column
-        col_daynum = {}
-        for c in range(2, max_col + 1):
-            v = ws.cell(1, c).value
-            if v is not None:
-                try:
-                    col_daynum[c] = int(v)
-                except (TypeError, ValueError):
-                    pass
-
-        # locate ticker block: starts after optional dominance_cutoff row (row 3),
-        # ends at N_survivors or avg_gain label, whichever comes first.
-        ticker_top = 4 if ws.cell(3, 1).value == "dominance_cutoff" else 3
-        ticker_bottom = None
-        for r in range(ticker_top, ws.max_row + 1):
-            v = ws.cell(r, 1).value
-            if v in ("N_survivors", "avg_gain"):
-                ticker_bottom = r  # exclusive
-                break
-        if ticker_bottom is None or ticker_bottom <= ticker_top:
-            print(f"[secondary check] {strategy}: could not locate ticker block, skipping.")
-            continue
-
-        per_hop = []
-        for c, dn in col_daynum.items():
-            picks = [ws.cell(r, c).value for r in range(ticker_top, ticker_bottom)]
-            picks = [p for p in picks if p]
-            if not picks:
-                continue
-            for attr, mat in conf_mats.items():
-                if dn not in mat.columns:
-                    continue
-                vals = mat.loc[mat.index.intersection(picks), dn].dropna()
-                if vals.empty:
-                    continue
-                per_hop.append({"daynum": dn, "attribute": attr,
-                                 "mean_conf": vals.mean(), "min_conf": vals.min()})
-        if not per_hop:
-            print(f"[secondary check] {strategy}: no matched hops, skipping.")
-            continue
-
-        per_hop_df = pd.DataFrame(per_hop)
-        merged = per_hop_df.merge(hopdata[["daynum", "gain"]], on="daynum", how="inner")
-        for attr, grp in merged.groupby("attribute"):
-            if len(grp) < 8:
-                continue
-            corr_mean = grp["mean_conf"].corr(grp["gain"])
-            corr_min = grp["min_conf"].corr(grp["gain"])
-            results.append({
-                "strategy": strategy, "attribute": attr, "n_hops": len(grp),
-                "corr(hop_gain, focusset_mean_conf)": corr_mean,
-                "corr(hop_gain, focusset_min_conf)": corr_min,
-            })
-
-    if not results:
-        print("\n[secondary check] no usable hop/ticker data found across DomGICS_* reports.")
-        return None
-    return pd.DataFrame(results)
-
-
-def run(input_dir, conf_dir, output_dir, strategy_grp_report_dir):
+def run(input_dir, conf_dir, output_dir):
     input_dir = os.path.expanduser(input_dir)
     conf_dir = os.path.expanduser(conf_dir)
     output_dir = os.path.expanduser(output_dir)
-    strategy_grp_report_dir = os.path.expanduser(strategy_grp_report_dir)
     os.makedirs(output_dir, exist_ok=True)
 
     all_stats = []
@@ -276,14 +166,6 @@ def run(input_dir, conf_dir, output_dir, strategy_grp_report_dir):
                 note = _monotonicity_note(sub)
                 print(f" {attr} / {horizon} / {split}: {note}")
 
-    print("\n=== Secondary check: DomGICS_* hop-level corroboration (low power, ~dozens of hops) ===")
-    hop_df = _secondary_hop_check(conf_dir, strategy_grp_report_dir)
-    if hop_df is not None:
-        hop_path = os.path.join(output_dir, "conformity_vs_gain_hop_secondary.csv")
-        hop_df.to_csv(hop_path, sep=";", decimal=",", index=False)
-        print(hop_df.to_string(index=False))
-        print(f"Wrote {hop_path}")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Verdict: low-conformity group members vs. forward gain dispersion.")
@@ -292,9 +174,5 @@ if __name__ == "__main__":
     parser.add_argument("--conf_dir", type=str, default="~/potentials/group_conformity/app/output",
                         help="Directory with longi_conf_*.csv / longi_sectorbeta_*.csv (analyze_conformity.py output)")
     parser.add_argument("--output_dir", type=str, default="~/potentials/group_conformity/app/output")
-    parser.add_argument("--strategy_grp_report_dir", type=str,
-                        default="~/potentials/_archive/strategy_grp/app/report",
-                        help="Where DomGICS_*/run*.xlsx live (frozen since strategy_grp "
-                             "was retired 2026-08-07), for the secondary check")
     args = parser.parse_args()
-    run(args.input_dir, args.conf_dir, args.output_dir, args.strategy_grp_report_dir)
+    run(args.input_dir, args.conf_dir, args.output_dir)

@@ -2,8 +2,8 @@
 
 Grades how closely each ticker tracks its own group (GICS or Sector2, from `Stamdata.csv`),
 and tests whether low-conformity members are where extreme forward gains come from.
-Motivated by `strategy_grp`'s DomGICS_* family (v1, archived 2026-08-07 to
-`../_archive/strategy_grp/`; its successor is `../strategy_grp2`), which selects a *dominating* GICS sector
+Motivated by `strategy_grp`'s DomGICS_* family (v1, retired 2026-08-07; its successor is
+`../strategy_grp2`), which selects a *dominating* GICS sector
 and then draws its best tickers — a member that moves independently of its sector could dilute
 or distort that premise. Split out of `../correlation` (2026-07-29) into its own project once it
 outgrew being one more `analyze_*.py` script there — different question, different input subset,
@@ -86,6 +86,8 @@ beta is still written out (`longi_sectorbeta_*.csv`) as a side-by-side check, no
   change — Sector2 dispersion still falls with conformity (ρ≈−0.68, holding in both
   half-splits), GICS still inconclusive.
 - `output/conformity_vs_gain_hop_secondary.csv` — low-power corroboration (see below).
+  **No longer produced** (the check was removed 2026-08-07); any copy on disk is a frozen
+  leftover of the last run, and its verdict is written up in finding 3.
 - `output/conformity_ranking_{GICS,Sector2}.csv` — **"who are they"**: one row per ticker,
   sorted group-then-`rank_within_group`. Columns: `group`, `group_size`, `name`, `n_valid_days`,
   `mean_conf` (whole history), `recent_conf` (trailing ~6 months, `RECENT_WINDOW=126`),
@@ -166,11 +168,24 @@ bash ~/potentials/group_conformity/run_conf.sh
    which likely dilutes a real effect rather than ruling one out. Reading the raw deciles: the top
    conformity decile has the lowest `std_gain` and the shallowest left tail (`p5_gain`) in **all
    four** attribute×horizon tables; the bottom deciles are noisier and don't form a clean ramp.
-3. **Secondary hop-level check** (`conformity_vs_gain_hop_secondary.csv`): correlating each
-   DomGICS_* run's per-hop focusset mean/min conformity against that hop's realized gain, over
-   ~116 hops (≈30 independent, per `strategy_grp`'s own overlap accounting). All six
-   attribute/strategy combinations came out **positive** (0.03–0.16) — directionally consistent
-   with finding 1 above, but far too weak and low-power on its own to decide anything.
+3. **Secondary hop-level check** — **retired 2026-08-07, result frozen below.** It correlated each
+   DomGICS_* run's per-hop focusset mean/min conformity against that hop's realized gain. Its input
+   was strategy_grp v1's report workbooks, and v1 was archived that day; nothing outside `_archive/`
+   may read from inside it, so the check was removed from `analyze_conformity_gains.py` rather than
+   repointed. Final run, 579 hops per strategy (far fewer independent, per v1's own overlap
+   accounting), all six attribute/strategy combinations **positive**:
+
+   | strategy | mean_conf ρ | min_conf ρ |
+   |---|---|---|
+   | DomGICS_now / GICS | +0.16 | +0.06 |
+   | DomGICS_now / Sector2 | +0.28 | +0.39 |
+   | DomGICS_20d / GICS | +0.16 | +0.05 |
+   | DomGICS_20d / Sector2 | +0.22 | +0.39 |
+   | DomGICS_50d / GICS | +0.15 | +0.06 |
+   | DomGICS_50d / Sector2 | +0.17 | +0.37 |
+
+   Directionally consistent with finding 1 above, but far too weak and low-power on its own to
+   decide anything — which is why losing the ability to recompute it costs nothing.
 
 **Bottom line:** the conformity grade is valid and useful (clean controls, real persistence,
 excluding indices barely moved any number — a useful robustness check on its own), and there is a

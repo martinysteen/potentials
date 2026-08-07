@@ -16,7 +16,11 @@ belongs in that project's own `CLAUDE.md`, which is always the authority for its
   must never call `sync_rtbi.sh`. See [repositoryRTBI/CLAUDE.md](repositoryRTBI/CLAUDE.md).
 - **All CSV is European:** `sep=';'`, `decimal=','`. No hardcoded paths — each project has a
   `shared/config.py`.
-- **`_archive/` is frozen.** Files there are kept for reference; do not edit them.
+- **`_archive/` is frozen, and the dependency arrow only ever points out of it.** Files there are
+  kept for reference; do not edit them, and **nothing outside `_archive/` may read, import, glob
+  or otherwise consume anything inside it** — not code, not config, not a data file, not a report.
+  Deleting any folder under `_archive/` must break and stop exactly nothing. A prose mention of a
+  retired project is fine; a path into it is not.
 
 ## The projects
 

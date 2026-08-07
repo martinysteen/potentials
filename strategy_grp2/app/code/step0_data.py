@@ -35,9 +35,9 @@ _TWIN_CRITERIA: tuple[str, ...] = ("GICS", "Sector2")
 
 
 def split_group_specific(attribute: str) -> tuple[str, str] | None:
-    """(stem, group_column) for a group-specific factor name, else None. See
-    _archive/strategy_grp/app/code/run_config.py::split_group_specific for the original
-    write-up."""
+    """(stem, group_column) for a group-specific factor name, else None. A bare stem
+    ("conf") returns ("conf", "") and binds to the run's own grouping; an explicit
+    "conf_Sector2" pins the twin regardless of it."""
     for stem in GROUP_SPECIFIC_FACTORS:
         if attribute == stem:
             return stem, ""

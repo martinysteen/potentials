@@ -2,8 +2,8 @@
 
 Grades how closely each ticker tracks its own GICS/Sector2 group, and tests whether
 low-conformity members are where extreme forward gains come from — motivated by
-`strategy_grp`'s GICS-domination strategy family (v1, archived 2026-08-07 to
-`../_archive/strategy_grp/`; its successor is `../strategy_grp2`).
+`strategy_grp`'s GICS-domination strategy family (v1, retired 2026-08-07; its successor,
+and this project's only live consumer, is `../strategy_grp2`).
 
 Split out of `../correlation` on 2026-07-29 into its own project: a different question, a
 different (smaller) input subset, and worth a proper git-tracked home rather than sharing space
@@ -23,8 +23,8 @@ Grades each ticker's conformity to its GICS/Sector2 group, then tests whether lo
 members carry more dispersion in forward gain.
 - **Scripts**: `code/analyze_conformity.py`, `code/analyze_conformity_gains.py`
 - **Outputs**: `longi_conf_{GICS,Sector2}.csv`, `longi_sectorbeta_{GICS,Sector2}.csv`,
-  `conformity_controls.csv`, `conformity_ranking_{GICS,Sector2}.csv`, `conformity_vs_gain.csv`,
-  `conformity_vs_gain_hop_secondary.csv`
+  `conformity_controls.csv`, `conformity_ranking_{GICS,Sector2}.csv`, `conformity_vs_gain.csv`
+  (`conformity_vs_gain_hop_secondary.csv` is no longer produced — see docs, finding 3)
 - **Central storage**: `code/conformity_upload.py` pushes the four Longi-shaped matrices to
   `GoogleDrive:PotSystem/repositoryRTBI/Longi` via the shared registry
   (`~/potentials/shared/app/code/repository.py`), scoped to this family's own namespace so it

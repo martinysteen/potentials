@@ -4,7 +4,7 @@
 
 Strategy\_grp2 is version 2 of Strategy\_grp. In version 2 we are shall use a lot of the calculative machinery from Strategy\_grp yet not with several changes to be described here. So Stategy\_grp is to be used during development of Strategy\_grp2 remembering that Strategy\_grp will be retired when version 2 goes into full production.
 
-**That retirement happened on 2026-08-07:** `strategy_grp` was moved to `../_archive/strategy_grp/` and is frozen — no further work, no runs. Every "v1" reference below is a historical pointer into the archive, not a live dependency; strategy\_grp2 is now the system's only strategy consumer.
+**That retirement happened on 2026-08-07:** `strategy_grp` was moved to `../_archive/strategy_grp/` and is frozen — no further work, no runs. Strategy\_grp2 is now the system's only strategy consumer. The "v1" mentions below are provenance notes, not pointers: nothing outside `_archive/` reads from inside it, and any folder there must stay deletable without breaking a thing.
 
 ### Core principles for version 2
 
