@@ -2,7 +2,8 @@
 
 Grades how closely each ticker tracks its own group (GICS or Sector2, from `Stamdata.csv`),
 and tests whether low-conformity members are where extreme forward gains come from.
-Motivated by `../strategy_grp`'s DomGICS_* family, which selects a *dominating* GICS sector
+Motivated by `strategy_grp`'s DomGICS_* family (v1, archived 2026-08-07 to
+`../_archive/strategy_grp/`; its successor is `../strategy_grp2`), which selects a *dominating* GICS sector
 and then draws its best tickers — a member that moves independently of its sector could dilute
 or distort that premise. Split out of `../correlation` (2026-07-29) into its own project once it
 outgrew being one more `analyze_*.py` script there — different question, different input subset,
@@ -58,8 +59,8 @@ beta is still written out (`longi_sectorbeta_*.csv`) as a side-by-side check, no
 
 ### Outputs
 - `output/longi_conf_GICS.csv`, `output/longi_conf_Sector2.csv` — the grade, Longi-shaped
-  (ticker × daynum), drop-in for `strategy_grp`'s `col_filter`/`bin_filter`/`rank_by` if ever
-  wired in as a factor. **Also uploaded to the central `repositoryRTBI/Longi` store** (see
+  (ticker × daynum), drop-in as a `../strategy_grp2` board attribute (`priority_attribute`,
+  `post_filter`, …) if ever wired in as a factor. **Also uploaded to the central `repositoryRTBI/Longi` store** (see
   `conformity_upload.py`) so they're consumable there without any extra plumbing.
 - `output/longi_sectorbeta_GICS.csv`, `output/longi_sectorbeta_Sector2.csv` — the beta
   alternative, also uploaded centrally.
@@ -104,8 +105,9 @@ beta is still written out (`longi_sectorbeta_*.csv`) as a side-by-side check, no
 ### `conformity_upload.py` — pushing the grade to central storage
 Uploads exactly the four Longi-shaped matrices (`longi_conf_*`, `longi_sectorbeta_*`) to
 `GoogleDrive:PotSystem/repositoryRTBI/Longi` — the same folder `repositoryRTBI/sync_rtbi.sh`
-mirrors hourly into `repositoryRTBI/data/Longi`, which is what `../strategy_grp` actually reads
-via `load_longi()` (`../strategy` was archived 2026-07-31, no further work planned). Everything
+mirrors hourly into `repositoryRTBI/data/Longi`, which is what `../strategy_grp2` actually reads
+from its frozen snapshot (`../strategy` was archived 2026-07-31 and `strategy_grp` on
+2026-08-07 — both frozen, no further work planned). Everything
 else in `app/output/` (rankings, controls, the
 gains verdict) stays local — wrong shape for that folder's contract, and reproducible on demand.
 It is a thin wrapper on `~/potentials/shared/app/code/repository.py`, which holds this
@@ -176,6 +178,6 @@ genuine, moderately robust finding that **low-conformity Sector2 members carry m
 deeper downside tails** — the effect the project set out to test, confirmed for Sector2,
 inconclusive for GICS. The stronger-looking "conformity → higher mean gain" result should
 be set aside as regime-dependent until proven otherwise. Nothing here has been wired into
-`strategy_grp` or `Stamdata.csv`. `Stamdata.csv` in particular can't take a locally-added column at
+`strategy_grp2` or `Stamdata.csv`. `Stamdata.csv` in particular can't take a locally-added column at
 all — it's destructively re-synced from the upstream Google Sheet on every `fetch_input.sh` run —
 so if the grade ever earns a place there it has to go into the Sheet itself, not this pipeline.

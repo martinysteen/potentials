@@ -2,7 +2,8 @@
 
 Grades how closely each ticker tracks its own GICS/Sector2 group, and tests whether
 low-conformity members are where extreme forward gains come from — motivated by
-`../strategy_grp`'s GICS-domination strategy family.
+`strategy_grp`'s GICS-domination strategy family (v1, archived 2026-08-07 to
+`../_archive/strategy_grp/`; its successor is `../strategy_grp2`).
 
 Split out of `../correlation` on 2026-07-29 into its own project: a different question, a
 different (smaller) input subset, and worth a proper git-tracked home rather than sharing space

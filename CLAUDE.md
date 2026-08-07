@@ -26,10 +26,9 @@ belongs in that project's own `CLAUDE.md`, which is always the authority for its
 | [longi/](longi/) | **Producer.** Per-ticker factor matrices `longi_*.csv`, sector aggregates, forward-gain targets | its `CLAUDE.md` |
 | [group_conformity/](group_conformity/) | **Producer.** Conformity/sector-beta grades | its `README.md` |
 | [yf3/](yf3/) | **Producer.** yFinance fundamentals | its `CLAUDE.md` |
-| [strategy_grp/](strategy_grp/) | **Consumer, v1.** `Dom*` strategy families, sweep + walk-forward. Live until v2 takes over | its `CLAUDE.md` |
-| [strategy_grp2/](strategy_grp2/) | **Consumer, v2 — current work.** One Excel control board drives steps 0-4 | [DesignVersion2.md](strategy_grp2/DesignVersion2.md) |
+| [strategy_grp2/](strategy_grp2/) | **The consumer — current work.** One Excel control board drives steps 0-4 | [DesignVersion2.md](strategy_grp2/DesignVersion2.md) |
 | [shared/](shared/) | `app/code/repository.py` — the one publish/fetch registry every family uses | the module docstring |
-| [_archive/](_archive/) | Retired projects, frozen | — |
+| [_archive/](_archive/) | Retired projects (`strategy/`, `strategy_grp/`), frozen | — |
 
 ## The daily chain
 
@@ -47,8 +46,8 @@ branch currently checked out — so uncommitted work does not survive the night 
 **The input repository is a moving target.** Because three unsynchronised jobs rewrite
 `repositoryRTBI/data/` all day, a consumer can see a complete set of files from *two different
 generations* — which raises nothing and silently produces empty picks. Consumers therefore
-preflight and freeze a snapshot before reading (`preflight.py` + `shared/datacheck.py` in both
-strategy projects). Do not add a consumer that reads the live directory unguarded.
+preflight and freeze a snapshot before reading (`preflight.py` + `shared/datacheck.py` in
+`strategy_grp2`). Do not add a consumer that reads the live directory unguarded.
 
 ## Where the lists live
 

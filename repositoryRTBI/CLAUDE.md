@@ -10,7 +10,7 @@ Mirrors `GoogleDrive:PotSystem/repositoryRTBI` to local `data/` on Ubuntu (`~/po
 |-------|-----|------|
 | Producers | `longi`, `group_conformity`, … | compute, then publish **their own namespace** to Drive. Never pull, never trigger anything downstream. |
 | Mirror | this project (`sync_rtbi.sh`) | pulls Drive → `data/` **on its own cron**, for its own reasons |
-| Consumers | `strategy_grp`, and every family's `fetch_input.sh` | read `data/`. **Never Google Drive directly.** |
+| Consumers | `strategy_grp2`, and every family's `fetch_input.sh` | read `data/`. **Never Google Drive directly.** |
 
 A producer must not call `sync_rtbi.sh` — both `start_longi.sh` and `run_conf.sh` used to,
 which made every family's timing depend on every other family's. If consumers need fresher

@@ -495,8 +495,8 @@ python3 ~/potentials/shared/app/code/repository.py publish longi --dry-run
 ls ~/potentials/repositoryRTBI/data/Longi/<newfile>.csv        # after the next mirror tick
 ```
 
-**Reaching the mirror is not the same as reaching a consumer.** `strategy_grp`/`strategy_grp2`
-read a *frozen snapshot* of the mirror containing only the files their own preflight asked for, so
+**Reaching the mirror is not the same as reaching a consumer.** `strategy_grp2`
+reads a *frozen snapshot* of the mirror containing only the files its own preflight asked for, so
 a new file is invisible to a run until that project requests it too. That is the consumer's own
 list, deliberately separate — see the root [../CLAUDE.md](../CLAUDE.md), "Where the lists live".
 

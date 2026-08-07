@@ -9,9 +9,11 @@ Every stat is repeated on the first vs. second half of history: a pattern that
 only holds in one half is not a finding (see docs/1_group_conformity.md).
 
 A secondary, explicitly low-power check reads the existing DomGICS_* run*.xlsx
-reports (../../strategy_grp/app/report/) to see whether a hop's realized gain
-correlates with its focusset's mean/min conformity. With ~30 independent lots
-this can only corroborate the panel result, never decide it on its own.
+reports (../../../_archive/strategy_grp/app/report/) to see whether a hop's realized
+gain correlates with its focusset's mean/min conformity. With ~30 independent lots
+this can only corroborate the panel result, never decide it on its own. strategy_grp
+was retired on 2026-08-07, so those reports are frozen — this check no longer moves
+from run to run, and it degrades quietly (skipped, warning only) if they go away.
 
 Usage:
     python analyze_conformity_gains.py
@@ -291,7 +293,8 @@ if __name__ == "__main__":
                         help="Directory with longi_conf_*.csv / longi_sectorbeta_*.csv (analyze_conformity.py output)")
     parser.add_argument("--output_dir", type=str, default="~/potentials/group_conformity/app/output")
     parser.add_argument("--strategy_grp_report_dir", type=str,
-                        default="~/potentials/strategy_grp/app/report",
-                        help="Where DomGICS_*/run*.xlsx live, for the secondary check")
+                        default="~/potentials/_archive/strategy_grp/app/report",
+                        help="Where DomGICS_*/run*.xlsx live (frozen since strategy_grp "
+                             "was retired 2026-08-07), for the secondary check")
     args = parser.parse_args()
     run(args.input_dir, args.conf_dir, args.output_dir, args.strategy_grp_report_dir)

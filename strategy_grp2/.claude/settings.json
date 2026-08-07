@@ -5,7 +5,6 @@
       "Read(///Gandalf/sm-home/potentials/strategy_grp2/**)",
       "Read(///Gandalf/sm-home/potentials/strategy_grp2/app/**)",
       "Read(///Gandalf/sm-home/potentials/strategy_grp2/app/code/shared/**)",
-      "Read(///Gandalf/sm-home/potentials/strategy_grp/**)",
       "Read(///Gandalf/sm-home/potentials/repositoryRTBI/**)",
       "Read(///Gandalf/sm-home/potentials/repositoryRTBI/data/**)",
       "Read(///Gandalf/sm-home/potentials/longi/**)",
@@ -17,7 +16,6 @@
       "\\\\gandalf\\sm-home\\potentials\\strategy_grp2\\app\\code",
       "\\\\gandalf\\sm-home\\potentials\\strategy_grp2\\app\\control",
       "\\\\gandalf\\sm-home\\potentials\\strategy_grp2",
-      "\\\\gandalf\\sm-home\\potentials\\strategy_grp",
       "\\\\gandalf\\sm-home\\tmp"
     ]
   }

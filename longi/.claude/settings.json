@@ -7,7 +7,6 @@
       "Read(///Gandalf/sm-home/potentials/group_conformity/app/**)",
       "Bash(sed -i -e 's|f\"future_gain{horizon}d\\\\.csv\"|f\"longi_future_per{horizon}.csv\"|' -e 's|{attr} / {horizon}d|{attr} / {horizon}|g' analyze_conformity_gains.py)",
       "Read(///Gandalf/sm-home//**)",
-      "Bash(sed -i 's|future_gain{period}d has sufficient realized data|the forward-gain file has sufficient realized data|; s|No valid starting daynum found in future_gain data|No valid starting daynum found in the forward-gain file|' strategy_grp/app/code/shared/dominance.py strategy_grp/app/code/walkforward.py)",
       "Bash(cd \"//Gandalf/sm-home/potentials\" && echo \"=== direct readers of future_gain20d/50d.csv anywhere ===\"; grep -rn 'future_gain20d\\\\.csv\\\\|future_gain50d\\\\.csv\\\\|future_gain{\\\\|future_gain[0-9]' --include=*.py --include=*.sh . 2>/dev/null | grep -v 'longi/app/code/future_gain\\\\|/CLAUDE.md'; echo \"\\(above = everything still naming the old files\\)\")",
       "Bash(ls \"//Gandalf/sm-home/potentials/longi/_not_used/\" 2>&1 | head -12)",
       "Read(///Gandalf/sm-home/potentials/longi/**)",

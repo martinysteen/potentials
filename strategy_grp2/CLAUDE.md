@@ -1,9 +1,12 @@
 # Strategy_grp2 — Context for Claude Code
 
-Version 2 of `../strategy_grp/` (v1, still live during development — see there for its own
-CLAUDE.md). **The spec is [`DesignVersion2.md`](DesignVersion2.md) — read it before working
-on this project.** It is the one living design document; this file is only the entry card
-Claude Code auto-loads and does not duplicate anything DesignVersion2.md already says.
+Version 2 of `strategy_grp`, and now the system's only strategy consumer — **v1 was retired on
+2026-08-07 to [`../_archive/strategy_grp/`](../_archive/strategy_grp/), frozen, no further work.**
+Every "strategy_grp v1" reference in this project's code and docs resolves there; it is a
+historical pointer, never a live dependency. **The spec is [`DesignVersion2.md`](DesignVersion2.md)
+— read it before working on this project.** It is the one living design document; this file is
+only the entry card Claude Code auto-loads and does not duplicate anything DesignVersion2.md
+already says.
 
 ## Hard rules — non-negotiable
 
