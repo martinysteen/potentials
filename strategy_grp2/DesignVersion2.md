@@ -449,6 +449,87 @@ identical to what `Step4_walkforward` already shows. `Step3a_stopout` gained a s
 sub-table per eligible row, `fold` x `stop`, with `avg_gain`/`median_gain`/`hit_rate%`/
 `chain_annual`/`chain_n`/`Worst`/`N_loss` per cell.
 
+## Refinement 2026-08-10 — a Stamdata column name is matched case-insensitively
+
+Widening the board to more `group_expression` values hit a wall that was pure spelling:
+`Stamdata.ZONE` and `Stamdata.Fkgrade` both failed with *"no such column for grouping"*
+while `Stamdata.Zone` / `Stamdata.FKgrade` are real, usable columns. Two things were wrong
+with that, neither of them the user's typing:
+
+* **The board is hand-typed in Excel, so case is not a request.** Column resolution now goes
+  through `expression.resolve_stamdata_column()`: exact match first, then a unique
+  case-insensitive match, and only then a hard failure. An ambiguous case-insensitive match
+  (two columns differing only in case — not the case in today's Stamdata) is still refused
+  rather than guessed at.
+* **The failure said nothing.** The grouping path raised a bare "no such column for
+  grouping", while the *filter* path had always listed the known columns. Both now share one
+  message, with a `difflib` near-miss suggestion in front of the column list:
+  `Stamdata.Zoneee: no such column. Did you mean: Zone? Known columns: Google, Name, ...`.
+
+Resolution happens **once**, in `canonicalize_group_spec()`, called from `resolve_step0`
+before anything else uses the spec — so the canonical name is what reaches the GICS/Sector2
+twin binding, the group cache key and every report, never the board's casing.
+`step0_data._twin_criterion()` matches `GICS`/`Sector2` case-insensitively for the same
+reason and independently of Stamdata, because `preflight.required_files_for_rows` binds
+twins straight from the raw board spelling, before any Stamdata is loaded.
+
+**Numeric grouping columns lose the float tail.** `FKgrade` is the first grading-style
+grouping dimension (values −1…5), and `astype(str)` on a pandas float column named the
+groups `4.0` / `-1.0`. `_group_key_values()` renders whole numbers as `4` / `-1`, which is
+what the labels, sheet headings and chart legends downstream show.
+
+**Verified live (daynum 2208, 2026-08-10)** on SM's 8-row board, which previously failed 4 of
+8 rows: `--check` now passes 8/8, and Steps 0-2 run for all of them —
+`ZONE` → 4 groups (NY 839, LON 300, HKG 56, Other 4), elevated LON+NY, 6 picks; `FKgrade` →
+6 groups (`4`=270, `3`=245, `5`=200, `-1`=178, `2`=173, `1`=72 over 1138 tickers; 61 blank
+`FKgrade` tickers are dropped, as any missing dimension value always is), elevated
+`-1,2,3,4`, 12 picks. The two GICS rows are unchanged at 12 and 11 picks — the fix is
+additive.
+
+**Placeholder values stay groups, deliberately (SM, 2026-08-10: "I have not decided on that
+-1. For now it is a group.").** A *missing* dimension value drops a ticker from the universe;
+a value that merely reads as a placeholder does not. So `FKgrade=-1` (178 tickers) and GICS
+`na` (22, which elevated in the `GICSNY` row and contributed `VIG`/`HYLB`) are ordinary
+cohorts here, and can elevate and be picked from like any other. This is the same shape as
+the caret-ticker pseudo-sector removed on 2026-08-05, but it is **not** the same call — those
+were index instruments that could not be traded at all; these are real tickers under an
+uninformative grouping label. Left open on purpose, not overlooked.
+
+### Step1_groups lists every group, elevated ones marked (same day)
+
+The wider groupings immediately showed what elevated-only reporting was costing. Asked why
+`FKgrade=1` had no elites on the sheet, the answer needed a bespoke script: it had 8 elites
+against a threshold of 10, so it never elevated and therefore had no row at all — a group
+that misses by two and a group with none at all were both simply absent. SM: *"it would be
+more informative to have all groups in the Step1_groups table and then mark those groups
+being elevated."*
+
+`Step1_groups` now has one row per group in the row's grouping, elevated first (each block by
+descending `n_elites`, so near-misses sit right under the line), marked in a new `elevated`
+column. Three columns come from a new `step1_dominance.group_status()` — `n_elites`,
+`dom_threshold`, `dom_today` — which recomputes the per-group arithmetic from the *same*
+three primitives `group_dominance_now` uses (`daily_decile_cutoff`, the per-ticker qualifying
+test, `dom_count_threshold`), so what the sheet explains can never drift from what Step 1
+elevated. `dom_today` is the level-A verdict and `elevated` the level-resolved one: identical
+for a level-A row, deliberately not for level B/C, where persistence over the trailing window
+decides — the gap between those two columns is the whole point of a level-B/C row.
+`dom_threshold` derives from the group's membership *as the attribute file sees it*, which is
+what Step 1 measures; `n_members` stays gross Stamdata membership, unchanged.
+
+**What it makes visible** (daynum 2208, `dominance_decile=0.10`, `dom_count_min=10`): grade
+`1` (72 members) missed at 8 elites — 11.1% elite density — while grade `4` (270 members)
+elevated at 9.6%, and `Zone`'s `HKG` (56) missed at 4 while `NY` (839) cleared the identical
+bar of 10. Not a defect: an absolute count asks a small group for a much larger *share* of
+itself, which is `dom_count_min` working as specified (2026-08-05 correction). It is simply
+now readable instead of requiring a script. Also visible for the first time, and worth a
+**decided, not open**: the halving rule makes a tiny group elevate on almost nothing —
+`GICSNY`'s `na` group (2 members, threshold 1.0) elevates on ONE elite (that is where today's
+`VIG` pick comes from), and `Zone`'s `Other` (4 members, threshold 2.0) on two. An absolute
+floor under `dom_count_threshold` was offered and **declined** — SM, 2026-08-10: *"Of course
+the VIG example is ridiculous, but it is a rare phenomena. So lets leave it there."* So a
+1-elite elevation is a known, accepted artefact of a very small group, not an oversight, and
+`dom_count_threshold` keeps its two branches exactly as the 2026-08-05 correction set them.
+
 ## Status
 
 **Phase 1 (skeleton) done, 2026-08-03.** In place: directory layout under `app/`; `shared/`

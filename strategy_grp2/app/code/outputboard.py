@@ -128,21 +128,32 @@ _ELITE_LIST_CAP = 60
 
 
 def _write_step1_sheet(wb: Workbook, picks: dict[str, dict]) -> None:
-    """One row per elevated group: `dom_group` (renamed from `group`, SM 2026-08-05 --
-    "dominance" is what elevates it), `n_members` (gross group size, unchanged),
-    `n_elites` and `elite_members` -- the group's own qualifying-ticker roster, sorted
-    best-first (no numbering prefix -- SM, 2026-08-05: "my eyes get tired of all the extra
-    numbers"). NOT the gross membership: "I am absolutely not interested in gross
-    members but a list of elite members" (SM). Reuses step1_dominance.elite_members(),
-    the SAME per-ticker test group_dominance_now sums into its per-group counts, so
-    n_elites here always matches what actually elevated the group.
+    """One row per group -- EVERY group in the row's grouping, with the elevated ones marked
+    (SM, 2026-08-10). Elevated-only hid the half of the picture that explains the other half:
+    a group missing by one elite and a group with none at all both showed as simply absent.
+    Concretely, an `FKgrade` row elevated 4 of 6 grades and nothing on the sheet said grade
+    `1` had 8 elites against a threshold of 10, nor that grade `4` cleared that same bar at a
+    LOWER elite density (9.6% of 270 members vs 11.1% of 72) -- both are properties of the
+    absolute-count rule, and both are now readable straight off the table.
 
-    n_elites summed across the rows shown is NOT the universe's total elite count (~10%
-    of the whole universe, e.g. 120 of 1199) -- only ELEVATED groups get a row here, so
-    non-elevated groups' elites are not counted in that sum. It is the per-GROUP figure
-    that is exactly the count Step 1 tested against dom_count_threshold."""
+    Columns: `dom_group` (renamed from `group`, SM 2026-08-05 -- "dominance" is what elevates
+    it), `n_members` (gross Stamdata group size, unchanged), then `n_elites` /
+    `dom_threshold` / `dom_today` from step1_dominance.group_status() -- the arithmetic Step 1
+    actually ran, not a re-derivation (see its docstring for why the threshold is computed
+    from attribute-file coverage rather than gross membership); `elevated`, the
+    level-resolved verdict, identical to `dom_today` for a level-A row and deliberately not
+    for level B/C where persistence over a trailing window decides; and `elite_members`, the
+    group's qualifying-ticker roster sorted best-first (no numbering prefix -- SM, 2026-08-05:
+    "my eyes get tired of all the extra numbers"). Not the gross membership: "I am absolutely
+    not interested in gross members but a list of elite members" (SM).
+
+    Elevated groups sort first, each block by descending `n_elites`, so near-misses sit
+    directly under the line they failed to clear. `n_elites` summed down one label's block is
+    now the universe's whole elite population (~10% of it, per `dominance_decile`), which it
+    was not while only elevated groups had rows."""
     ws = wb.create_sheet("Step1_groups")
-    headers = ["label", "daynum", "dom_group", "n_members", "n_elites", "elite_members"]
+    headers = ["label", "daynum", "dom_group", "n_members", "n_elites", "dom_threshold",
+               "dom_today", "elevated", "elite_members"]
     for c, h in enumerate(headers, start=1):
         cell = ws.cell(1, c, h); cell.font, cell.fill = _BOLD, _HEAD
     r = 2
@@ -153,23 +164,27 @@ def _write_step1_sheet(wb: Workbook, picks: dict[str, dict]) -> None:
             r += 1
             continue
         s0 = info["s0"]
-        if not info["elevated"]:
+        params = info["params"]
+        elevated = set(info["elevated"])
+        if not elevated:
             # An absent label used to be indistinguishable from a label that ran fine and
             # elevated nothing today — the second is a normal, informative outcome for a
-            # strict level-B/C row, not a missing result.
+            # strict level-B/C row, not a missing result. Kept as its own line even now that
+            # every group is listed below it: an all-blank `elevated` column is a weaker
+            # statement than one that says so.
             ws.cell(r, 1, label)
             ws.cell(r, 2, info["daynum"])
             ws.cell(r, 3, "(no group elevated at this daynum)").font = _NOTE
-            ws.cell(r, 4, 0)
-            ws.cell(r, 5, 0)
             r += 1
-            continue
-        params = info["params"]
+        status = step1_dominance.group_status(
+            s0.groups, params["dominance_attribute"], params["dominance_direction"],
+            params["dominance_decile"], params["dom_count_min"], info["daynum"])
         elite_by_group = step1_dominance.elite_members(
             s0.groups, params["dominance_attribute"], params["dominance_direction"],
             params["dominance_decile"], info["daynum"])
-        for group in info["elevated"]:
-            n_members = int(s0.group_sizes.get(group, 0))
+        groups = sorted(s0.group_sizes,
+                        key=lambda g: (g not in elevated, -len(elite_by_group.get(g, [])), g))
+        for group in groups:
             elites = elite_by_group.get(group, [])
             elite_list_str = ", ".join(elites[:_ELITE_LIST_CAP])
             if len(elites) > _ELITE_LIST_CAP:
@@ -177,12 +192,19 @@ def _write_step1_sheet(wb: Workbook, picks: dict[str, dict]) -> None:
             ws.cell(r, 1, label)
             ws.cell(r, 2, info["daynum"])
             ws.cell(r, 3, group)
-            ws.cell(r, 4, n_members)
+            ws.cell(r, 4, int(s0.group_sizes.get(group, 0)))
             ws.cell(r, 5, len(elites))
-            ws.cell(r, 6, elite_list_str)
+            if group in status.index:
+                ws.cell(r, 6, float(status.at[group, "dom_threshold"]))
+                ws.cell(r, 7, "x" if bool(status.at[group, "dom_today"]) else "")
+            ws.cell(r, 8, "x" if group in elevated else "")
+            if group in elevated:
+                ws.cell(r, 8).fill = _OK_FILL
+                ws.cell(r, 3).font = _BOLD
+            ws.cell(r, 9, elite_list_str)
             r += 1
     ws.freeze_panes = "A2"
-    for c, w in zip("ABCDEF", (24, 10, 16, 10, 10, 90)):
+    for c, w in zip("ABCDEFGHI", (24, 10, 16, 11, 9, 13, 10, 9, 90)):
         ws.column_dimensions[c].width = w
 
 

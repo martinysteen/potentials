@@ -125,6 +125,50 @@ def elevated_members(group_keys: list[str], groups: pd.Series) -> dict[str, list
     return {key: groups.index[groups == key].tolist() for key in group_keys}
 
 
+def group_status(groups: pd.Series, dominance_attribute: str, dominance_direction: bool,
+                 dominance_decile: float, dom_count_min: int, daynum: int) -> pd.DataFrame:
+    """EVERY group at one daynum, elevated or not: `n_covered`, `n_elites`, `dom_threshold`,
+    `dom_today` — the row-by-row arithmetic behind group_dominance_now's boolean, for
+    reporting (SM, 2026-08-10: "it would be more informative to have all groups in the
+    Step1_groups table and then mark those groups being elevated"). A group that misses is
+    the interesting case and it used to be invisible: nothing said whether it missed by one
+    elite or had none at all.
+
+    Deliberately recomputed here from the same three primitives group_dominance_now uses
+    (daily_decile_cutoff, the per-ticker qualifying test, dom_count_threshold) rather than
+    re-deriving them in a writer, so `dom_today` can never disagree with the table Step 1
+    actually elevates from.
+
+    `n_covered` is the group's membership AS THE ATTRIBUTE FILE SEES IT (Stamdata members
+    that have a row in longi_<attribute>.csv) — that is the count Step 1's threshold is
+    computed from, so it, not gross Stamdata membership, is what explains the threshold on
+    the sheet. The two differ only for tickers absent from the attribute file.
+
+    `dom_today` is the level-A verdict. For a level-B/C row the elevated set comes from
+    persistence over a trailing window, so a group can be dom_today=True and not elevated
+    (or the reverse) — which is exactly what those two columns side by side are for."""
+    signal = load_longi(f"longi_{dominance_attribute}.csv")
+    col = str(daynum)
+    if col not in signal.columns:
+        return pd.DataFrame(columns=["n_covered", "n_elites", "dom_threshold", "dom_today"])
+    cutoff = daily_decile_cutoff(signal, dominance_decile, dominance_direction)[col]
+    common = signal.index.intersection(groups.index)
+    vals = signal.loc[common, col]
+    keys = groups.loc[common]
+    qualifying = vals.lt(cutoff) if dominance_direction else vals.gt(cutoff)
+
+    n_covered = keys.value_counts()
+    n_elites = qualifying.groupby(keys).sum().reindex(n_covered.index).fillna(0).astype(int)
+    thresholds = n_covered.apply(lambda n: dom_count_threshold(int(n), dom_count_min))
+    out = pd.DataFrame({
+        "n_covered": n_covered.astype(int),
+        "n_elites": n_elites,
+        "dom_threshold": thresholds,
+    })
+    out["dom_today"] = out["n_elites"] >= out["dom_threshold"]
+    return out
+
+
 def elite_members(groups: pd.Series, dominance_attribute: str, dominance_direction: bool,
                   dominance_decile: float, daynum: int) -> dict[str, list[str]]:
     """group key -> ELITE tickers only (those that individually cleared today's decile

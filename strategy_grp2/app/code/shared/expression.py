@@ -32,6 +32,7 @@ project's "wrong-but-plausible is worse than stopping" rule (see strategy_grp's 
 
 from __future__ import annotations
 
+import difflib
 import re
 from dataclasses import dataclass, field
 
@@ -125,6 +126,46 @@ def parse_group_expression(raw: str) -> GroupSpec:
     return GroupSpec(raw=raw.strip(), universe_filters=filters, dimensions=dimensions)
 
 
+def resolve_stamdata_column(name: str, stamdata: pd.DataFrame) -> str:
+    """The real Stamdata column a board spelling refers to.
+
+    Exact match wins; failing that, a unique case-insensitive match. The board is hand-typed
+    in Excel, so `Stamdata.ZONE` and `Stamdata.Fkgrade` are the same intent as the actual
+    `Zone` / `FKgrade` columns — a case slip is a typing accident, not a different request,
+    and letting it stop a whole row taught nothing (the message did not even say which
+    columns exist). A genuinely unknown name is still a hard failure, now naming the near
+    misses and the full column list."""
+    columns = [str(c) for c in stamdata.columns]
+    if name in columns:
+        return name
+    hits = [c for c in columns if c.lower() == name.lower()]
+    if len(hits) == 1:
+        return hits[0]
+    if len(hits) > 1:                       # cannot happen with today's Stamdata, but the
+        raise ExpressionError(              # spelling would be genuinely ambiguous if it did
+            f"Stamdata.{name}: ambiguous, matches {hits} case-insensitively — "
+            f"write the exact column name."
+        )
+    close = difflib.get_close_matches(name, columns, n=3, cutoff=0.6)
+    hint = f" Did you mean: {', '.join(close)}?" if close else ""
+    raise ExpressionError(
+        f"Stamdata.{name}: no such column.{hint} Known columns: {', '.join(columns)}"
+    )
+
+
+def canonicalize_group_spec(spec: GroupSpec, stamdata: pd.DataFrame) -> GroupSpec:
+    """`spec` with every dimension and filter column replaced by its real Stamdata spelling.
+    Idempotent, and the single point where a board spelling becomes a column name — so
+    downstream code (Step 0's GICS/Sector2 twin binding, group cache keys, reports) always
+    sees the canonical name rather than whatever case the board happened to use."""
+    dimensions = [resolve_stamdata_column(d, stamdata) for d in spec.dimensions]
+    filters = [Term(t.namespace, resolve_stamdata_column(t.column, stamdata), t.op, t.value)
+               for t in spec.universe_filters]
+    if dimensions == spec.dimensions and filters == spec.universe_filters:
+        return spec
+    return GroupSpec(raw=spec.raw, universe_filters=filters, dimensions=dimensions)
+
+
 def _coerce_compare(series: pd.Series, value: str) -> tuple[pd.Series, object]:
     """Numeric comparison when the literal parses as a number; string comparison otherwise
     (Stamdata columns are a mix of categorical text and the occasional numeric one)."""
@@ -147,35 +188,41 @@ def apply_stamdata_filters(stamdata: pd.DataFrame, filters: list[Term]) -> pd.In
     is unaffected."""
     mask = ~stamdata.index.to_series().astype(str).str.startswith("^")
     for t in filters:
-        if t.column not in stamdata.columns:
-            raise ExpressionError(
-                f"Stamdata.{t.column}: no such column. Known columns: "
-                f"{', '.join(stamdata.columns)}"
-            )
+        column = resolve_stamdata_column(t.column, stamdata)
         op_fn = _OPS.get(t.op)
         if op_fn is None:
-            raise ExpressionError(f"Stamdata.{t.column}{t.op}: unsupported operator")
-        col_series, value = _coerce_compare(stamdata[t.column], t.value)
+            raise ExpressionError(f"Stamdata.{column}{t.op}: unsupported operator")
+        col_series, value = _coerce_compare(stamdata[column], t.value)
         mask &= op_fn(col_series, value)
     return stamdata.index[mask]
+
+
+def _group_key_values(series: pd.Series) -> pd.Series:
+    """A Stamdata column as group keys. Whole numbers lose the float tail pandas gives them:
+    a numeric grading column (`FKgrade` = -1..5) must name its groups `4`, not `4.0`, since
+    that key is what every label, sheet heading and chart legend downstream shows."""
+    if pd.api.types.is_numeric_dtype(series):
+        return series.map(
+            lambda v: str(int(v)) if float(v).is_integer() else str(v)
+        ).astype(str)
+    return series.astype(str)
 
 
 def resolve_universe_and_groups(spec: GroupSpec, stamdata: pd.DataFrame) -> tuple[pd.Index, pd.Series]:
     """(universe, groups): groups is a ticker -> group-key Series (partition — one key per
     ticker). No `dimensions` -> every filtered ticker is one group, "ALL". A ticker missing
     any dimension value is dropped from the universe — it cannot be unambiguously grouped."""
+    spec = canonicalize_group_spec(spec, stamdata)
     universe = apply_stamdata_filters(stamdata, spec.universe_filters)
     if not spec.dimensions:
         groups = pd.Series("ALL", index=universe)
         return universe, groups
-    for dim in spec.dimensions:
-        if dim not in stamdata.columns:
-            raise ExpressionError(f"Stamdata.{dim}: no such column for grouping.")
     sub = stamdata.loc[universe, spec.dimensions].dropna()
-    if len(spec.dimensions) > 1:
-        key = sub.astype(str).agg("|".join, axis=1)
+    keys = [_group_key_values(sub[dim]) for dim in spec.dimensions]
+    if len(keys) > 1:
+        key = pd.concat(keys, axis=1).agg("|".join, axis=1)
     else:
-        key = sub.iloc[:, 0].astype(str)
+        key = keys[0]
     return key.index, key
 
 

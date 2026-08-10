@@ -46,6 +46,17 @@ def split_group_specific(attribute: str) -> tuple[str, str] | None:
     return None
 
 
+def _twin_criterion(name: str) -> str | None:
+    """The canonical twin criterion a written name refers to, case-insensitively, else None.
+    Case-tolerant for the same reason shared.expression.resolve_stamdata_column is — and
+    needed independently of it, because preflight resolves twins from the raw board spelling
+    before any Stamdata is loaded to canonicalize against."""
+    for criterion in _TWIN_CRITERIA:
+        if name.lower() == criterion.lower():
+            return criterion
+    return None
+
+
 def resolve_group_specific(attribute: str, dimensions: list[str]) -> str:
     """The Longi factor short name a row must actually read. An ordinary factor passes
     through untouched. A group-specific one (bare stem or either twin) is bound to this
@@ -58,14 +69,14 @@ def resolve_group_specific(attribute: str, dimensions: list[str]) -> str:
     if split is None:
         return attribute
     stem, written = split
-    if len(dimensions) != 1 or dimensions[0] not in _TWIN_CRITERIA:
+    criterion = _twin_criterion(dimensions[0]) if len(dimensions) == 1 else None
+    if criterion is None:
         raise expr.ExpressionError(
             f"'{attribute}' is a group-specific factor (longi_{stem}_<criterion>.csv), but "
             f"this row's grouping ({dimensions or ['ALL']}) is not exactly one of "
             f"{list(_TWIN_CRITERIA)} — there is no twin to bind it to."
         )
-    criterion = dimensions[0]
-    if written and written not in _TWIN_CRITERIA:
+    if written and _twin_criterion(written) is None:
         raise expr.ExpressionError(
             f"'{attribute}' names criterion '{written}', which is not one of "
             f"{list(_TWIN_CRITERIA)}. Write the bare stem '{stem}' to get this row's own "
@@ -97,6 +108,7 @@ def resolve_step0(row_resolved: dict) -> Step0Result:
     """
     gspec = expr.parse_group_expression(row_resolved["group_expression"])
     stamdata = load_stamdata()
+    gspec = expr.canonicalize_group_spec(gspec, stamdata)   # board spelling -> column name
     universe, groups = expr.resolve_universe_and_groups(gspec, stamdata)
     if universe.empty:
         raise expr.ExpressionError(
