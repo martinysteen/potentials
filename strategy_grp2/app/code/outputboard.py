@@ -36,9 +36,12 @@ import step3_backtest as bt
 import step3_report
 import step3a_stopout as stopout
 import step4_walkforward as wf
+from shared import display
 from shared import expression as expr
 from shared import market
 from shared.config import MINAGGR_PERIODS, REPORT_ROOT
+from shared.data_loader import load_longi
+from shared.datacheck import DataUnavailable
 
 _BOLD = Font(bold=True)
 _HEAD = PatternFill("solid", fgColor="BDD7EE")
@@ -157,11 +160,14 @@ def _write_step1_sheet(wb: Workbook, picks: dict[str, dict]) -> None:
     for c, h in enumerate(headers, start=1):
         cell = ws.cell(1, c, h); cell.font, cell.fill = _BOLD, _HEAD
     r = 2
+    blocks: list[tuple[int, int]] = []
     for label, info in picks.items():
+        block_top = r
         if info.get("error"):
             ws.cell(r, 1, label)
             ws.cell(r, 3, f"(step 0-2 failed: {info['error']})").font = _NOTE
             r += 1
+            blocks.append((block_top, r - 1))
             continue
         s0 = info["s0"]
         params = info["params"]
@@ -203,55 +209,116 @@ def _write_step1_sheet(wb: Workbook, picks: dict[str, dict]) -> None:
                 ws.cell(r, 3).font = _BOLD
             ws.cell(r, 9, elite_list_str)
             r += 1
+        blocks.append((block_top, r - 1))
     ws.freeze_panes = "A2"
+    display.band(ws, blocks, len(headers))
     for c, w in zip("ABCDEFGHI", (24, 10, 16, 11, 9, 13, 10, 9, 90)):
         ws.column_dimensions[c].width = w
+
+
+def _fingerprint_attributes(picks: dict[str, dict]) -> list[str]:
+    """Every Longi factor named anywhere on the active board, deduplicated and sorted.
+
+    These four channels — dominance, priority, informational, post_filter — are exactly the
+    ones `preflight.required_files_for_rows()` snapshots, so a name collected here is
+    guaranteed readable. Names come off `Step0Result`, i.e. already twin-resolved
+    (`conf` -> `conf_GICS`), and only from rows that actually resolved: a row that could not
+    bind a twin is an `error` entry and contributes nothing.
+    """
+    names: set[str] = set()
+    for info in picks.values():
+        if info.get("error"):
+            continue
+        s0 = info["s0"]
+        names.add(s0.dominance_attribute)
+        names.add(s0.priority_attribute)
+        names.update(s0.informational_attributes or ())
+        if s0.post_filter is not None:
+            names.update(t.column for t in s0.post_filter.terms)
+    return sorted(n for n in names if n)
 
 
 def _write_step2_sheet(wb: Workbook, picks: dict[str, dict]) -> None:
     """One row per pick. `dom_group` (column E, SM 2026-08-05 — "just to make sure" each
     ticker's own dominant group is visible next to it, not just inferable from Step1_groups)
-    is the elevated group `production_pick()` actually drew that ticker from."""
+    is the elevated group `production_pick()` actually drew that ticker from.
+
+    Columns G onward are the pick's FINGERPRINT (SM 2026-08-11): one column per attribute
+    NAME, so a column always means exactly one thing. They are the board-wide union, filled
+    for every pick regardless of which row named the attribute — that is what lets an
+    rsi-priority row and a rank-priority row be read side by side. The predecessor
+    `priority_attribute`/`value` pair did the opposite: with a different priority attribute
+    per row, one header covered two incomparable quantities. Which attribute played which
+    role is stated once per line in `dom/prio` (column F); the other columns carry no role
+    marking, deliberately.
+    """
     ws = wb.create_sheet("Step2_picks")
-    headers = ["label", "daynum", "rank", "ticker", "dom_group", "priority_attribute", "value"]
+    attrs = _fingerprint_attributes(picks)
+    # `priority` (C) is the 1-based position in the gross list — it was called `rank` until
+    # 2026-08-11, which collided head-on with the `rank` ATTRIBUTE (the schema default for
+    # priority_attribute), putting an ordinal and a longi_rank.csv value on one line under
+    # one name.
+    headers = ["label", "daynum", "priority", "ticker", "dom_group", "dom/prio"] + attrs
     for c, h in enumerate(headers, start=1):
         cell = ws.cell(1, c, h); cell.font, cell.fill = _BOLD, _HEAD
+    first_attr_col = 7
+
+    frames: dict[str, pd.DataFrame] = {}
+    for attr in attrs:
+        try:
+            frames[attr] = load_longi(f"longi_{attr}.csv")
+        except DataUnavailable as exc:
+            print(f"[Step2_picks] attribute {attr!r} not readable, column left blank -- {exc}",
+                  flush=True)
+
     r = 2
+    blocks: list[tuple[int, int]] = []
     for label, info in picks.items():
+        block_top = r
         if info.get("error"):
             ws.cell(r, 1, label)
             ws.cell(r, 4, f"(step 0-2 failed: {info['error']})").font = _NOTE
             r += 1
+            blocks.append((block_top, r - 1))
             continue
         if not info["tickers"]:
             ws.cell(r, 1, label)
             ws.cell(r, 2, info["daynum"])
             ws.cell(r, 4, "(no pick — cash hop)").font = _NOTE
             r += 1
+            blocks.append((block_top, r - 1))
             continue
-        params = info["params"]
         s0 = info["s0"]
-        try:
-            from shared.data_loader import load_longi
-            prio_df = load_longi(f"longi_{params['priority_attribute']}.csv")
-        except Exception:                                              # noqa: BLE001
-            prio_df = None
+        tickers = info["tickers"]
         col = str(info["daynum"])
-        for i, ticker in enumerate(info["tickers"], start=1):
-            val = None
-            if prio_df is not None and ticker in prio_df.index and col in prio_df.columns:
-                val = prio_df.at[ticker, col]
+        roles = f"{s0.dominance_attribute}/{s0.priority_attribute}"
+
+        # one vectorized take per attribute per label, not one .at per cell
+        values: dict[str, pd.Series] = {}
+        for attr, df in frames.items():
+            if col not in df.columns:
+                continue
+            values[attr] = df.loc[df.index.intersection(tickers), col].dropna()
+
+        for i, ticker in enumerate(tickers, start=1):
             ws.cell(r, 1, label)
             ws.cell(r, 2, info["daynum"])
             ws.cell(r, 3, i)
             ws.cell(r, 4, ticker)
             ws.cell(r, 5, s0.groups.get(ticker))
-            ws.cell(r, 6, params["priority_attribute"])
-            ws.cell(r, 7, val)
+            ws.cell(r, 6, roles)
+            for k, attr in enumerate(attrs):
+                series = values.get(attr)
+                if series is not None and ticker in series.index:
+                    ws.cell(r, first_attr_col + k, float(series.at[ticker]))
             r += 1
+        blocks.append((block_top, r - 1))
     ws.freeze_panes = "A2"
-    for c, w in zip("ABCDEFG", (24, 10, 6, 12, 12, 18, 12)):
+    display.band(ws, blocks, len(headers))
+    for c, w in zip("ABCDEF", (24, 10, 8, 12, 12, 18)):
         ws.column_dimensions[c].width = w
+    for k in range(len(attrs)):
+        ws.column_dimensions[get_column_letter(first_attr_col + k)].width = 11
 
 
 # ---------------------------------------------------------------------------
@@ -757,6 +824,10 @@ def assemble(board: "cb.BoardResult", settings: dict) -> Path:
         _write_step4_sheet(wb, walk_results)
     if backtests:
         _write_charts_sheet(wb, backtests, walk_results, stopout_data)
+
+    # Fixed decimals last, once, over every sheet — a display convention, not a per-writer
+    # decision (shared/display.py). Step3_compare is transposed, so its runs go across.
+    display.harmonize_workbook(wb, row_oriented={"Step3_compare"})
 
     _archive_prior()
     REPORT_ROOT.mkdir(parents=True, exist_ok=True)

@@ -124,7 +124,8 @@ a one-screen table of every required file's daynum, age and status.
   interest in the mechanics.
 * **`report/compare_strategies_<date>.xlsx`** — one workbook per development tick, seven sheets:
   `Runs` (every active row verbatim + status/universe/vintage), `Step1_groups` (elevated groups +
-  member tickers), `Step2_picks` (the gross list, same as `StrategicStocks.xlsx`), `Step3_compare`
+  member tickers), `Step2_picks` (the gross list — same tickers as `StrategicStocks.xlsx`, plus
+  each pick's attribute fingerprint; see the 2026-08-11 refinement below), `Step3_compare`
   (transposed metrics, one column per active `D` row, best `chain_annual` leftmost),
   `Step3a_stopout` (cost/benefit sweep across stop levels, one block per eligible `D` row — see
   the 2026-08-05 refinement below), `Step4_walkforward` (one block per *candidate set*: summary +
@@ -529,6 +530,100 @@ floor under `dom_count_threshold` was offered and **declined** — SM, 2026-08-1
 the VIG example is ridiculous, but it is a rare phenomena. So lets leave it there."* So a
 1-elite elevation is a known, accepted artefact of a very small group, not an oversight, and
 `dom_count_threshold` keeps its two branches exactly as the 2026-08-05 correction set them.
+
+## Refinement 2026-08-11 — Step2_picks carries each pick's attribute fingerprint
+
+`Step2_picks` is the sheet that shows what a strategy actually hands out. It showed the
+priority attribute's value and nothing else, under two headers that both misled:
+
+* **`rank` was not the `rank` attribute.** Column C was the 1-based ordinal from
+  `enumerate(tickers)`, and `rank` is also the schema default for `priority_attribute` — so a
+  default row put an ordinal and a `longi_rank.csv` value on one line, both called "rank".
+  Column C is now **`priority`**.
+* **`value` mixed meanings.** With `priority_attribute=rank` on one row and `=rsi` on the
+  next, one column held two incomparable quantities, and finding a given attribute's value
+  across strategies was a different lookup per row. SM: *"mixing different attribute's values
+  in same column is also a confusing display."*
+
+**One column per attribute NAME** fixes both, and both halves of SM's request at once: a
+column now means exactly one thing, and the four channels that make up a pick's fingerprint —
+`dominance_attribute`, `priority_attribute`, the `post_filter` variables and
+`informational_attributes` — are all readable per ticker. The columns are the **board-wide
+union**, filled for **every** pick regardless of which row named the attribute (SM: *"Union is
+absolutely best"*); that is what makes an `rsi`-priority row and a `rank`-priority row
+comparable line by line. Which attribute played which role is stated once per line in a
+combined **`dom/prio`** column (e.g. `vola20d/rsi`); the remaining columns carry no role
+marking, deliberately (SM: *"we can skip on specifying why the other columnized variables are
+there"*). The old `priority_attribute`/`value` pair is gone — the priority attribute's value
+now sits in its own named column like every other.
+
+**This needs no new board column and no preflight change**, which is the reason it is cheap:
+those four channels are *precisely* the four `preflight.required_files_for_rows()` already
+snapshots, so every file a fingerprint column reads is guaranteed present and already in
+`load_longi`'s cache from Step 2's own selection work. `_fingerprint_attributes()` collects
+the names off `Step0Result` — already twin-resolved, so a GICS row's `conf` heads a
+`conf_GICS` column and a Sector2 row's a `conf_Sector2` one, two different files under two
+honest headers — and only from rows that resolved, so an unbindable twin can never reach the
+sheet. A factor that somehow will not load costs its column, not the sheet
+(`DataUnavailable` per attribute, same tolerance `step3_report.py` uses).
+
+**Verified read-only against live data (daynum 2209, 2026-08-11)**, board never written: on
+4 active rows the union came to 7 columns (`beta3m, per1d, rank, rsi, sh3m, spr100d,
+vola20d`) and values matched the source matrices exactly (`rank` UMAC = 102.0, `beta3m`
+6.2793 → 6.28). The live board runs `priority_attribute=beta3m` on all 40 rows, so the mixed
+case was built synthetically in memory: `mix_rank` descends the `rank` column 1, 2, 3, 4, 5,
+6, 8, 10 … while `mix_rsi` descends the `rsi` column 86.22, 85.32, 84.17 … in the same
+columns, and `HALO` — picked by both — shows one identical fingerprint under both strategies.
+A third row's `post_filter` (`Longi.per20d>0`) added `per20d` to the union and it filled for
+all three rows, the union rule working as intended.
+
+Out of scope this round, by SM's framing (*"lets first work upon Step2_picks sheet"*):
+`StrategicStocks.xlsx` and `step3_report.py`'s per-run Operational sheet, which still shows
+`informational_attributes` in its own older per-hop form.
+
+## Display conventions (2026-08-11) — `shared/display.py` is the one authority
+
+SM asked for fixed decimals *"as a general design spec for data display across all of
+strategy_grp2"*, and noted that might be the wrong place to ask for it. It was the right
+question: how a number reads is a project-wide decision, not a property of the sheet that
+happens to write it, so it lives in one module and every writer defers to it. Writers keep
+deciding **what** to write; `shared/display.py` decides how it looks.
+
+**Fixed decimals, 2 by default.** `harmonize()` gives every numeric cell a number format;
+values are still *stored* at full precision, so sorting and any further arithmetic in Excel
+are unaffected — only the displayed form is fixed. Integers stay integers: a group of
+numbers that is entirely whole (`rank`, `n_elites`, `chain_n`, a daynum, the `priority`
+ordinal) gets `0` instead of `0.00`.
+
+**The whole/decimal test is made on the data, per group — not on a name list.** A
+hand-maintained list of "integer attributes" would need an edit every time a factor is added
+to the board, and would silently mis-format the one it had not heard of. Grouping matters
+just as much: judged cell by cell, a genuine `0.0` sitting in a decimal column would print
+as a bare `0` and read as a different kind of quantity than the `1.23` above it (`per1d`
+today is full of exactly that value). A *group* is a maximal run of consecutive numeric
+cells down a column — or across a row on a transposed sheet. Anything non-numeric ends a
+run, which is what lets one pass serve the block-structured sheets (`Step3a_stopout`,
+`Step4_walkforward`) without being told where the blocks are: a block's own header row
+already separates its numbers from the block above. `Step3_compare` and `step3_report`'s
+Operational sheet are transposed (a metric is a row), so they pass `by="row"`.
+
+Applied at exactly three call sites — `outputboard.assemble()` (the whole
+`compare_strategies_<date>.xlsx`), `step3_report._write_operational()` and
+`conductor._write_strategic_stocks()` — so every Excel artifact the project produces is
+covered.
+
+### Alternating tint per strategy
+
+The flat per-label sheets (`Step1_groups`, `Step2_picks`) list every active row in one
+table, and where one strategy ends and the next begins was readable only by watching column
+A change. `display.band()` tints alternate label blocks light yellow. **A fill, not a rule
+under the last member** — SM: *"Color best, because it will survive a sorting."* A border
+belongs to a position in the sheet; a fill belongs to the row and travels with it when the
+user re-sorts.
+
+A cell that already carries a fill keeps it: a semantic colour (an elevated group's green,
+a flagged stop level, a stopped ticker's dark red) outranks the banding, which is only a
+reading aid.
 
 ## Status
 

@@ -18,6 +18,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 import step3_backtest as bt
+from shared import display
 from shared import market
 from shared.config import REPORT_ROOT
 from shared.data_loader import daynum_to_date, load_longi
@@ -203,6 +204,8 @@ def _write_operational(ws, hops: list["bt.Hop"], label: str, params: dict) -> No
         ws.column_dimensions[get_column_letter(j)].width = 11
     ws.row_dimensions[1].height = 16
     ws.freeze_panes = "B5"
+    # transposed sheet: a metric is a ROW, a hop is a column (shared/display.py)
+    display.harmonize(ws, by="row")
 
 
 def _clear_stale(folder: Path) -> None:

@@ -27,6 +27,7 @@ import outputboard
 import preflight
 import step0_data
 import step2_focusset
+from shared import display
 from shared import expression as expr
 from shared.config import REPORT_ROOT
 from shared.data_loader import daynum_to_date, load_stamdata
@@ -167,6 +168,7 @@ def _write_strategic_stocks(picks: list[tuple]) -> Path:
         for col, width in zip("ABCD", (6, 10, 32, 14)):
             ws.column_dimensions[col].width = width
 
+    display.harmonize_workbook(wb)
     REPORT_ROOT.mkdir(parents=True, exist_ok=True)
     path = REPORT_ROOT / "StrategicStocks.xlsx"
     wb.save(path)
