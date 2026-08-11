@@ -217,14 +217,17 @@ def _clear_stale(folder: Path) -> None:
         shutil.move(str(path), str(dest / path.name))
 
 
-def write_run_reports(backtests: dict[str, "bt.BacktestResult"]) -> list[Path]:
-    """One report/backtesting/run<N>_<date>.xlsx per active D-purpose row, N = tick order."""
+def write_run_reports(backtests: dict[str, "bt.BacktestResult"]) -> dict[str, Path]:
+    """One report/backtesting/run<N>_<date>.xlsx per active D-purpose row, N = tick order.
+    Returns label -> path, the same mapping outputboard needs to put a run reference on
+    Step3_compare (SM, 2026-08-11 — "a lot of clicking to find the runX file for a strategy
+    of interest")."""
     folder = REPORT_ROOT / "backtesting"
     folder.mkdir(parents=True, exist_ok=True)
     _clear_stale(folder)
 
     today = time.strftime("%Y%m%d")
-    written: list[Path] = []
+    written: dict[str, Path] = {}
     for i, (label, result) in enumerate(backtests.items(), start=1):
         wb = Workbook()
         ws = wb.active
@@ -232,5 +235,5 @@ def write_run_reports(backtests: dict[str, "bt.BacktestResult"]) -> list[Path]:
         _write_operational(ws, result.hops, label, result.params)
         path = folder / f"run{i}_{today}.xlsx"
         wb.save(path)
-        written.append(path)
+        written[label] = path
     return written

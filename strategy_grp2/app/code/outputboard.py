@@ -342,7 +342,14 @@ _STEP3_ROWS: list[str] = [
 ]
 
 
-def _write_step3_sheet(wb: Workbook, backtests: dict[str, "bt.BacktestResult"]) -> None:
+def _write_step3_sheet(wb: Workbook, backtests: dict[str, "bt.BacktestResult"],
+                       run_paths: dict[str, Path] | None = None) -> None:
+    """Row 1 is the header (one column per strategy); row 2 is ALWAYS the run_report
+    filename (SM, 2026-08-11 — too much clicking to find the runX file for a strategy of
+    interest), pinned directly under its own column's label so the pairing survives a
+    manual column reorder in Excel — a row keyed by position would not. Metric rows start
+    at row 3."""
+    run_paths = run_paths or {}
     ws = wb.create_sheet("Step3_compare")
     ws.cell(1, 1, "metric").font = _BOLD
     order = sorted(backtests, key=lambda lbl: (
@@ -353,7 +360,11 @@ def _write_step3_sheet(wb: Workbook, backtests: dict[str, "bt.BacktestResult"]) 
         cell = ws.cell(1, c, label); cell.font, cell.fill = _BOLD, _HEAD
         if backtests[label].metrics.get("thin"):
             cell.fill = _THIN_FILL
-    for r, key in enumerate(_STEP3_ROWS, start=2):
+    ws.cell(2, 1, "run_report").font = _BOLD
+    for c, label in enumerate(order, start=2):
+        path = run_paths.get(label)
+        ws.cell(2, c, path.name if path else None).font = _NOTE
+    for r, key in enumerate(_STEP3_ROWS, start=3):
         ws.cell(r, 1, key).font = _BOLD
         for c, label in enumerate(order, start=2):
             result = backtests[label]
@@ -366,7 +377,7 @@ def _write_step3_sheet(wb: Workbook, backtests: dict[str, "bt.BacktestResult"]) 
             elif isinstance(val, tuple):
                 val = str(val)
             ws.cell(r, c, val)
-    ws.freeze_panes = "B2"
+    ws.freeze_panes = "B3"
     ws.column_dimensions["A"].width = 22
     for c in range(2, len(order) + 2):
         ws.column_dimensions[get_column_letter(c)].width = 16
@@ -765,9 +776,10 @@ def assemble(board: "cb.BoardResult", settings: dict) -> Path:
         print(f"    chain_annual={m['chain_annual']:.2f}  chain_n={m['chain_n']}  "
               f"N_hops={m['N_hops']}", flush=True)
 
+    run_paths: dict[str, Path] = {}
     if backtests:
         run_paths = step3_report.write_run_reports(backtests)
-        for p in run_paths:
+        for p in run_paths.values():
             print(f"    wrote {p}", flush=True)
 
     # A walk-forward test belongs to its CANDIDATE SET, not to the row that declared it:
@@ -818,7 +830,7 @@ def assemble(board: "cb.BoardResult", settings: dict) -> Path:
     _write_step1_sheet(wb, picks)
     _write_step2_sheet(wb, picks)
     if backtests:
-        _write_step3_sheet(wb, backtests)
+        _write_step3_sheet(wb, backtests, run_paths)
         _write_step3a_sheet(wb, stopout_data, settings)
     if walk_results:
         _write_step4_sheet(wb, walk_results)
