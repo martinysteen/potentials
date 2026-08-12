@@ -37,8 +37,14 @@ strategy_grp2/
 └── app/
     ├── control/         # control_board.xlsx (input)
     ├── code/            # conductor.py + step0-4 + shared/
-    └── report/          # output boards, per-run detail, StrategicStocks.xlsx
+    └── report/          # output boards, per-run detail, StrategicStocks_<daynum>.xlsx/.csv
 ```
+
+`StrategicStocks_<daynum>.csv` is published to `GoogleDrive:PotSystem/repositoryRTBI/Strategy`
+immediately after being written, via the shared repositoryRTBI publish contract
+(`~/potentials/shared/app/code/repository.py`'s `OWNERS["strategy_grp2"]`) — the local mirror
+(`~/potentials/repositoryRTBI/data/Strategy/`) picks it up on its own cron, no strategy_grp2 code
+involved in that half.
 
 ## Running
 

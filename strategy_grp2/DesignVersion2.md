@@ -120,18 +120,27 @@ a one-screen table of every required file's daynum, age and status.
 
 ### Where output lands
 
-* **`report/StrategicStocks.xlsx`** — written by BOTH `--production` and the bare tick (2026-08-12
-  — no `purpose` column distinguishes who gets shipped here anymore). A first tab, `All`, holds
-  every active row's picks concatenated (tinted per strategy); then one tab per row, same fields
-  as `Step2_picks` (label/daynum/priority/ticker/name/dom_group/dom-prio + attribute fingerprint)
-  — see the 2026-08-12 refinement below. The daily-advice artifact for users with no interest in
-  the mechanics; `--production` gets it to you fast (steps 0-2 only), the bare tick gets it to you
-  alongside the full backtest.
+* **`report/StrategicStocks_<daynum>.xlsx`** — written by BOTH `--production` and the bare tick
+  (2026-08-12 — no `purpose` column distinguishes who gets shipped here anymore). The `_<daynum>`
+  suffix (not calendar date — the seven-pack's own trading-day counter) means a same-day rerun
+  overwrites in place, a new day's run never collides with a prior day's file, and the prior file
+  moves to `_archive/` either way (see `outputboard.archive_prior_strategic_stocks()`). A first
+  tab, `All`, holds every active row's picks concatenated (tinted per strategy); then one tab per
+  row, same fields as `Step2_picks` (label/daynum/priority/ticker/name/dom_group/dom-prio +
+  attribute fingerprint) — see the 2026-08-11 and 2026-08-12 refinements below. The daily-advice
+  artifact for users with no interest in the mechanics; `--production` gets it to you fast
+  (steps 0-2 only), the bare tick gets it to you alongside the full backtest.
+* **`report/StrategicStocks_<daynum>.csv`** — the `All` tab's exact rows as a flat table,
+  European format (`sep=';', decimal=','`), written and Drive-published in the same step as the
+  xlsx above. Published to `GoogleDrive:PotSystem/repositoryRTBI/Strategy` immediately after
+  being written, via the shared repositoryRTBI publish contract
+  (`shared/app/code/repository.py`'s `OWNERS["strategy_grp2"]`) — see the 2026-08-12 refinement
+  below for why that's the right mechanism to reuse rather than a one-off upload.
 * **`report/compare_strategies_<date>.xlsx`** — one workbook per development tick (bare `python
   conductor.py` only), seven sheets: `Runs` (every active row verbatim + status/universe/vintage),
   `Step1_groups` (elevated groups + member tickers), `Step2_picks` (the gross list — same tickers
-  as `StrategicStocks.xlsx`, plus each pick's attribute fingerprint; see the 2026-08-11 refinement
-  below), `Step3_compare` (transposed metrics, one column per active row, best `chain_annual`
+  as `StrategicStocks_<daynum>.xlsx`'s `All` tab, plus each pick's attribute fingerprint; see the
+  2026-08-11 refinement below), `Step3_compare` (transposed metrics, one column per active row, best `chain_annual`
   leftmost), `Step3a_stopout` (cost/benefit sweep across stop levels, one block per eligible row —
   see the 2026-08-05 refinement below), `Step4_walkforward` (one block per *candidate set*:
   summary + per-candidate table + fold table — see the 2026-08-04 refinement below), `Charts`.
@@ -834,6 +843,69 @@ previously only D-purpose rows would have reached either) — both `compare_stra
 20260812.xlsx` and `StrategicStocks.xlsx` written from the one run. The label-dedupe helper
 verified separately against a synthetic collision (`'X'` x3, one inactive) — only active
 collisions renamed, in row order, inactive `'X'` left untouched.
+
+## Refinement 2026-08-12 (same day) — StrategicStocks CSV export, dated filenames, Drive publish
+
+SM: *"I want a csv file exported in addition to StrategicStocks.xlsx. The csv file shall
+contain what is in the All tab (European csv format). The xlsx shall add `_<daynum>` to its
+filename. This csv shall asap after creation by uploaded to
+GoogleDrive:/PotSystem/repositoryRTBI/Strategy, overwriting any same named file. We shall
+also assure ourselves that Potentials' local repositoryRTBI clones it."*
+
+**Filenames**: `StrategicStocks_<daynum>.xlsx` / `StrategicStocks_<daynum>.csv` — the
+seven-pack's own trading-day counter (`_picks_daynum()`: the max daynum across every
+successful pick, they agree in practice since a tick reads one frozen snapshot), not
+calendar date. `archive_prior_strategic_stocks()`'s glob widened from the exact old name to
+`StrategicStocks*.xlsx`/`StrategicStocks*.csv` (also catches the pre-2026-08-12 unsuffixed
+file, a clean one-time migration) and now wraps each move in try/except — a file Excel has
+open can't be moved over SMB, and that should warn once and move on, not crash a tick that
+otherwise has good output ready.
+
+**CSV**: exactly the `All` tab's rows, one flat table, `sep=';', decimal=','` (this
+project's hard rule, matching `longi`'s own producer-side `to_csv` convention).
+
+**Publish, not a one-off upload.** `~/potentials/shared/app/code/repository.py` is the
+existing repositoryRTBI publish/fetch contract ([[project_repository_contract]]) every other
+producer (`longi`, `group_conformity`) already goes through: each owner declares only the
+glob patterns it's authoritative for, and `rclone sync` is scoped to exactly those patterns
+— so a producer can never delete another family's files, and an unclaimed new output fails
+loudly instead of silently never publishing. Added `OWNERS["strategy_grp2"]`: `source=app/
+report`, `subdir="Strategy"`, `owns=("/StrategicStocks_*.csv",)`, everything else already in
+`app/report/` (`*.xlsx`, `run.cmd`, `control_board.lnk`, `backtesting/**`, `walkforward/**`,
+`_archive/**`) declared `local_only` — `python repository.py check` passed clean on the
+first try, nothing unclaimed. `outputboard._publish_strategic_csv()` calls `repository.
+publish()` in-process, synchronously, right after the CSV is saved ("asap after creation")
+— never via a separate cron-triggered wrapper script the way `group_conformity`'s upload
+is, since SM wants it inside the same tick, not decoupled. Wrapped in try/except: a Drive
+hiccup prints a warning and moves on, never fails the tick — the local `.xlsx`/`.csv` are
+the primary deliverable.
+
+**"Overwriting any same named file" is `rclone sync`'s natural behavior, with one
+consequence worth being explicit about**: because `archive_prior_strategic_stocks()` moves
+the previous day's CSV out of `app/report/` before a new one is written, the *published*
+namespace (`/StrategicStocks_*.csv` inside `app/report/`) only ever contains the CURRENT
+file — so `sync` (not `copy`) also cleans up the OLDER dated CSV from Drive on the next
+publish, same as it already does for `longi`'s and `group_conformity`'s retired outputs.
+Drive's `Strategy/` folder always mirrors the latest daynum; full history stays locally
+recoverable under `_archive/`, never touched by the publish step. This wasn't asked for
+explicitly but follows directly from reusing the existing contract as-is rather than
+building a special-cased one-off path — flagging it here in case SM wants Drive-side
+history instead, which would mean not archiving the CSV locally before publish, or switching
+this one owner to `rclone copy`.
+
+**Verified live (daynum 2210, 2026-08-12):** `repository.py check` clean; `--dry-run`
+publish showed "nothing to transfer" against an empty `Strategy/` folder (confirmed via
+`rclone lsd` — it already existed, created same day, unwired); a real `--production` run
+wrote `StrategicStocks_2210.csv` (European format confirmed byte-for-byte:
+`label;daynum;priority;ticker;name;dom_group;dom/prio;...` header, `128,2` / `6,2911` style
+decimals) and published it — `rclone lsl` confirmed the file live on Drive. The pre-existing
+unsuffixed `StrategicStocks.xlsx` (which SM had open in Excel at the time, `~$` lock file
+present) was archived successfully despite the open handle. `sync_rtbi.sh` (the mirror pull,
+otherwise on its own 3x/hour cron) was run manually once to confirm rather than just trust
+the design: `~/potentials/repositoryRTBI/data/Strategy/StrategicStocks_2210.csv` appeared,
+`mirror_status.json` exit_code 0 — the local repositoryRTBI clone picks up a new Drive
+subfolder with zero code changes, since `sync_rtbi.sh` mirrors the whole tree with only two
+hardcoded excludes (`Longi/exp/**`, `Longi/QA/**`), no subfolder allowlist.
 
 
 

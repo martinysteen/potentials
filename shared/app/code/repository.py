@@ -172,6 +172,26 @@ OWNERS: dict[str, Owner] = {
         # analyzer. They stay local on purpose.
         local_only=("conformity_*.csv", "conformity_*.xlsx", "*.xlsx.csv"),
     ),
+    "strategy_grp2": Owner(
+        name="strategy_grp2",
+        source=POTENTIALS / "strategy_grp2" / "app" / "report",
+        input_dir=POTENTIALS / "strategy_grp2" / "app" / "data" / "input",
+        subdir="Strategy",
+        # Only the daily gross-list CSV is published -- the rest of app/report/ is
+        # human-facing Excel workbooks, per-run detail, and local archives, none of
+        # which belong outside this machine.
+        owns=(
+            "/StrategicStocks_*.csv",
+        ),
+        local_only=(
+            "*.xlsx",           # StrategicStocks_*.xlsx, compare_strategies_*.xlsx, Excel's own ~$ lock file
+            "*.cmd",            # run.cmd
+            "*.lnk",            # control_board.lnk
+            "backtesting/**",
+            "walkforward/**",
+            "_archive/**",
+        ),
+    ),
 }
 
 

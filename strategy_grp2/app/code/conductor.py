@@ -133,8 +133,9 @@ def cmd_production() -> int:
         return 1
 
     outputboard.archive_prior_strategic_stocks()
-    path = outputboard.write_strategic_stocks(picks)
-    print(f"\nWrote {path}  ({len(picks)} row(s), {bad} failed)")
+    xlsx_path, csv_path = outputboard.write_strategic_stocks(picks)
+    print(f"\nWrote {xlsx_path}")
+    print(f"Wrote {csv_path}  ({len(picks)} row(s), {bad} failed)")
     return 1 if bad else 0
 
 
@@ -152,9 +153,10 @@ def cmd_develop() -> int:
         return 1 if rejected or board.board_errors else 0
 
     preflight.ensure_data(board.runs, settings=board.settings)
-    compare_path, strategic_path = outputboard.assemble(board, board.settings)
+    compare_path, strategic_xlsx, strategic_csv = outputboard.assemble(board, board.settings)
     print(f"Wrote {compare_path}")
-    print(f"Wrote {strategic_path}")
+    print(f"Wrote {strategic_xlsx}")
+    print(f"Wrote {strategic_csv}")
     return 0
 
 

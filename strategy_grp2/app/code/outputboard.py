@@ -786,23 +786,90 @@ def _archive_prior() -> None:
 
 
 def archive_prior_strategic_stocks() -> None:
-    path = REPORT_ROOT / "StrategicStocks.xlsx"
-    if not path.exists():
+    """Moves every existing StrategicStocks_*.xlsx/.csv (and the pre-2026-08-12 unsuffixed
+    StrategicStocks.xlsx, same glob) to one dated _archive/ folder. Wrapped per-file in
+    try/except: a file Excel currently has open can't be moved over SMB, and that should
+    warn, not crash a tick that has otherwise-good output ready to write."""
+    paths = list(REPORT_ROOT.glob("StrategicStocks*.xlsx")) + list(REPORT_ROOT.glob("StrategicStocks*.csv"))
+    if not paths:
         return
     dest = REPORT_ROOT / "_archive" / time.strftime("%Y%m%d_%H%M%S")
     dest.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(path), str(dest / path.name))
+    for path in paths:
+        try:
+            shutil.move(str(path), str(dest / path.name))
+        except OSError as exc:
+            print(f"[outputboard] WARNING: could not archive {path.name} ({exc}) -- "
+                  f"probably open in Excel; left in place", flush=True)
 
 
-def write_strategic_stocks(picks: dict[str, dict]) -> Path:
-    """StrategicStocks.xlsx: one tab per active row, same fields as Step2_picks (2026-08-12
-    -- "export all fields from Step2_picks"), computed by the exact same step2_table() so
-    the two never drift apart. A first tab, 'All', holds every row from every tab
-    concatenated, tinted per strategy like Step2_picks (SM: "make a tab called All ...
-    place this as the first tab"). Written both by the bare development tick (assemble(),
-    above) and by conductor.cmd_production's lighter steps-0-2-only path -- purpose no
-    longer distinguishes who gets shipped here; every active row does, in both entry points."""
+def _picks_daynum(picks: dict[str, dict]) -> "int | str":
+    """The daynum StrategicStocks_<daynum> is named for -- every successful pick's own
+    daynum, which is the same across active rows in practice (one frozen snapshot per
+    tick). Falls back to 'unknown' only when every row failed (archive_prior_strategic_
+    stocks/write_strategic_stocks still run so nothing crashes, just an unhelpful name)."""
+    daynums = {info["daynum"] for info in picks.values() if not info.get("error")}
+    if not daynums:
+        return "unknown"
+    if len(daynums) > 1:
+        print(f"[outputboard] NOTE: active rows disagree on daynum ({sorted(daynums)}), "
+              f"filename uses the latest", flush=True)
+    return max(daynums)
+
+
+def _publish_strategic_csv() -> None:
+    """rclone-syncs StrategicStocks_<daynum>.csv to GoogleDrive:PotSystem/repositoryRTBI/
+    Strategy immediately after it's written (SM, 2026-08-12: "asap after creation"), via
+    the shared repositoryRTBI publish contract (shared/app/code/repository.py) -- the same
+    ownership-scoped rclone sync every other producer (longi, group_conformity) uses,
+    rather than a one-off upload path. `sync` (not `copy`) also means an OLDER dated CSV
+    that archive_prior_strategic_stocks() already moved out of app/report/ is cleaned up
+    on Drive too, on the next publish -- Drive always mirrors the current file, full
+    history stays recoverable locally under _archive/.
+
+    Never fails the tick: the local .xlsx/.csv are the primary deliverable, a network
+    hiccup or a temporarily-unreachable Drive is a warning here, not a crash."""
+    import sys as _sys
+    shared_code = Path(__file__).resolve().parents[3] / "shared" / "app" / "code"
+    if str(shared_code) not in _sys.path:
+        _sys.path.insert(0, str(shared_code))
+    try:
+        import repository
+        rc = repository.publish(repository.OWNERS["strategy_grp2"])
+        if rc != 0:
+            print(f"[outputboard] WARNING: Drive publish exited {rc} -- local files are "
+                  f"fine, the Drive copy may be stale until the next successful publish",
+                  flush=True)
+    except Exception as exc:                                    # noqa: BLE001
+        print(f"[outputboard] WARNING: Drive publish failed ({exc}) -- local files are "
+              f"fine, the Drive copy may be stale until the next successful publish",
+              flush=True)
+
+
+def write_strategic_stocks(picks: dict[str, dict]) -> tuple[Path, Path]:
+    """StrategicStocks_<daynum>.xlsx + StrategicStocks_<daynum>.csv (2026-08-12, SM: "a csv
+    file exported in addition to StrategicStocks.xlsx ... containing what is in the All
+    tab ... European csv format", "the xlsx shall add _<daynum> to its filename"). The
+    daynum suffix means a same-day rerun overwrites in place while a new day's run never
+    collides with a prior day's file -- see archive_prior_strategic_stocks(), called by
+    both entry points before this, for what happens to the previous one.
+
+    xlsx: one tab per active row, same fields as Step2_picks ("export all fields from
+    Step2_picks"), computed by the exact same step2_table() so the two never drift apart.
+    A first tab, 'All', holds every row from every tab concatenated, tinted per strategy
+    like Step2_picks (SM: "make a tab called All ... place this as the first tab").
+
+    csv: exactly the All tab's rows -- one flat table, same headers, European format
+    (`sep=';', decimal=','`, this project's hard rule) -- then published to Drive, see
+    _publish_strategic_csv() above.
+
+    Written both by the bare development tick (assemble(), above) and by conductor.
+    cmd_production's lighter steps-0-2-only path -- purpose no longer distinguishes who
+    gets shipped here; every active row does, in both entry points."""
     headers, rows_by_label = step2_table(picks)
+    daynum = _picks_daynum(picks)
+    all_rows: list[list] = []
+
     wb = Workbook()
     wb.remove(wb.active)
 
@@ -817,6 +884,7 @@ def write_strategic_stocks(picks: dict[str, dict]) -> Path:
             for c, val in enumerate(row_vals, start=1):
                 ws_all.cell(r, c, val)
             r += 1
+            all_rows.append(row_vals)
         if r > block_top:
             blocks.append((block_top, r - 1))
     ws_all.freeze_panes = "A2"
@@ -835,12 +903,19 @@ def write_strategic_stocks(picks: dict[str, dict]) -> Path:
 
     display.harmonize_workbook(wb)
     REPORT_ROOT.mkdir(parents=True, exist_ok=True)
-    path = REPORT_ROOT / "StrategicStocks.xlsx"
-    wb.save(path)
-    return path
+    xlsx_path = REPORT_ROOT / f"StrategicStocks_{daynum}.xlsx"
+    wb.save(xlsx_path)
+
+    csv_path = REPORT_ROOT / f"StrategicStocks_{daynum}.csv"
+    pd.DataFrame(all_rows, columns=headers).to_csv(csv_path, sep=";", decimal=",", index=False)
+    print(f"    wrote {csv_path}", flush=True)
+
+    _publish_strategic_csv()
+
+    return xlsx_path, csv_path
 
 
-def assemble(board: "cb.BoardResult", settings: dict) -> tuple[Path, Path]:
+def assemble(board: "cb.BoardResult", settings: dict) -> tuple[Path, Path, Path]:
     """Build the combined development-tick workbook AND StrategicStocks.xlsx from the same
     steps-0-2 pass (2026-08-12 -- no more `purpose` column gating either one: every active
     row gets the full pipeline, backtest included, and ships its gross list too, in one
@@ -940,8 +1015,8 @@ def assemble(board: "cb.BoardResult", settings: dict) -> tuple[Path, Path]:
     path = REPORT_ROOT / f"compare_strategies_{date.today():%Y%m%d}.xlsx"
     wb.save(path)
 
-    print("\n=== Writing StrategicStocks.xlsx ===", flush=True)
+    print("\n=== Writing StrategicStocks ===", flush=True)
     archive_prior_strategic_stocks()
-    strategic_path = write_strategic_stocks(picks)
+    strategic_xlsx, strategic_csv = write_strategic_stocks(picks)
 
-    return path, strategic_path
+    return path, strategic_xlsx, strategic_csv
