@@ -6,7 +6,7 @@ DesignVersion2.md's input/output separation principle:
     Runs               every active row, verbatim, beside its status
     Step1_groups       elevated groups + member tickers, current daynum
     Step2_picks        the gross list, current daynum (what production also ships)
-    Step3_compare      transposed comparison: metric rows x one column per D-purpose row
+    Step3_compare      transposed comparison: metric rows x one column per active row
     Step4_walkforward  per distinct candidate set: pooled summary, per-candidate
                        comparison, fold table
     Charts             cumulative chain / IS-vs-OOS / avg-vs-median gain, per row
@@ -40,7 +40,7 @@ from shared import display
 from shared import expression as expr
 from shared import market
 from shared.config import MINAGGR_PERIODS, REPORT_ROOT
-from shared.data_loader import load_longi
+from shared.data_loader import load_longi, load_stamdata
 from shared.datacheck import DataUnavailable
 
 _BOLD = Font(bold=True)
@@ -55,8 +55,13 @@ _NOTE = Font(italic=True, size=9, color="595959")
 # Runs / Step1_groups / Step2_picks — current-daynum snapshot, every active row
 # ---------------------------------------------------------------------------
 
-def _current_picks(active_rows: list["cb.RunRow"]) -> dict[str, dict]:
-    """label -> {daynum, tickers, elevated, params, s0, error} for every active row."""
+def current_picks(active_rows: list["cb.RunRow"]) -> dict[str, dict]:
+    """label -> {daynum, tickers, elevated, params, s0, error} for every active row.
+
+    Public: shared with conductor.cmd_production, which needs the same steps 0-2
+    resolution (and error handling) as the development tick's Runs/Step1_groups/
+    Step2_picks sheets, just skipping steps 3/4 and writing a different output file
+    (StrategicStocks.xlsx, see step2_table/write_strategic_stocks below)."""
     out: dict[str, dict] = {}
     n = len(active_rows)
     for i, row in enumerate(active_rows, start=1):
@@ -238,30 +243,34 @@ def _fingerprint_attributes(picks: dict[str, dict]) -> list[str]:
     return sorted(n for n in names if n)
 
 
-def _write_step2_sheet(wb: Workbook, picks: dict[str, dict]) -> None:
-    """One row per pick. `dom_group` (column E, SM 2026-08-05 — "just to make sure" each
-    ticker's own dominant group is visible next to it, not just inferable from Step1_groups)
-    is the elevated group `production_pick()` actually drew that ticker from.
+# `priority` (C) is the 1-based position in the gross list — it was called `rank` until
+# 2026-08-11, which collided head-on with the `rank` ATTRIBUTE (the schema default for
+# priority_attribute), putting an ordinal and a longi_rank.csv value on one line under one
+# name. `name` (E, 2026-08-12) is Stamdata's company name, next to the ticker it names.
+_STEP2_HEADERS_BASE: list[str] = [
+    "label", "daynum", "priority", "ticker", "name", "dom_group", "dom/prio",
+]
 
-    Columns G onward are the pick's FINGERPRINT (SM 2026-08-11): one column per attribute
-    NAME, so a column always means exactly one thing. They are the board-wide union, filled
-    for every pick regardless of which row named the attribute — that is what lets an
-    rsi-priority row and a rank-priority row be read side by side. The predecessor
-    `priority_attribute`/`value` pair did the opposite: with a different priority attribute
-    per row, one header covered two incomparable quantities. Which attribute played which
-    role is stated once per line in `dom/prio` (column F); the other columns carry no role
-    marking, deliberately.
+
+def step2_table(picks: dict[str, dict]) -> tuple[list[str], dict[str, list[list]]]:
+    """(headers, {label: [row, row, ...]}) — the Step2_picks columns and values, one row
+    per pick, computed once. Shared by the Step2_picks sheet and StrategicStocks.xlsx
+    (2026-08-12, SM: "export all fields from Step2_picks" into production's own workbook)
+    so both read off one computation rather than two that can drift apart. A label with no
+    result (error, or an empty/cash pick) maps to an empty row list — callers decide how
+    that reads on their own sheet (Step2_picks prints a note line; StrategicStocks.xlsx
+    just leaves the tab's data area empty).
+
+    Columns F/G onward are the pick's FINGERPRINT (SM 2026-08-11): one column per attribute
+    NAME, so a column always means exactly one thing. They are the board-wide union across
+    every label in `picks`, filled for every pick regardless of which row named the
+    attribute — that is what lets an rsi-priority row and a rank-priority row be read side
+    by side. Which attribute played which role is stated once per line in `dom/prio`; the
+    other columns carry no role marking, deliberately.
     """
-    ws = wb.create_sheet("Step2_picks")
+    stamdata = load_stamdata()
     attrs = _fingerprint_attributes(picks)
-    # `priority` (C) is the 1-based position in the gross list — it was called `rank` until
-    # 2026-08-11, which collided head-on with the `rank` ATTRIBUTE (the schema default for
-    # priority_attribute), putting an ordinal and a longi_rank.csv value on one line under
-    # one name.
-    headers = ["label", "daynum", "priority", "ticker", "dom_group", "dom/prio"] + attrs
-    for c, h in enumerate(headers, start=1):
-        cell = ws.cell(1, c, h); cell.font, cell.fill = _BOLD, _HEAD
-    first_attr_col = 7
+    headers = list(_STEP2_HEADERS_BASE) + attrs
 
     frames: dict[str, pd.DataFrame] = {}
     for attr in attrs:
@@ -270,6 +279,57 @@ def _write_step2_sheet(wb: Workbook, picks: dict[str, dict]) -> None:
         except DataUnavailable as exc:
             print(f"[Step2_picks] attribute {attr!r} not readable, column left blank -- {exc}",
                   flush=True)
+
+    out: dict[str, list[list]] = {}
+    for label, info in picks.items():
+        if info.get("error") or not info.get("tickers"):
+            out[label] = []
+            continue
+        s0 = info["s0"]
+        tickers = info["tickers"]
+        col = str(info["daynum"])
+        roles = f"{s0.dominance_attribute}/{s0.priority_attribute}"
+
+        # one vectorized take per attribute per label, not one .at per cell
+        values: dict[str, pd.Series] = {}
+        for attr, df in frames.items():
+            if col not in df.columns:
+                continue
+            values[attr] = df.loc[df.index.intersection(tickers), col].dropna()
+
+        rows: list[list] = []
+        for i, ticker in enumerate(tickers, start=1):
+            name = (stamdata.at[ticker, "Name"]
+                   if ticker in stamdata.index and "Name" in stamdata.columns else "")
+            row = [label, info["daynum"], i, ticker, name, s0.groups.get(ticker), roles]
+            for attr in attrs:
+                series = values.get(attr)
+                row.append(float(series.at[ticker])
+                          if series is not None and ticker in series.index else None)
+            rows.append(row)
+        out[label] = rows
+    return headers, out
+
+
+def size_step2_columns(ws, headers: list[str]) -> None:
+    """Column widths for a Step2_table sheet — shared by Step2_picks and every
+    StrategicStocks.xlsx tab so the two read the same regardless of which wrote them."""
+    for c, w in zip("ABCDEFG", (24, 10, 8, 12, 24, 12, 18)):
+        ws.column_dimensions[c].width = w
+    first_attr_col = len(_STEP2_HEADERS_BASE) + 1
+    for k in range(len(headers) - len(_STEP2_HEADERS_BASE)):
+        ws.column_dimensions[get_column_letter(first_attr_col + k)].width = 11
+
+
+def _write_step2_sheet(wb: Workbook, picks: dict[str, dict]) -> None:
+    """One row per pick, via step2_table() above. `dom_group` (SM 2026-08-05 — "just to
+    make sure" each ticker's own dominant group is visible next to it, not just inferable
+    from Step1_groups) is the elevated group `production_pick()` actually drew that ticker
+    from."""
+    ws = wb.create_sheet("Step2_picks")
+    headers, rows_by_label = step2_table(picks)
+    for c, h in enumerate(headers, start=1):
+        cell = ws.cell(1, c, h); cell.font, cell.fill = _BOLD, _HEAD
 
     r = 2
     blocks: list[tuple[int, int]] = []
@@ -288,41 +348,18 @@ def _write_step2_sheet(wb: Workbook, picks: dict[str, dict]) -> None:
             r += 1
             blocks.append((block_top, r - 1))
             continue
-        s0 = info["s0"]
-        tickers = info["tickers"]
-        col = str(info["daynum"])
-        roles = f"{s0.dominance_attribute}/{s0.priority_attribute}"
-
-        # one vectorized take per attribute per label, not one .at per cell
-        values: dict[str, pd.Series] = {}
-        for attr, df in frames.items():
-            if col not in df.columns:
-                continue
-            values[attr] = df.loc[df.index.intersection(tickers), col].dropna()
-
-        for i, ticker in enumerate(tickers, start=1):
-            ws.cell(r, 1, label)
-            ws.cell(r, 2, info["daynum"])
-            ws.cell(r, 3, i)
-            ws.cell(r, 4, ticker)
-            ws.cell(r, 5, s0.groups.get(ticker))
-            ws.cell(r, 6, roles)
-            for k, attr in enumerate(attrs):
-                series = values.get(attr)
-                if series is not None and ticker in series.index:
-                    ws.cell(r, first_attr_col + k, float(series.at[ticker]))
+        for row_vals in rows_by_label[label]:
+            for c, val in enumerate(row_vals, start=1):
+                ws.cell(r, c, val)
             r += 1
         blocks.append((block_top, r - 1))
     ws.freeze_panes = "A2"
     display.band(ws, blocks, len(headers))
-    for c, w in zip("ABCDEF", (24, 10, 8, 12, 12, 18)):
-        ws.column_dimensions[c].width = w
-    for k in range(len(attrs)):
-        ws.column_dimensions[get_column_letter(first_attr_col + k)].width = 11
+    size_step2_columns(ws, headers)
 
 
 # ---------------------------------------------------------------------------
-# Step3_compare — transposed comparison, one column per D-purpose row
+# Step3_compare — transposed comparison, one column per active row
 # ---------------------------------------------------------------------------
 
 # The parameter block leads with the three settings that decide WHICH END of a ranking a
@@ -384,7 +421,7 @@ def _write_step3_sheet(wb: Workbook, backtests: dict[str, "bt.BacktestResult"],
 
 
 # ---------------------------------------------------------------------------
-# Step3a_stopout — cost/benefit sweep across stop levels, one block per D-purpose row
+# Step3a_stopout — cost/benefit sweep across stop levels, one block per active row
 # ---------------------------------------------------------------------------
 
 _STOPOUT_COLS: list[str] = [
@@ -518,7 +555,7 @@ def _write_step3a_sheet(wb: Workbook, stopout_data: dict[str, dict], settings: d
 
 
 # ---------------------------------------------------------------------------
-# Step4_walkforward — one summary block + fold table per D-purpose row
+# Step4_walkforward — one summary block + fold table per active row
 # ---------------------------------------------------------------------------
 
 _FOLD_COLS: list[str] = [
@@ -590,7 +627,7 @@ def _write_step4_sheet(wb: Workbook, walk_results: list["wf.GroupResult"]) -> No
 
 
 # ---------------------------------------------------------------------------
-# Charts — cumulative chain / IS-vs-OOS / avg-vs-median, per D-purpose row
+# Charts — cumulative chain / IS-vs-OOS / avg-vs-median, per active row
 # ---------------------------------------------------------------------------
 
 def _greedy_chain_lots(hops: list["bt.Hop"], period: int, threshold) -> list[tuple[int, float]]:
@@ -748,9 +785,67 @@ def _archive_prior() -> None:
         shutil.move(str(path), str(dest / path.name))
 
 
-def assemble(board: "cb.BoardResult", settings: dict) -> Path:
-    """Build the combined development-tick workbook. Every active row (P and D) gets a
-    Runs/Step1_groups/Step2_picks entry; only active D-purpose rows get Step3/Step4."""
+def archive_prior_strategic_stocks() -> None:
+    path = REPORT_ROOT / "StrategicStocks.xlsx"
+    if not path.exists():
+        return
+    dest = REPORT_ROOT / "_archive" / time.strftime("%Y%m%d_%H%M%S")
+    dest.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(path), str(dest / path.name))
+
+
+def write_strategic_stocks(picks: dict[str, dict]) -> Path:
+    """StrategicStocks.xlsx: one tab per active row, same fields as Step2_picks (2026-08-12
+    -- "export all fields from Step2_picks"), computed by the exact same step2_table() so
+    the two never drift apart. A first tab, 'All', holds every row from every tab
+    concatenated, tinted per strategy like Step2_picks (SM: "make a tab called All ...
+    place this as the first tab"). Written both by the bare development tick (assemble(),
+    above) and by conductor.cmd_production's lighter steps-0-2-only path -- purpose no
+    longer distinguishes who gets shipped here; every active row does, in both entry points."""
+    headers, rows_by_label = step2_table(picks)
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    ws_all = wb.create_sheet("All")
+    for c, h in enumerate(headers, start=1):
+        cell = ws_all.cell(1, c, h); cell.font, cell.fill = _BOLD, _HEAD
+    r = 2
+    blocks: list[tuple[int, int]] = []
+    for label in picks:
+        block_top = r
+        for row_vals in rows_by_label.get(label, []):
+            for c, val in enumerate(row_vals, start=1):
+                ws_all.cell(r, c, val)
+            r += 1
+        if r > block_top:
+            blocks.append((block_top, r - 1))
+    ws_all.freeze_panes = "A2"
+    display.band(ws_all, blocks, len(headers))
+    size_step2_columns(ws_all, headers)
+
+    for label in picks:
+        ws = wb.create_sheet(label[:31])   # Excel's 31-char sheet-name limit
+        for c, h in enumerate(headers, start=1):
+            cell = ws.cell(1, c, h); cell.font, cell.fill = _BOLD, _HEAD
+        for r2, row_vals in enumerate(rows_by_label.get(label, []), start=2):
+            for c, val in enumerate(row_vals, start=1):
+                ws.cell(r2, c, val)
+        ws.freeze_panes = "A2"
+        size_step2_columns(ws, headers)
+
+    display.harmonize_workbook(wb)
+    REPORT_ROOT.mkdir(parents=True, exist_ok=True)
+    path = REPORT_ROOT / "StrategicStocks.xlsx"
+    wb.save(path)
+    return path
+
+
+def assemble(board: "cb.BoardResult", settings: dict) -> tuple[Path, Path]:
+    """Build the combined development-tick workbook AND StrategicStocks.xlsx from the same
+    steps-0-2 pass (2026-08-12 -- no more `purpose` column gating either one: every active
+    row gets the full pipeline, backtest included, and ships its gross list too, in one
+    invocation. `--production` stays the separate fast path that skips Step 3/4 -- see
+    conductor.cmd_production)."""
     active_rows = [r for r in board.runs if r.active and r.ok]
     rejected_rows = [r for r in board.runs if r.active and not r.ok]
     if rejected_rows or board.board_errors:
@@ -762,15 +857,14 @@ def assemble(board: "cb.BoardResult", settings: dict) -> Path:
         for msg in board.board_errors:
             print(f"    BOARD: {msg}", flush=True)
     print(f"\n=== Steps 0-2: {len(active_rows)} active row(s) ===", flush=True)
-    picks = _current_picks(active_rows)
+    picks = current_picks(active_rows)
 
-    d_rows = {r.resolved["label"]: r.resolved for r in active_rows
-             if r.resolved.get("purpose") == "D"}
+    active_by_label = {r.resolved["label"]: r.resolved for r in active_rows}
 
-    print(f"\n=== Step 3: backtest ({len(d_rows)} row(s)) ===", flush=True)
+    print(f"\n=== Step 3: backtest ({len(active_by_label)} row(s)) ===", flush=True)
     backtests: dict[str, "bt.BacktestResult"] = {}
-    for i, (label, row_resolved) in enumerate(d_rows.items(), start=1):
-        print(f"[{i}/{len(d_rows)}] {label}: building hops ...", flush=True)
+    for i, (label, row_resolved) in enumerate(active_by_label.items(), start=1):
+        print(f"[{i}/{len(active_by_label)}] {label}: building hops ...", flush=True)
         backtests[label] = bt.run_backtest(row_resolved, settings, progress_label=label)
         m = backtests[label].metrics
         print(f"    chain_annual={m['chain_annual']:.2f}  chain_n={m['chain_n']}  "
@@ -786,17 +880,17 @@ def assemble(board: "cb.BoardResult", settings: dict) -> Path:
     # two rows naming the same candidates run the identical experiment and would otherwise
     # print the identical fold table twice under two headings. Group by the resolved set,
     # run each distinct one once, and list every owner on the block.
-    print(f"\n=== Step 4: walk-forward ({len(d_rows)} row(s)) ===", flush=True)
+    print(f"\n=== Step 4: walk-forward ({len(active_by_label)} row(s)) ===", flush=True)
     by_candidate_set: dict[frozenset[str], list[str]] = {}
     candidates_for: dict[frozenset[str], dict[str, dict]] = {}
-    for label, row_resolved in d_rows.items():
-        candidates = wf.resolve_candidates(label, row_resolved, d_rows)
+    for label, row_resolved in active_by_label.items():
+        candidates = wf.resolve_candidates(label, row_resolved, active_by_label)
         key = frozenset(candidates)
         by_candidate_set.setdefault(key, []).append(label)
         candidates_for[key] = candidates
-    if len(by_candidate_set) < len(d_rows):
-        print(f"    {len(d_rows)} row(s) -> {len(by_candidate_set)} distinct candidate set(s); "
-              f"rows sharing a set share one test", flush=True)
+    if len(by_candidate_set) < len(active_by_label):
+        print(f"    {len(active_by_label)} row(s) -> {len(by_candidate_set)} distinct "
+              f"candidate set(s); rows sharing a set share one test", flush=True)
 
     hops_cache = {label: (r.hops, r.params) for label, r in backtests.items()}
     walk_results: list["wf.GroupResult"] = []
@@ -845,4 +939,9 @@ def assemble(board: "cb.BoardResult", settings: dict) -> Path:
     REPORT_ROOT.mkdir(parents=True, exist_ok=True)
     path = REPORT_ROOT / f"compare_strategies_{date.today():%Y%m%d}.xlsx"
     wb.save(path)
-    return path
+
+    print("\n=== Writing StrategicStocks.xlsx ===", flush=True)
+    archive_prior_strategic_stocks()
+    strategic_path = write_strategic_stocks(picks)
+
+    return path, strategic_path

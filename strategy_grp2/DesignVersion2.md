@@ -88,13 +88,13 @@ the schema no longer has is reported, not silently dropped.
 
 | step | columns | notes |
 |---|---|---|
-| — | `active`, `purpose`, `label`, `note` | `purpose`: `P` (production, steps 0-2) or `D` (development, steps 0-4) |
+| — | `active`, `label`, `note` | No `purpose` column (removed 2026-08-12) — every active row gets the full pipeline and ships to StrategicStocks.xlsx; see the 2026-08-12 refinement below |
 | 0 | `group_expression` | e.g. `Stamdata.GICS`, `#ALL`, `Stamdata.Zone .and. Stamdata.GICS`, `Stamdata.Homeland='US'` |
 | 1 | `level`, `persistence_window`, `persistence_frac`, `dominance_attribute`, `dominance_direction`, `dominance_decile`, `dom_count_min`, `tickers_per_group` | `dominance_direction` is spelled `small_wins`/`big_wins`, not a bare boolean. `dom_count_frac` is NOT a board column — see Refinements below |
 | 2 | `post_filter`, `priority_attribute`, `priority_direction`, `from_rank`, `focusset_size` | `from_rank`: `1` = best n, `-1` = worst n, `"mid"` or a fraction `0<f<1` = pool-relative window (`mid` avoids both ends), an integer `k>=2` = fixed offset |
 | 3 | `period`, `no_go_gspc_rsi`, `informational_attributes` | `period` must be one of the seven-pack: 1/5/10/20/50/100/200 |
 | 3a | `stop_loss` | Exit level, e.g. `-10`. Requires `period` in `{20, 50}` — see the 2026-08-05 refinement below |
-| 4 | `wf_group` | comma-separated `label`s to compare against in the walk-forward test; blank = every other active `D` row sharing this row's `period` |
+| 4 | `wf_group` | comma-separated `label`s to compare against in the walk-forward test; blank = every other active row sharing this row's `period` |
 
 ### Running it
 
@@ -102,8 +102,9 @@ the schema no longer has is reported, not silently dropped.
 python conductor.py --make-board   # write/refresh the board from the schema
 python conductor.py --dry-run      # validate every row; reads no data, writes nothing
 python conductor.py --check        # step 0 only: universe size, group count, resolved attributes
-python conductor.py --production   # steps 0-2 for active P rows -> report/StrategicStocks.xlsx
-python conductor.py                # steps 0-4 for active rows -> report/compare_strategies_<date>.xlsx
+python conductor.py --production   # FAST path: steps 0-2 for active rows -> report/StrategicStocks.xlsx
+python conductor.py                # FULL tick: steps 0-4 for active rows -> BOTH
+                                    #   report/compare_strategies_<date>.xlsx AND report/StrategicStocks.xlsx
 ```
 
 **Every one of these stops if `control_board.xlsx` is still open in Excel** (exit 2), and
@@ -119,17 +120,21 @@ a one-screen table of every required file's daynum, age and status.
 
 ### Where output lands
 
-* **`report/StrategicStocks.xlsx`** — one sheet per active `P` row: today's gross list,
-  rank-ordered, with the priority attribute's value. The daily-advice artifact for users with no
-  interest in the mechanics.
-* **`report/compare_strategies_<date>.xlsx`** — one workbook per development tick, seven sheets:
-  `Runs` (every active row verbatim + status/universe/vintage), `Step1_groups` (elevated groups +
-  member tickers), `Step2_picks` (the gross list — same tickers as `StrategicStocks.xlsx`, plus
-  each pick's attribute fingerprint; see the 2026-08-11 refinement below), `Step3_compare`
-  (transposed metrics, one column per active `D` row, best `chain_annual` leftmost),
-  `Step3a_stopout` (cost/benefit sweep across stop levels, one block per eligible `D` row — see
-  the 2026-08-05 refinement below), `Step4_walkforward` (one block per *candidate set*: summary +
-  per-candidate table + fold table — see the 2026-08-04 refinement below), `Charts`.
+* **`report/StrategicStocks.xlsx`** — written by BOTH `--production` and the bare tick (2026-08-12
+  — no `purpose` column distinguishes who gets shipped here anymore). A first tab, `All`, holds
+  every active row's picks concatenated (tinted per strategy); then one tab per row, same fields
+  as `Step2_picks` (label/daynum/priority/ticker/name/dom_group/dom-prio + attribute fingerprint)
+  — see the 2026-08-12 refinement below. The daily-advice artifact for users with no interest in
+  the mechanics; `--production` gets it to you fast (steps 0-2 only), the bare tick gets it to you
+  alongside the full backtest.
+* **`report/compare_strategies_<date>.xlsx`** — one workbook per development tick (bare `python
+  conductor.py` only), seven sheets: `Runs` (every active row verbatim + status/universe/vintage),
+  `Step1_groups` (elevated groups + member tickers), `Step2_picks` (the gross list — same tickers
+  as `StrategicStocks.xlsx`, plus each pick's attribute fingerprint; see the 2026-08-11 refinement
+  below), `Step3_compare` (transposed metrics, one column per active row, best `chain_annual`
+  leftmost), `Step3a_stopout` (cost/benefit sweep across stop levels, one block per eligible row —
+  see the 2026-08-05 refinement below), `Step4_walkforward` (one block per *candidate set*:
+  summary + per-candidate table + fold table — see the 2026-08-04 refinement below), `Charts`.
 * **Not yet built**: standalone per-run/per-fold files under `report/backtesting/` and
   `report/walkforward/` (the folders exist; `outputboard.py` currently only writes the one
   combined workbook above) — see Status.
@@ -704,7 +709,8 @@ afterward — `wf_group="fr_best,fr_mid,fr_worst"` kept on the three template ro
 default, since it demonstrates exactly the comparison the middle-window design was for.
 
 **Per-run detail workbook + progress output done, 2026-08-03.** `step3_report.py` writes
-`report/backtesting/run<N>_<date>.xlsx` — one file per active D-purpose row, N = tick order,
+`report/backtesting/run<N>_<date>.xlsx` — one file per active row (all of them, since the
+2026-08-12 refinement removed `purpose`), N = tick order,
 an "Operational" sheet adapted from strategy_grp v1's (same ticker/avg_gain/mkt_gain/alpha/beta
 row shape) to v2's fused `Hop` timeline: row 1 is the row's `label` (not v1's `No_go_GSPC_rsi`),
 row 2's `A2` is blank (v1's editable-threshold formula dropped — not read by anything), row 3 is
@@ -757,7 +763,77 @@ fold 4, despite winning comfortably on the full-history sweep and in the other t
 folds — direct, concrete evidence that a full-history "best" stop level is not
 automatically fold-stable, which is exactly the question this table exists to answer.
 
+## Refinement 2026-08-12 — `purpose` column removed; StrategicStocks.xlsx gets Step2_picks' full fingerprint; duplicate active labels auto-disambiguate
 
+**Same-day arc, two intermediate states superseded within the day — recorded here for the
+reasoning trail, but only the final state (below the timeline) is current:**
+1. `cmd_production` was found to not filter by `purpose` at all — ran every active row (`P`
+   or `D`) into `StrategicStocks.xlsx`.
+2. Fixed to filter `purpose == "P"` — then found this REVERSED an explicit 2026-08-05 SM
+   decision (production should ship every active row regardless of purpose, because a
+   D-purpose row already does P's steps 0-2 as a subset of its own steps 0-4).
+3. Reconciled by adding a third `purpose` value, `PD`, so a row could opt into both without
+   duplicating itself (SM: *"why can't we have PD ... instead of having to duplicate whole
+   lines"*).
+4. SM, on reviewing PD's actual semantics: *"I expected PD to do both: A full D run plus
+   ejecting the production xlsx... in a ramp up phase where you need Step3_compare as an
+   extra control."* That's not two purposes on one row — it's every row, always, doing both,
+   with `--production` as the deliberate fast-path exception. SM: *"discard the purpose
+   column in control-board all together and make the production.xlsx on every run except
+   when --production is in the call"* (i.e. --production stays special: steps 0-2 only, no
+   backtest, for a quick daily list without the wait).
+
+**Final state: no `purpose` column.** `param_spec.py` no longer defines it. Every active row
+gets the full pipeline on a bare tick — Step 3/4 backtest/walk-forward (previously gated to
+`purpose=="D"` rows in `outputboard.assemble`'s `d_rows`, now just `active_by_label`, every
+active row) — AND ships to `StrategicStocks.xlsx` in the SAME invocation (`outputboard.
+assemble()` now returns `(compare_path, strategic_path)` and writes both). `--production`
+is the one deliberate exception: `conductor.cmd_production` is unchanged in shape from
+before this whole arc — steps 0-2 only, `StrategicStocks.xlsx` only, no purpose filter
+because there's no purpose column to filter on. `preflight`'s minaggr-file requirement for
+the stop-sweep setting (previously gated to D-purpose rows) now applies whenever the sweep
+is on, unconditionally — every active row gets Step 3a now, not a purpose-selected subset.
+
+**`StrategicStocks.xlsx` now carries Step2_picks' full field set, not a 4-column summary**
+(SM: "export all fields from Step2_picks"). `outputboard.step2_table()` is the one place
+that computes a pick's row (label/daynum/priority/ticker/name/dom_group/dom-prio + the
+board-wide attribute-fingerprint union); `outputboard.write_strategic_stocks()` (moved here
+from conductor.py so both entry points — the bare tick and `--production` — share one
+writer) uses the same table, so `Step2_picks` and `StrategicStocks.xlsx` can't drift apart.
+`name` (Stamdata's company name, next to `ticker`) is new on both sheets. A first tab,
+**`All`**, concatenates every row's picks with the same per-strategy tinting `Step2_picks`
+uses (SM: "make a tab called All ... place this as the first tab").
+
+**Duplicate active labels now auto-disambiguate instead of silently overwriting.** Once
+`purpose` stopped separating rows into two independent dicts, the board's actual duplicate
+labels (leftover P/D pairs, same params) became live: `label` is a dict key in `current_
+picks`/`step2_table`/walk-forward candidate sets throughout, so two active rows sharing a
+label meant one's results silently vanished, overwritten by the other's — no error, just a
+quietly-incomplete report. SM deleted the redundant rows by hand, then, rightly not trusting
+that this can't recur: *"non-unique labels can cause overwriting but it is easy to forget
+manually creating unique labels."* `control_board._dedupe_active_labels()` now renames any
+active row's label that collides with an earlier active row's — `'X'` -> `'X (2)'`, `'X
+(3)'`, ... in row order — in memory only (`control_board.xlsx` itself is never written by a
+read), and reports what it renamed as a board-level message (visible on `Runs`' banner and
+in `--dry-run`'s output) so an accidental duplicate is still surfaced, just never silently
+destructive.
+
+**Also fixed the same day, found while investigating this arc:** `control_board.
+write_board()`'s docstring always claimed unknown columns are "reported, not deleted" when
+the schema changes, but `_write_runs_sheet` only ever reported the name and threw the
+values away. Running `--make-board` mid-session cost SM two manually-tracked columns
+(`avgGain`/`avgGain2`, confirmed via git history to hold real per-row values) — SM chose not
+to attempt recovery. Fixed properly: unknown columns are now carried through unchanged as
+trailing, grey-tinted columns on regeneration, matching what the docstring always promised.
+
+**Verified live (daynum 2210, 2026-08-12):** after SM's manual cleanup, the board's 8 active
+rows (all `GICS`, unique labels) ran cleanly through `--dry-run`, `--production` (8/8 picked,
+`StrategicStocks.xlsx` written), and the bare tick (full Step 3/4 for all 8, `Step4_
+walkforward` grouped them into 1 shared candidate set, `Step3a_stopout` scored all 8 —
+previously only D-purpose rows would have reached either) — both `compare_strategies_
+20260812.xlsx` and `StrategicStocks.xlsx` written from the one run. The label-dedupe helper
+verified separately against a synthetic collision (`'X'` x3, one inactive) — only active
+collisions renamed, in row order, inactive `'X'` left untouched.
 
 
 

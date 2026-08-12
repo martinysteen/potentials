@@ -9,7 +9,7 @@ See DesignVersion2.md for the process-step write-up this mirrors.
 Column groups, one row per parameter (`step` is which process step reads it; `None` = a
 meta column, not one of the four steps):
 
-    meta   -> active, purpose, label, note
+    meta   -> active, label, note
     step 0 -> group_expression
     step 1 -> level, persistence_window, persistence_frac, dominance_attribute,
               dominance_direction, dominance_decile, dom_count_min
@@ -174,8 +174,6 @@ PARAMS: list[ParamDef] = [
     # --- meta -----------------------------------------------------------------
     ParamDef("active", None, "bool", default=False,
              help="x / blank — run this row this tick."),
-    ParamDef("purpose", None, "choice", default="D", choices=("P", "D"),
-             help="P = production (steps 0-2 only), D = development (steps 0-4)."),
     ParamDef("label", None, "str", default="",
              help="Sheet/column header on the output board. Blank = auto-derived."),
     ParamDef("note", None, "str", default="",
@@ -244,7 +242,7 @@ PARAMS: list[ParamDef] = [
     # --- step 4: forward-walk ----------------------------------------------------
     ParamDef("wf_group", 4, "str", default="",
              help="Candidate pool (by label, comma-separated) for selection-skill "
-                  "scoring. Blank = every other active D-purpose row."),
+                  "scoring. Blank = every other active row."),
 ]
 
 PARAMS_BY_NAME: dict[str, ParamDef] = {p.name: p for p in PARAMS}
@@ -295,7 +293,8 @@ SETTINGS: list[SettingDef] = [
     SettingDef("archive_on_run", "bool", True,
                "Move prior dated output workbooks to _archive/ once new output exists."),
     SettingDef("production_strategy_count", "int", 3,
-               "How many P-purpose rows' gross lists ship in StrategicStocks.xlsx."),
+               "Not currently enforced by the code -- every active row's gross list ships "
+               "in StrategicStocks.xlsx (bare tick and --production alike)."),
     SettingDef("stop_sweep", "str", "-5,-7.5,-10,-15,-20",
                "Comma-separated stop_loss levels Step3a_stopout re-scores each D row at "
                "(period in {20,50} only), alongside its own board stop_loss. Blank = no "

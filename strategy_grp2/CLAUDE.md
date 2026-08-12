@@ -48,8 +48,8 @@ cd ~/potentials/strategy_grp2/app/code
 
 python conductor.py --make-board   # write/refresh the control board from the schema
 python conductor.py --dry-run      # validate every board row; touches no data
-python conductor.py                # development tick (steps 0-4)
-python conductor.py --production   # production tick (steps 0-2) -> StrategicStocks.xlsx
+python conductor.py                # development tick (steps 0-4) -> compare_strategies_<date>.xlsx AND StrategicStocks.xlsx
+python conductor.py --production   # fast path (steps 0-2 only) -> StrategicStocks.xlsx
 ```
 
 ## Status

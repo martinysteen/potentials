@@ -1,6 +1,6 @@
 """
 Per-row operational detail: `report/backtesting/run<N>_<date>.xlsx`, one file per active
-D-purpose row — the day-by-day hop history underneath Step3_compare's single-column summary.
+row — the day-by-day hop history underneath Step3_compare's single-column summary.
 Adapted from strategy_grp v1's shared/report.py Operational sheet to v2's fused hop timeline
 (step3_backtest.Hop) and board-driven informational_attributes. Was on DesignVersion2.md's
 deferred list; built 2026-08-03 per SM's spec.
@@ -218,7 +218,7 @@ def _clear_stale(folder: Path) -> None:
 
 
 def write_run_reports(backtests: dict[str, "bt.BacktestResult"]) -> dict[str, Path]:
-    """One report/backtesting/run<N>_<date>.xlsx per active D-purpose row, N = tick order.
+    """One report/backtesting/run<N>_<date>.xlsx per active row, N = tick order.
     Returns label -> path, the same mapping outputboard needs to put a run reference on
     Step3_compare (SM, 2026-08-11 — "a lot of clicking to find the runX file for a strategy
     of interest")."""

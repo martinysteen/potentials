@@ -330,6 +330,30 @@ def _resolve_settings(raw: dict[str, object]) -> tuple[dict[str, object], list[s
     return resolved, errors
 
 
+def _dedupe_active_labels(runs: list["RunRow"]) -> list[str]:
+    """Append ' (2)', ' (3)', ... to any active row's label that collides with an earlier
+    active row's -- label is used as a dict key everywhere downstream (current_picks,
+    Step2_picks, walk-forward candidate sets), so an unresolved collision silently drops
+    one row's results instead of erroring (SM, 2026-08-12, after discovering exactly that:
+    "non-unique labels can cause overwriting but it is easy to forget manually creating
+    unique labels"). In-memory only -- `row.resolved["label"]` changes for THIS run's
+    dict keys and report sheets; control_board.xlsx itself is never touched here (reading
+    the board never writes to it). First active occurrence keeps its plain label; later
+    ones get numbered, in row order."""
+    seen: dict[str, int] = {}
+    renamed: list[str] = []
+    for row in runs:
+        if not row.active:
+            continue
+        label = row.resolved.get("label")
+        seen[label] = seen.get(label, 0) + 1
+        if seen[label] > 1:
+            new_label = f"{label} ({seen[label]})"
+            row.resolved["label"] = new_label
+            renamed.append(f"row {row.row_num}: '{label}' -> '{new_label}'")
+    return renamed
+
+
 def read_board(path: Path = CONTROL_BOARD_PATH) -> BoardResult:
     if not path.exists():
         raise FileNotFoundError(
@@ -351,11 +375,13 @@ def read_board(path: Path = CONTROL_BOARD_PATH) -> BoardResult:
     else:
         settings = {s.name: s.default for s in spec.SETTINGS}
 
-    labels = [r.resolved.get("label") for r in runs if r.active]
-    dupes = {lbl for lbl in labels if labels.count(lbl) > 1}
-    if dupes:
+    renamed = _dedupe_active_labels(runs)
+    if renamed:
         board_errors.append(
-            f"duplicate active labels (each run's label must be unique): {sorted(dupes)}"
+            "duplicate active labels auto-renamed to guarantee uniqueness -- label is a "
+            "dict key everywhere downstream (current_picks, Step2_picks, walk-forward "
+            "candidate sets), so an unresolved collision would silently drop one row's "
+            "results rather than error: " + "; ".join(renamed)
         )
 
     return BoardResult(runs=runs, settings=settings, board_errors=board_errors)
@@ -384,25 +410,43 @@ def _existing_settings(path: Path) -> dict[str, object]:
     return _read_settings_sheet(wb["Settings"])
 
 
+_UNKNOWN_FILL = PatternFill("solid", fgColor="F2F2F2")
+
+
 def _write_runs_sheet(wb: Workbook, preserved_rows: list[dict[str, object]]) -> None:
+    """Regenerate the Runs header + preserved row data. A column outside the current
+    schema (SM's own scratch notes, e.g. `avgGain`) is carried through UNCHANGED as a
+    trailing column, never discarded -- the docstring on write_board() has always promised
+    this, but until 2026-08-12 the implementation only reported the name and threw the
+    values away, which cost SM two such columns' data on a live board. Fixed now: unknown
+    columns get appended after the schema's own, in first-seen order, tinted grey to mark
+    them as not board-validated."""
     ws = wb.create_sheet("Runs")
-    for col, name in enumerate(spec.RUNS_COLUMNS, start=1):
+    extra: list[str] = []
+    for old_row in preserved_rows:
+        for name in old_row:
+            if name and name not in spec.PARAMS_BY_NAME and name not in extra:
+                extra.append(name)
+    headers = list(spec.RUNS_COLUMNS) + extra
+
+    for col, name in enumerate(headers, start=1):
         cell = ws.cell(row=1, column=col, value=name)
-        pdef = spec.PARAMS_BY_NAME[name]
-        cell.fill = _META_FILL if pdef.step is None else _STEP_FILLS.get(pdef.step, _HEADER_FILL)
+        pdef = spec.PARAMS_BY_NAME.get(name)
+        if pdef is None:
+            cell.fill = _UNKNOWN_FILL
+        else:
+            cell.fill = _META_FILL if pdef.step is None else _STEP_FILLS.get(pdef.step, _HEADER_FILL)
         cell.font = Font(bold=True)
     ws.freeze_panes = "A2"
 
-    dropped: set[str] = set()
     for r, old_row in enumerate(preserved_rows, start=2):
-        for c, name in enumerate(spec.RUNS_COLUMNS, start=1):
+        for c, name in enumerate(headers, start=1):
             if name in old_row:
                 ws.cell(row=r, column=c, value=old_row[name])
-        dropped |= (set(old_row) - set(spec.RUNS_COLUMNS)) - {None}
-    if dropped:
-        print(f"[control_board] columns no longer in the schema, dropped: {sorted(dropped)}")
+    if extra:
+        print(f"[control_board] columns not in the schema, carried through unchanged: {sorted(extra)}")
 
-    for col in range(1, len(spec.RUNS_COLUMNS) + 1):
+    for col in range(1, len(headers) + 1):
         ws.column_dimensions[get_column_letter(col)].width = 18
 
 

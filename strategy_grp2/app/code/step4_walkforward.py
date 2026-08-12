@@ -113,15 +113,15 @@ class GroupResult:
         return self.owners[0]
 
 
-def resolve_candidates(owner_label: str, owner_row: dict, d_rows: dict[str, dict]) -> dict[str, dict]:
-    """Candidate label -> resolved params for one row's walk-forward test. `d_rows` is
-    every active, cleanly-parsing D-purpose row's resolved dict, keyed by label."""
+def resolve_candidates(owner_label: str, owner_row: dict, active_rows: dict[str, dict]) -> dict[str, dict]:
+    """Candidate label -> resolved params for one row's walk-forward test. `active_rows` is
+    every active, cleanly-parsing row's resolved dict, keyed by label."""
     wf_group_raw = str(owner_row.get("wf_group") or "").strip()
     if wf_group_raw:
         names = [n.strip() for n in wf_group_raw.split(",") if n.strip()]
-        candidates = {n: d_rows[n] for n in names if n in d_rows}
+        candidates = {n: active_rows[n] for n in names if n in active_rows}
     else:
-        candidates = dict(d_rows)
+        candidates = dict(active_rows)
     candidates[owner_label] = owner_row       # the owner is always a candidate for itself
     return candidates
 

@@ -1,38 +1,28 @@
 """
 The pipeline driver — longi.py's role for this project. Reads the control board, and for
-every active row runs steps 0-2 (purpose=P) or 0-4 (purpose=D), then hands the results to
-outputboard.py. See DesignVersion2.md for the full step write-up.
+every active row runs steps 0-4, then hands the results to outputboard.py. See
+DesignVersion2.md for the full step write-up.
 
     python conductor.py --make-board   # write/refresh the board from param_spec.py
     python conductor.py --dry-run      # parse + validate every row; touches no data
     python conductor.py --check        # step 0 only: universe/group counts, data guard
-    python conductor.py                # development tick: steps 0-4 for active rows -> compare_strategies_<date>.xlsx
-    python conductor.py --production   # steps 0-2 for EVERY active row (P and D) -> StrategicStocks.xlsx
+    python conductor.py                # development tick: steps 0-4 for active rows ->
+                                        #   compare_strategies_<date>.xlsx AND StrategicStocks.xlsx
+    python conductor.py --production   # fast path: steps 0-2 only -> StrategicStocks.xlsx
 """
 
 from __future__ import annotations
 
-import shutil
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
 
 import control_board
 import outputboard
 import preflight
 import step0_data
-import step2_focusset
-from shared import display
 from shared import expression as expr
-from shared.config import REPORT_ROOT
-from shared.data_loader import daynum_to_date, load_stamdata
-
-_HEADER_FILL = PatternFill("solid", fgColor="BDD7EE")
 
 
 def _report_board_freshness() -> None:
@@ -62,7 +52,6 @@ def cmd_dry_run() -> int:
         label = row.resolved.get("label", "?")
         if row.ok:
             print(f"[{tag}] row {row.row_num:>3}  {label:<28} OK  "
-                  f"purpose={row.resolved.get('purpose')} "
                   f"level={row.resolved.get('level')} "
                   f"group={row.resolved.get('group_expression')!r}")
         else:
@@ -119,63 +108,15 @@ def cmd_check() -> int:
 
 
 # ---------------------------------------------------------------------------
-# Production tick — `--production`, steps 0-2 -> StrategicStocks.xlsx
+# Production tick — `--production`, the fast path: steps 0-2 only -> StrategicStocks.xlsx
 # ---------------------------------------------------------------------------
 
-def _production_pick(row: "control_board.RunRow"):
-    """(label, daynum, tickers, params, s0) for one active row's current gross list."""
-    daynum, tickers, _elevated, params, s0 = step2_focusset.current_pick(row.resolved)
-    return row.resolved.get("label"), daynum, tickers, params, s0
-
-
-def _archive_prior_strategic_stocks() -> None:
-    path = REPORT_ROOT / "StrategicStocks.xlsx"
-    if not path.exists():
-        return
-    dest = REPORT_ROOT / "_archive" / time.strftime("%Y%m%d_%H%M%S")
-    dest.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(path), str(dest / path.name))
-
-
-def _write_strategic_stocks(picks: list[tuple]) -> Path:
-    stamdata = load_stamdata()
-    wb = Workbook()
-    wb.remove(wb.active)
-    for label, daynum, tickers, params, _s0 in picks:
-        ws = wb.create_sheet(label[:31])   # Excel's 31-char sheet-name limit
-        ws.cell(row=1, column=1, value=f"As of daynum {daynum} ({daynum_to_date(daynum)})")
-        headers = ["Rank", "Ticker", "Name", params["priority_attribute"]]
-        for c, h in enumerate(headers, start=1):
-            cell = ws.cell(row=2, column=c, value=h)
-            cell.font = Font(bold=True)
-            cell.fill = _HEADER_FILL
-        prio_df = None
-        try:
-            from shared.data_loader import load_longi
-            prio_df = load_longi(f"longi_{params['priority_attribute']}.csv")
-        except Exception:                                          # noqa: BLE001
-            prio_df = None
-        for i, ticker in enumerate(tickers, start=1):
-            r = 2 + i
-            ws.cell(row=r, column=1, value=i)
-            ws.cell(row=r, column=2, value=ticker)
-            name = stamdata.at[ticker, "Name"] if ticker in stamdata.index and "Name" in stamdata.columns else ""
-            ws.cell(row=r, column=3, value=name)
-            val = None
-            if prio_df is not None and ticker in prio_df.index and str(daynum) in prio_df.columns:
-                val = prio_df.at[ticker, str(daynum)]
-            ws.cell(row=r, column=4, value=val)
-        for col, width in zip("ABCD", (6, 10, 32, 14)):
-            ws.column_dimensions[col].width = width
-
-    display.harmonize_workbook(wb)
-    REPORT_ROOT.mkdir(parents=True, exist_ok=True)
-    path = REPORT_ROOT / "StrategicStocks.xlsx"
-    wb.save(path)
-    return path
-
-
 def cmd_production() -> int:
+    """No `purpose` column gating anymore (2026-08-12) — every active row ships. This is
+    the FAST path: steps 0-2 only, skipping Step 3/4's backtest cost, for when you just
+    want today's gross list quickly. The bare development tick (cmd_develop) does the same
+    steps 0-2 work AND the full backtest AND writes this same file — use --production when
+    you don't want to wait for that."""
     board = control_board.read_board()
     active = [r for r in board.runs if r.active and r.ok]
     if not active:
@@ -184,29 +125,15 @@ def cmd_production() -> int:
 
     preflight.ensure_data(board.runs, settings=board.settings)
 
-    picks = []
-    bad = 0
-    for row in active:
-        label = row.resolved.get("label")
-        try:
-            result = _production_pick(row)
-        except (expr.ExpressionError, ValueError) as exc:
-            print(f"[{label}] FAILED: {exc}")
-            bad += 1
-            continue
-        _, daynum, tickers, params, _s0 = result
-        if not tickers:
-            print(f"[{label}] no pick at daynum {daynum} (cash hop)")
-        else:
-            print(f"[{label}] daynum {daynum}: {tickers}")
-        picks.append(result)
+    picks = outputboard.current_picks(active)
+    bad = sum(1 for info in picks.values() if info.get("error"))
 
-    if not picks:
+    if bad == len(picks):
         print("\nNo row produced a result — StrategicStocks.xlsx not written.")
         return 1
 
-    _archive_prior_strategic_stocks()
-    path = _write_strategic_stocks(picks)
+    outputboard.archive_prior_strategic_stocks()
+    path = outputboard.write_strategic_stocks(picks)
     print(f"\nWrote {path}  ({len(picks)} row(s), {bad} failed)")
     return 1 if bad else 0
 
@@ -225,8 +152,9 @@ def cmd_develop() -> int:
         return 1 if rejected or board.board_errors else 0
 
     preflight.ensure_data(board.runs, settings=board.settings)
-    path = outputboard.assemble(board, board.settings)
-    print(f"Wrote {path}")
+    compare_path, strategic_path = outputboard.assemble(board, board.settings)
+    print(f"Wrote {compare_path}")
+    print(f"Wrote {strategic_path}")
     return 0
 
 

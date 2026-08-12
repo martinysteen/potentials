@@ -76,10 +76,10 @@ def required_files_for_rows(rows: list["cb.RunRow"],
         if r.get("post_filter"):
             for t in expr.parse_post_filter(r["post_filter"]).terms:
                 required.add(_longi(t.column))
-        # Step 3a: a row's own stop_loss always needs the minaggr file; a D row with no
+        # Step 3a: a row's own stop_loss always needs the minaggr file; a row with no
         # stop_loss set still gets one when the board-wide sweep is on (outputboard runs
-        # it for every eligible D row, not just ones already configured with a stop).
-        wants_minaggr = r.get("stop_loss") or (sweep_on and r.get("purpose") == "D")
+        # every active row through Step 3 now, not just ones already configured with a stop).
+        wants_minaggr = r.get("stop_loss") or sweep_on
         if period in config.MINAGGR_PERIODS and wants_minaggr:
             required.add(f"Longi/{config.minaggr_file(period)}")
 
