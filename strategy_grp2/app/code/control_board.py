@@ -8,7 +8,9 @@ columns/legend rows the schema has grown since the file was last written; existi
 values are preserved.
 
 Three sheets:
-    Runs     one row per run; `active` is the tick (see param_spec.PARAMS for columns)
+    Runs     one row per run; `D`/`P` are the two independent ticks (2026-08-13: replaced
+             a single `active` column — see param_spec.PARAMS for columns, and
+             DesignVersion2.md's 2026-08-13 correction for why)
     Settings global knobs, not per-run (see param_spec.SETTINGS)
     Legend   generated from param_spec — never hand-edited
 """
@@ -207,8 +209,21 @@ class RunRow:
         return not self.errors
 
     @property
+    def d_active(self) -> bool:
+        return bool(self.resolved.get("D", False))
+
+    @property
+    def p_active(self) -> bool:
+        return bool(self.resolved.get("P", False))
+
+    @property
     def active(self) -> bool:
-        return bool(self.resolved.get("active", False))
+        """In play at ALL, in either mode -- for validation-only concerns that don't care
+        which entry point runs (label-dedupe, preflight's data snapshot, --dry-run/--check
+        diagnostics). Never use this to decide which rows a TICK actually runs -- that's
+        d_active for the bare tick, p_active for --production, and they are deliberately
+        independent (2026-08-13 correction, DesignVersion2.md)."""
+        return self.d_active or self.p_active
 
 
 _GROUP_TOKEN_RE = re.compile(r"Stamdata\.(\w+)")
@@ -422,6 +437,23 @@ def _write_runs_sheet(wb: Workbook, preserved_rows: list[dict[str, object]]) -> 
     columns get appended after the schema's own, in first-seen order, tinted grey to mark
     them as not board-validated."""
     ws = wb.create_sheet("Runs")
+
+    # One-time 2026-08-13 migration: `active` split into independent `D`/`P` columns (see
+    # DesignVersion2.md's 2026-08-13 correction). A legacy `active` mark becomes `D` only,
+    # NEVER `P` -- the whole point of the split is that a row mid-development must not
+    # silently start shipping to production the next time --make-board regenerates the
+    # board. The original `active` cell is left in place too (picked up as an "extra"
+    # column below), so the migration is visible, not hidden.
+    migrated = 0
+    for old_row in preserved_rows:
+        if "D" not in old_row and old_row.get("active"):
+            old_row["D"] = old_row["active"]
+            migrated += 1
+    if migrated:
+        print(f"[control_board] {migrated} row(s): legacy `active` mark migrated to `D` "
+              f"(2026-08-13 P/D split) -- `P` left BLANK; mark it explicitly on any row "
+              f"that should also ship to production.")
+
     extra: list[str] = []
     for old_row in preserved_rows:
         for name in old_row:

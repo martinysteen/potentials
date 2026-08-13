@@ -9,7 +9,11 @@ See DesignVersion2.md for the process-step write-up this mirrors.
 Column groups, one row per parameter (`step` is which process step reads it; `None` = a
 meta column, not one of the four steps):
 
-    meta   -> active, label, note
+    meta   -> D, P, label, note
+             (D and P are independent booleans, not one column -- see the 2026-08-13
+             correction in DesignVersion2.md. D gates a bare development tick, P gates
+             `--production`; a row mid-development is invisible to a cron-fired production
+             run unless P is marked too.)
     step 0 -> group_expression
     step 1 -> level, persistence_window, persistence_frac, dominance_attribute,
               dominance_direction, dominance_decile, dom_count_min
@@ -172,8 +176,18 @@ class ParamDef:
 
 PARAMS: list[ParamDef] = [
     # --- meta -----------------------------------------------------------------
-    ParamDef("active", None, "bool", default=False,
-             help="x / blank — run this row this tick."),
+    # D and P replaced a single `active` column on 2026-08-13 (SM: "I am still afraid that
+    # production schedule and development work gets mingled ... unseen to me, a production
+    # run is cron-started" while a row sits active for development work). Two independent
+    # flags mean a row can be marked for one, the other, both, or neither -- a row under
+    # active development is never swept into a production run just because the two used to
+    # share one column.
+    ParamDef("D", None, "bool", default=False,
+             help="x / blank — include this row in a development tick (steps 0-4, "
+                  "compare_strategies_<date>.xlsx). Independent of P."),
+    ParamDef("P", None, "bool", default=False,
+             help="x / blank — include this row in a --production run (StrategicStocks, "
+                  "Drive-published). Independent of D — mark both to run in both modes."),
     ParamDef("label", None, "str", default="",
              help="Sheet/column header on the output board. Blank = auto-derived."),
     ParamDef("note", None, "str", default="",

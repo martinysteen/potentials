@@ -6,9 +6,16 @@ DesignVersion2.md for the full step write-up.
     python conductor.py --make-board   # write/refresh the board from param_spec.py
     python conductor.py --dry-run      # parse + validate every row; touches no data
     python conductor.py --check        # step 0 only: universe/group counts, data guard
-    python conductor.py                # development tick: steps 0-4 for active rows ->
-                                        #   compare_strategies_<date>.xlsx AND StrategicStocks.xlsx
-    python conductor.py --production   # fast path: steps 0-2 only -> StrategicStocks.xlsx
+    python conductor.py                # development tick: steps 0-4 for every row marked `D` ->
+                                        #   compare_strategies_<date>.xlsx ONLY
+    python conductor.py --production   # the ONLY path that writes/publishes StrategicStocks:
+                                        #   steps 0-2 for every row marked `P` ->
+                                        #   StrategicStocks_<daynum>.xlsx/.csv
+
+`D` and `P` are two independent board columns (2026-08-13, replacing one `active` column) --
+a row marked `D` for development work is invisible to `--production`, including when it fires
+unattended from cron, unless `P` is marked on it too. See DesignVersion2.md's 2026-08-13
+correction.
 """
 
 from __future__ import annotations
@@ -48,7 +55,7 @@ def cmd_dry_run() -> int:
             print(f"  ! {msg}")
 
     for row in result.runs:
-        tag = "active" if row.active else "  idle"
+        tag = ("D" if row.d_active else "-") + ("P" if row.p_active else "-")
         label = row.resolved.get("label", "?")
         if row.ok:
             print(f"[{tag}] row {row.row_num:>3}  {label:<28} OK  "
@@ -59,10 +66,11 @@ def cmd_dry_run() -> int:
             for msg in row.errors:
                 print(f"           ! {msg}")
 
-    n_active = len(result.active_runs)
+    n_d = sum(1 for r in result.runs if r.d_active)
+    n_p = sum(1 for r in result.runs if r.p_active)
     n_active_bad = sum(1 for r in result.active_runs if not r.ok)
-    print(f"\n{len(result.runs)} row(s) total, {n_active} active, "
-          f"{n_active_bad} active row(s) with errors.")
+    print(f"\n{len(result.runs)} row(s) total, {n_d} marked D (development), "
+          f"{n_p} marked P (production), {n_active_bad} active row(s) with errors.")
 
     if not result.ok:
         print("\n--dry-run: at least one active row has errors, or the board itself does "
@@ -112,15 +120,16 @@ def cmd_check() -> int:
 # ---------------------------------------------------------------------------
 
 def cmd_production() -> int:
-    """No `purpose` column gating anymore (2026-08-12) — every active row ships. This is
-    the FAST path: steps 0-2 only, skipping Step 3/4's backtest cost, for when you just
-    want today's gross list quickly. The bare development tick (cmd_develop) does the same
-    steps 0-2 work AND the full backtest AND writes this same file — use --production when
-    you don't want to wait for that."""
+    """Reads rows marked `P` ONLY (2026-08-13: `P`/`D` are independent board columns, not
+    one shared `active` flag — a row marked `D` for development work is invisible here,
+    including when this fires unattended from cron, unless `P` is marked on it too; see
+    DesignVersion2.md's 2026-08-13 correction). This is the FAST path: steps 0-2 only,
+    skipping Step 3/4's backtest cost. It is also the ONLY path that writes or publishes
+    StrategicStocks — the bare development tick (cmd_develop) never touches this file."""
     board = control_board.read_board()
-    active = [r for r in board.runs if r.active and r.ok]
+    active = [r for r in board.runs if r.p_active and r.ok]
     if not active:
-        print("No active rows.")
+        print("No rows marked P (production).")
         return 0
 
     preflight.ensure_data(board.runs, settings=board.settings)
@@ -140,11 +149,15 @@ def cmd_production() -> int:
 
 
 def cmd_develop() -> int:
+    """Reads rows marked `D` ONLY — independent of `P`, see cmd_production. Never writes or
+    publishes StrategicStocks (2026-08-13 correction: it did, briefly, from 2026-08-12 to
+    2026-08-13 — a wild development row was one cron-fired `--production` away from
+    reaching real users; that ended the same day it was noticed)."""
     board = control_board.read_board()
-    active = [r for r in board.runs if r.active and r.ok]
+    active = [r for r in board.runs if r.d_active and r.ok]
     if not active:
-        rejected = [r for r in board.runs if r.active and not r.ok]
-        print(f"No active, cleanly-parsing rows ({len(rejected)} active row(s) rejected).")
+        rejected = [r for r in board.runs if r.d_active and not r.ok]
+        print(f"No rows marked D with a clean parse ({len(rejected)} D row(s) rejected).")
         for row in rejected:
             print(f"  ! row {row.row_num} '{row.resolved.get('label')}': "
                   f"{'; '.join(row.errors)}")
@@ -153,10 +166,10 @@ def cmd_develop() -> int:
         return 1 if rejected or board.board_errors else 0
 
     preflight.ensure_data(board.runs, settings=board.settings)
-    compare_path, strategic_xlsx, strategic_csv = outputboard.assemble(board, board.settings)
+    compare_path = outputboard.assemble(board, board.settings)
     print(f"Wrote {compare_path}")
-    print(f"Wrote {strategic_xlsx}")
-    print(f"Wrote {strategic_csv}")
+    print("(StrategicStocks not written — development ticks no longer touch it; "
+          "use --production for the day's advice list.)")
     return 0
 
 

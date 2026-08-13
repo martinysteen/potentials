@@ -82,7 +82,9 @@ def current_picks(active_rows: list["cb.RunRow"]) -> dict[str, dict]:
 def _write_runs_sheet(wb: Workbook, active_rows: list["cb.RunRow"],
                      picks: dict[str, dict], rejected_rows: list["cb.RunRow"],
                      board_errors: list[str]) -> None:
-    """Every row the board marked active — INCLUDING the ones a tick could not run.
+    """Every row the board marked `D` — INCLUDING the ones a tick could not run (2026-08-13:
+    was every `active` row; `D` and `P` are now independent, and this sheet belongs to the
+    development tick, so it's `D` rows only — see assemble()).
 
     A rejected row used to be filtered out in conductor.cmd_develop and never mentioned
     again, so the board said 4 active and the workbook showed 3 with nothing to say where
@@ -863,9 +865,11 @@ def write_strategic_stocks(picks: dict[str, dict]) -> tuple[Path, Path]:
     (`sep=';', decimal=','`, this project's hard rule) -- then published to Drive, see
     _publish_strategic_csv() above.
 
-    Written both by the bare development tick (assemble(), above) and by conductor.
-    cmd_production's lighter steps-0-2-only path -- purpose no longer distinguishes who
-    gets shipped here; every active row does, in both entry points."""
+    Written ONLY by conductor.cmd_production (2026-08-13 correction -- previously also
+    written by the bare development tick's assemble(), which meant a wild development trial
+    could reach real users via the Drive publish below; see DesignVersion2.md's 2026-08-13
+    correction). Every active row still ships, unconditionally, within that one path -- no
+    purpose column to filter on."""
     headers, rows_by_label = step2_table(picks)
     daynum = _picks_daynum(picks)
     all_rows: list[list] = []
@@ -915,16 +919,24 @@ def write_strategic_stocks(picks: dict[str, dict]) -> tuple[Path, Path]:
     return xlsx_path, csv_path
 
 
-def assemble(board: "cb.BoardResult", settings: dict) -> tuple[Path, Path, Path]:
-    """Build the combined development-tick workbook AND StrategicStocks.xlsx from the same
-    steps-0-2 pass (2026-08-12 -- no more `purpose` column gating either one: every active
-    row gets the full pipeline, backtest included, and ships its gross list too, in one
-    invocation. `--production` stays the separate fast path that skips Step 3/4 -- see
-    conductor.cmd_production)."""
-    active_rows = [r for r in board.runs if r.active and r.ok]
-    rejected_rows = [r for r in board.runs if r.active and not r.ok]
+def assemble(board: "cb.BoardResult", settings: dict) -> Path:
+    """Build the development-tick workbook (compare_strategies_<date>.xlsx) only.
+
+    2026-08-13 correction (SM): a bare tick no longer writes or publishes StrategicStocks --
+    that file is what real users read as the day's advice, and a development tick is where
+    wild trial rows live. StrategicStocks.xlsx/.csv is now written by ONE path only,
+    conductor.cmd_production, fired by an explicit `--production`. See DesignVersion2.md's
+    2026-08-13 correction for the incident that prompted this (superseding the 2026-08-12
+    "every active row ships in one invocation" decision).
+
+    Same-day follow-up (SM): row selection itself is now `D`-only too, independent of `P` —
+    a row marked `D` for development work never appears in a `--production` run (cron-fired
+    or otherwise) unless `P` is marked on it as well. See the 2026-08-13 correction's second
+    half in DesignVersion2.md."""
+    active_rows = [r for r in board.runs if r.d_active and r.ok]
+    rejected_rows = [r for r in board.runs if r.d_active and not r.ok]
     if rejected_rows or board.board_errors:
-        print(f"\n!!! {len(rejected_rows)} active row(s) REJECTED by board validation — "
+        print(f"\n!!! {len(rejected_rows)} D row(s) REJECTED by board validation — "
               f"they are on the Runs sheet with their error, but produce no results:", flush=True)
         for row in rejected_rows:
             print(f"    row {row.row_num} '{row.resolved.get('label')}': "
@@ -1015,8 +1027,4 @@ def assemble(board: "cb.BoardResult", settings: dict) -> tuple[Path, Path, Path]
     path = REPORT_ROOT / f"compare_strategies_{date.today():%Y%m%d}.xlsx"
     wb.save(path)
 
-    print("\n=== Writing StrategicStocks ===", flush=True)
-    archive_prior_strategic_stocks()
-    strategic_xlsx, strategic_csv = write_strategic_stocks(picks)
-
-    return path, strategic_xlsx, strategic_csv
+    return path

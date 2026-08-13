@@ -88,7 +88,7 @@ the schema no longer has is reported, not silently dropped.
 
 | step | columns | notes |
 |---|---|---|
-| — | `active`, `label`, `note` | No `purpose` column (removed 2026-08-12) — every active row gets the full pipeline and ships to StrategicStocks.xlsx; see the 2026-08-12 refinement below |
+| — | `D`, `P`, `label`, `note` | No `purpose` column (removed 2026-08-12). `D` and `P` are two INDEPENDENT booleans (2026-08-13, replacing the single `active` column) — `D` runs the row in a bare development tick (steps 0-4, `compare_strategies_<date>.xlsx`), `P` runs it in `--production` (steps 0-2, `StrategicStocks.xlsx`, Drive-published). Mark both to run in both; marking only `D` keeps a row under active development permanently invisible to production, cron-fired or not. See the 2026-08-13 correction below |
 | 0 | `group_expression` | e.g. `Stamdata.GICS`, `#ALL`, `Stamdata.Zone .and. Stamdata.GICS`, `Stamdata.Homeland='US'` |
 | 1 | `level`, `persistence_window`, `persistence_frac`, `dominance_attribute`, `dominance_direction`, `dominance_decile`, `dom_count_min`, `tickers_per_group` | `dominance_direction` is spelled `small_wins`/`big_wins`, not a bare boolean. `dom_count_frac` is NOT a board column — see Refinements below |
 | 2 | `post_filter`, `priority_attribute`, `priority_direction`, `from_rank`, `focusset_size` | `from_rank`: `1` = best n, `-1` = worst n, `"mid"` or a fraction `0<f<1` = pool-relative window (`mid` avoids both ends), an integer `k>=2` = fixed offset |
@@ -102,10 +102,17 @@ the schema no longer has is reported, not silently dropped.
 python conductor.py --make-board   # write/refresh the board from the schema
 python conductor.py --dry-run      # validate every row; reads no data, writes nothing
 python conductor.py --check        # step 0 only: universe size, group count, resolved attributes
-python conductor.py --production   # FAST path: steps 0-2 for active rows -> report/StrategicStocks.xlsx
-python conductor.py                # FULL tick: steps 0-4 for active rows -> BOTH
-                                    #   report/compare_strategies_<date>.xlsx AND report/StrategicStocks.xlsx
+python conductor.py --production   # FAST path: steps 0-2 for every row marked `P` -> report/StrategicStocks_<daynum>.xlsx/.csv
+python conductor.py                # FULL tick: steps 0-4 for every row marked `D` -> report/compare_strategies_<date>.xlsx ONLY
 ```
+
+**Only `--production` writes or publishes StrategicStocks, and it reads only `P`-marked rows**
+(2026-08-13, two corrections same day — see below). The bare tick never did anything but steps
+0-4 into `compare_strategies_<date>.xlsx` for `D`-marked rows; its 2026-08-12 additional write
+of StrategicStocks off the same `active` flag as development work is what got reversed, in two
+steps: first by restricting the write itself to `--production`, then by splitting row selection
+into two independent columns so a row under active development can never reach production
+just because someone (or cron) happened to fire `--production` while it sat marked.
 
 **Every one of these stops if `control_board.xlsx` is still open in Excel** (exit 2), and
 each prints when the board on disk was last saved. See "the unsaved-board guard" below;
@@ -120,16 +127,18 @@ a one-screen table of every required file's daynum, age and status.
 
 ### Where output lands
 
-* **`report/StrategicStocks_<daynum>.xlsx`** — written by BOTH `--production` and the bare tick
-  (2026-08-12 — no `purpose` column distinguishes who gets shipped here anymore). The `_<daynum>`
-  suffix (not calendar date — the seven-pack's own trading-day counter) means a same-day rerun
-  overwrites in place, a new day's run never collides with a prior day's file, and the prior file
-  moves to `_archive/` either way (see `outputboard.archive_prior_strategic_stocks()`). A first
-  tab, `All`, holds every active row's picks concatenated (tinted per strategy); then one tab per
-  row, same fields as `Step2_picks` (label/daynum/priority/ticker/name/dom_group/dom-prio +
-  attribute fingerprint) — see the 2026-08-11 and 2026-08-12 refinements below. The daily-advice
-  artifact for users with no interest in the mechanics; `--production` gets it to you fast
-  (steps 0-2 only), the bare tick gets it to you alongside the full backtest.
+* **`report/StrategicStocks_<daynum>.xlsx`** — written ONLY by `--production`, reading ONLY
+  rows marked `P` (2026-08-13 correction, two steps: the bare tick wrote this too from
+  2026-08-12 until this correction; and it shared row-selection with development work via one
+  `active` column until the same-day follow-up split it into independent `D`/`P` columns — see
+  below). The `_<daynum>` suffix (not calendar date — the seven-pack's own trading-day counter)
+  means a same-day rerun overwrites in place, a new day's run never collides with a prior day's
+  file, and the prior file moves to `_archive/` (see `outputboard.archive_prior_strategic_stocks()`).
+  A first tab, `All`, holds every `P`-marked row's picks concatenated (tinted per strategy); then
+  one tab per row, same fields as `Step2_picks` (label/daynum/priority/ticker/name/dom_group/
+  dom-prio + attribute fingerprint) — see the 2026-08-11 and 2026-08-12 refinements below. The
+  daily-advice artifact for users with no interest in the mechanics — `--production` is the only
+  way to produce or ship it, and only a row explicitly marked `P` can end up in it.
 * **`report/StrategicStocks_<daynum>.csv`** — the `All` tab's exact rows as a flat table,
   European format (`sep=';', decimal=','`), written and Drive-published in the same step as the
   xlsx above. Published to `GoogleDrive:PotSystem/repositoryRTBI/Strategy` immediately after
@@ -137,13 +146,15 @@ a one-screen table of every required file's daynum, age and status.
   (`shared/app/code/repository.py`'s `OWNERS["strategy_grp2"]`) — see the 2026-08-12 refinement
   below for why that's the right mechanism to reuse rather than a one-off upload.
 * **`report/compare_strategies_<date>.xlsx`** — one workbook per development tick (bare `python
-  conductor.py` only), seven sheets: `Runs` (every active row verbatim + status/universe/vintage),
+  conductor.py` only), covering every row marked `D` (2026-08-13: was every `active` row), seven
+  sheets: `Runs` (every `D` row verbatim + status/universe/vintage),
   `Step1_groups` (elevated groups + member tickers), `Step2_picks` (the gross list — same tickers
-  as `StrategicStocks_<daynum>.xlsx`'s `All` tab, plus each pick's attribute fingerprint; see the
-  2026-08-11 refinement below), `Step3_compare` (transposed metrics, one column per active row, best `chain_annual`
-  leftmost), `Step3a_stopout` (cost/benefit sweep across stop levels, one block per eligible row —
-  see the 2026-08-05 refinement below), `Step4_walkforward` (one block per *candidate set*:
-  summary + per-candidate table + fold table — see the 2026-08-04 refinement below), `Charts`.
+  as a `P` row's entry in `StrategicStocks_<daynum>.xlsx`'s `All` tab would show, plus each pick's
+  attribute fingerprint; see the 2026-08-11 refinement below), `Step3_compare` (transposed metrics,
+  one column per `D` row, best `chain_annual` leftmost), `Step3a_stopout` (cost/benefit sweep
+  across stop levels, one block per eligible row — see the 2026-08-05 refinement below),
+  `Step4_walkforward` (one block per *candidate set*: summary + per-candidate table + fold table —
+  see the 2026-08-04 refinement below), `Charts`.
 * **Not yet built**: standalone per-run/per-fold files under `report/backtesting/` and
   `report/walkforward/` (the folders exist; `outputboard.py` currently only writes the one
   combined workbook above) — see Status.
@@ -907,6 +918,116 @@ the design: `~/potentials/repositoryRTBI/data/Strategy/StrategicStocks_2210.csv`
 subfolder with zero code changes, since `sync_rtbi.sh` mirrors the whole tree with only two
 hardcoded excludes (`Longi/exp/**`, `Longi/QA/**`), no subfolder allowlist.
 
+## Correction 2026-08-13 — StrategicStocks is written by `--production` only; a bare tick no longer touches it
+
+**SUPERSEDES the "ships to StrategicStocks.xlsx in the SAME invocation" half of the
+2026-08-12 `purpose`-removal decision above** (the rest of that refinement — no `purpose`
+column, every active row gets the full pipeline, `Step2_picks`' fingerprint on the sheet,
+label auto-dedupe — stands unchanged). Only the "which entry point ships StrategicStocks"
+question is reversed.
+
+SM: *"It is no good to create StrategicStocks.csv alongside development runs. Because the
+csv is then sent to repositoryRTBI and passed on to users as the day's recommendation. That
+means that even wild trials — some of the development runs — are distributed causing complete
+confusion. So production runs must only be done by specifically firing a `--production`
+signal."* The 2026-08-12 decision had made a bare tick write AND Drive-publish
+`StrategicStocks_<daynum>.csv` in the same run as its backtest/walk-forward experiments — so a
+row set up purely to probe a parameter (a bad `dominance_attribute`, a `from_rank` research
+probe, a template row flipped on to test something) was published to
+`GoogleDrive:PotSystem/repositoryRTBI/Strategy` and mirrored to every reader of that feed
+within the hour, indistinguishable from a deliberate production run.
+
+**Fix:** `outputboard.assemble()` (the bare-tick path) no longer calls
+`archive_prior_strategic_stocks()` or `write_strategic_stocks()` at all — it now returns only
+`compare_path`, not the three-tuple it returned since 2026-08-12. `conductor.cmd_develop`
+updated to match (prints `Wrote compare_strategies_<date>.xlsx` and an explicit note that
+StrategicStocks was not written). `conductor.cmd_production` and `outputboard.
+write_strategic_stocks()`/`_publish_strategic_csv()` are unchanged in behavior — that remains
+the one path that writes and Drive-publishes StrategicStocks, exactly as designed on
+2026-08-12, just no longer shared with the bare tick.
+
+**Verified live (daynum 2211, 2026-08-13):** ran a bare `python conductor.py` tick (1 active
+row, full steps 0-4 including backtest/walk-forward/stop-out) — `StrategicStocks_2211.xlsx`/
+`.csv` (written earlier that day by a prior `--production` run) were confirmed byte-identical
+and timestamp-unchanged after the tick completed; only `compare_strategies_20260813.xlsx` was
+written.
+
+**Not in scope**: whether `StrategicStocks.xlsx` should also gain some marking of *which*
+`--production` run produced it (a run id, a "this is the advice" banner) was not asked for and
+is not addressed here — the fix is purely about which entry point is allowed to touch the
+file at all.
+
+## Correction 2026-08-13 (same day) — `active` split into independent `D`/`P` columns
+
+**The correction above closed HALF the gap; a real one remained.** `--production` still read
+the same `active` column as the bare development tick, so a row marked active purely to
+probe something in a `D` session was still fully eligible for a `--production` run — and
+`--production` is meant to be firable unattended (a cron entry, or SM running it from habit
+without checking what's currently flagged) with no guarantee the person running it knows
+what every active row on the board is *for* at that moment.
+
+SM: *"I am still afraid that production schedule and development work gets mingled ... I
+would prefer 'two columns in control_board for giving x'. What I mean that column A should
+change its name to D (now 'active') and receive markings reserved for D runs. A new column
+next to it should be named P and giving markings to production run. The problem I imagine
+that during the day (or after it) I am active in D work and unseen to me, a production run
+is cron-started."*
+
+**Fix — two independent boolean columns replace `active` outright, not a `purpose` enum.**
+This is a different shape from the abandoned 2026-08-03→2026-08-12 `purpose` (`P`/`D`/`PD`)
+arc, and solves a different problem: `purpose` was about STEP COST (should a row's steps 3/4
+backtest run at all), and got abandoned because a `D` row's steps already subsume `P`'s as a
+strict prefix — there was never a clean way to ask for `P` alone without `D` degenerating
+into pointless duplication. This split is about ELIGIBILITY, not cost: `D` and `P` each
+independently gate whether a row is even considered for their respective entry point, and a
+row can perfectly sensibly be `D`-only, `P`-only, or both — no subset relationship to fight.
+
+* `param_spec.py`: `active` (`ParamDef(None, "bool")`) replaced by `D` and `P`, both the same
+  dtype/default, declared adjacently.
+* `control_board.RunRow` gains `d_active`/`p_active` properties (read `resolved["D"]`/`["P"]`
+  respectively). `.active` is KEPT as `d_active or p_active` — deliberately, for the handful
+  of call sites that mean "in play at all, regardless of mode" and would be wrong to split:
+  `preflight.required_files_for_rows()` (a coherent snapshot must cover whichever entry point
+  runs next, so it snapshots the union), `control_board._dedupe_active_labels()` (a label
+  collision breaks either entry point's dict-keyed lookups, so both must be checked),
+  `BoardResult.active_runs`/`.ok` (used by `--dry-run`'s summary and `--check`, both
+  diagnostics that should surface anything in play, not just one mode's rows).
+* `conductor.cmd_develop` now filters `r.d_active and r.ok` (was `r.active and r.ok`);
+  `conductor.cmd_production` filters `r.p_active and r.ok`. `outputboard.assemble()` (the
+  bare tick's row selection, feeding `Runs`/`Step1_groups`/`Step2_picks`/Step 3/Step 4 of
+  `compare_strategies_<date>.xlsx`) likewise switched to `r.d_active`.
+* `conductor.cmd_dry_run`'s per-row tag changed from a single `active`/`idle` word to a
+  two-letter code — `D-`, `-P`, `DP`, `--` — so a row's eligibility for each entry point is
+  visible without opening the board.
+
+**Migration, not a permanent backward-compat shim.** A live board still spells the flag
+`active`, and `control_board._write_runs_sheet()` (the `--make-board` writer) treats any
+column outside the current schema as an opaque "extra" to preserve verbatim — which for a
+straight rename would be fine, but here `active` isn't being renamed, it's being SPLIT, and
+naively doing nothing would leave `D` and `P` both blank for every row currently marked
+active, silently reverting the whole board to idle-everywhere the next time `--make-board`
+runs. `_write_runs_sheet()` now does one explicit, clearly-flagged thing first: any preserved
+row with no `D` value but a truthy legacy `active` value gets `D` set from it — `P` is left
+BLANK always, never inferred, because inferring `P` would recreate exactly the mingling this
+whole change exists to prevent (an old `active` mark meant "runs somewhere", never
+specifically "safe to publish to real users"). The original `active` cell is left in place
+as a grey trailing column too (same existing unknown-column mechanism), so the migration is
+visible on the sheet, not hidden. A one-line console message on `--make-board` names how many
+rows were migrated.
+
+**Verified before touching the live board** (which has its own pending uncommitted manual
+edits, so `--make-board` was NOT run against it in this session — only against a scratch
+copy): `python conductor.py --dry-run` against the live, not-yet-migrated file resolves every
+row's `D`/`P` to blank/false with no crash (a `D`/`P` header doesn't exist there yet, so both
+coerce to their schema default) — confirms the code degrades safely on an old-schema file
+rather than erroring. Then, against a throwaway copy of the live board,
+`control_board.write_board()` migrated the board's one active row (`GICS-beta3m(beta3m 1)`)
+to `D=True, P=False` and left the other 19 rows at `D=False, P=False`, exactly matching their
+prior all-idle state; the legacy `active` column (and a leftover `purpose` column, dead since
+the 2026-08-12 removal but still sitting in the file as data) both came through unchanged as
+grey trailing columns. **SM still needs to run `--make-board` on the live board** to actually
+get the `D`/`P` columns (and, per the migration, mark today's one already-active row `D`-only)
+— not done automatically in this session, since the file carries SM's own in-progress edits.
 
 
 

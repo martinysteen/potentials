@@ -54,9 +54,17 @@ cd ~/potentials/strategy_grp2/app/code
 
 python conductor.py --make-board   # write/refresh the control board from the schema
 python conductor.py --dry-run      # validate every board row; touches no data
-python conductor.py                # development tick (steps 0-4) -> compare_strategies_<date>.xlsx AND StrategicStocks.xlsx
-python conductor.py --production   # fast path (steps 0-2 only) -> StrategicStocks.xlsx
+python conductor.py                # development tick (steps 0-4) for every row marked `D` -> compare_strategies_<date>.xlsx ONLY
+python conductor.py --production   # fast path (steps 0-2 only) for every row marked `P` -> StrategicStocks_<daynum>.xlsx/.csv
 ```
+
+**`D` and `P` are two independent board columns** (2026-08-13, replacing one `active`
+column) — a row marked `D` for development work never appears in a `--production` run,
+cron-fired or otherwise, unless `P` is marked on it too. And **StrategicStocks is written and
+Drive-published by `--production` only**, never by a bare development tick — that file is what
+real users read as the day's advice, and a development tick is exactly where wild trial rows
+live. Both are 2026-08-13 corrections, reversing the 2026-08-12 "every active row ships in one
+invocation" decision in two steps. See DesignVersion2.md's 2026-08-13 corrections.
 
 ## Status
 
