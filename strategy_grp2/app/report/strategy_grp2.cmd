@@ -19,9 +19,10 @@ echo   2) production         (steps 0-2, writes StrategicStocks.xlsx)
 echo   3) dry-run             (parse/validate active rows only)
 echo   4) check               (step 0 only: universe/groups/data table)
 echo   5) make-board          (refresh control_board.xlsx from the schema)
+echo   6) explorer            (open folder with control_board and tools)
 echo   0) quit
 echo.
-set /p CHOICE="Choose 0-5: "
+set /p CHOICE="Choose 0-6: "
 
 if "%CHOICE%"=="0" goto end
 if "%CHOICE%"=="1" set MODE=
@@ -29,6 +30,7 @@ if "%CHOICE%"=="2" set MODE=--production
 if "%CHOICE%"=="3" set MODE=--dry-run
 if "%CHOICE%"=="4" set MODE=--check
 if "%CHOICE%"=="5" set MODE=--make-board
+if "%CHOICE%"=="6" goto explorer
 
 if "%CHOICE%"=="" goto menu
 if "%CHOICE%"=="0" goto end
@@ -38,6 +40,12 @@ if "%CHOICE%"=="3" goto run
 if "%CHOICE%"=="4" goto run
 if "%CHOICE%"=="5" goto run
 echo   not a valid choice: %CHOICE%
+goto menu
+
+:explorer
+REM %~dp0 is this batch file's own folder (app/report) -- whatever drive letter or UNC
+REM path it was launched from, so nothing here is a hardcoded path.
+start "" explorer.exe "%~dp0"
 goto menu
 
 :run

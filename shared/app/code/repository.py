@@ -185,7 +185,7 @@ OWNERS: dict[str, Owner] = {
         ),
         local_only=(
             "*.xlsx",           # StrategicStocks_*.xlsx, compare_strategies_*.xlsx, Excel's own ~$ lock file
-            "*.cmd",            # run.cmd
+            "*.cmd",            # strategy_grp2.cmd (renamed from run.cmd, 2026-08-13)
             "*.lnk",            # control_board.lnk
             "backtesting/**",
             "walkforward/**",
