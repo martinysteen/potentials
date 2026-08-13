@@ -141,11 +141,10 @@ def production_pick(daynum: int, dom_table: pd.DataFrame, groups: pd.Series, par
     return pooled.sort_values(ascending=ascending).index.tolist()
 
 
-def current_pick(row_resolved: dict):
-    """(daynum, tickers, elevated_groups, params, step0_result) for the CURRENT (newest)
-    daynum — what production ships (StrategicStocks.xlsx) and what the output board's
-    Runs/Step1_groups/Step2_picks sheets show. Raises ValueError if no group ever
-    dominates with this row's Step-1 parameters."""
+def _resolve_history(row_resolved: dict):
+    """(step0_result, dom_table, params) — the Step-0/1 resolution shared by current_pick
+    (newest daynum only) and pick_history (every daynum). Raises ValueError if no group
+    ever dominates with this row's Step-1 parameters."""
     s0 = step0_data.resolve_step0(row_resolved)
     params = dict(row_resolved)
     params["dominance_attribute"] = s0.dominance_attribute
@@ -154,7 +153,32 @@ def current_pick(row_resolved: dict):
     dom_table, _cutoffs = step1_dominance.resolve_dom_table(s0.groups, params)
     if dom_table.empty:
         raise ValueError("no group ever dominates with this row's Step-1 parameters")
+    return s0, dom_table, params
+
+
+def current_pick(row_resolved: dict):
+    """(daynum, tickers, elevated_groups, params, step0_result) for the CURRENT (newest)
+    daynum — what production ships (StrategicStocks.xlsx) and what the output board's
+    Runs/Step1_groups/Step2_picks sheets show. Raises ValueError if no group ever
+    dominates with this row's Step-1 parameters."""
+    s0, dom_table, params = _resolve_history(row_resolved)
     daynum = max(int(c) for c in dom_table.columns)
     elevated = step1_dominance.elevated_groups(dom_table, daynum)
     tickers = production_pick(daynum, dom_table, s0.groups, params, s0.post_filter)
     return daynum, tickers, elevated, params, s0
+
+
+def pick_history(row_resolved: dict) -> tuple["step0_data.Step0Result", dict[int, list[str]]]:
+    """(step0_result, {daynum: tickers}) — production_pick() run across EVERY daynum this
+    row's dominance table covers (~650), not just the newest (SM, 2026-08-13: "a similar
+    list must be pulled on any other of the time line"). tickers is [] for a daynum with no
+    elevated group, same clean-no-pick convention as production_pick/current_pick.
+
+    Development-tick only (feeds picks_<daynum>.xlsx) — never called by --production, which
+    only ever needs the one newest-daynum pick current_pick gives it."""
+    s0, dom_table, params = _resolve_history(row_resolved)
+    history: dict[int, list[str]] = {}
+    for col in dom_table.columns:
+        daynum = int(col)
+        history[daynum] = production_pick(daynum, dom_table, s0.groups, params, s0.post_filter)
+    return s0, history

@@ -155,6 +155,10 @@ a one-screen table of every required file's daynum, age and status.
   across stop levels, one block per eligible row — see the 2026-08-05 refinement below),
   `Step4_walkforward` (one block per *candidate set*: summary + per-candidate table + fold table —
   see the 2026-08-04 refinement below), `Charts`.
+* **`report/picks_<daynum>.xlsx`** (2026-08-13, dev-tick only) — one tab per active `D` row: a
+  ticker (rows) x daynum (columns, newest-first) matrix of `production_pick()`'s 1-based
+  priority across the row's ENTIRE dominance history (~650 daynums), not just today. No
+  attribute columns. See the 2026-08-13 correction below.
 * **Not yet built**: standalone per-run/per-fold files under `report/backtesting/` and
   `report/walkforward/` (the folders exist; `outputboard.py` currently only writes the one
   combined workbook above) — see Status.
@@ -1045,4 +1049,37 @@ invocation (daynum 2211) ran the board's one `P`-marked row, wrote and Drive-pub
 exists for — an unattended production fire that must never pick up a row someone left
 marked purely for development.
 
+## Correction 2026-08-13 (same day) — `picks_<daynum>.xlsx`: full-history pick matrix, dev-tick only
 
+SM: *"In Step2_pcks we create a list of chosen elites, equal weight picked from the
+dominating groups. The list in step2 tab is for one daynum, the most recent one (today). A
+similar list must (could) be pulled on any other of the time line (approx 650 daynums).
+Not including attributes, this will form a longform daynum-ticker-priority list or in wide
+form (my preference) x: daynum (reversed as usual), y: ticker and inside the priority (may
+be a bit sparse, but easy to see in excel and as csv import in G Sheets). Lets call it
+picks_<daynum>.xlsx. To be crated in Step2 in development runs only."*
+
+`step2_focusset.current_pick()` always resolved Step 0/1 (universe, groups, dominance
+table) and then read off only the NEWEST daynum column. The dominance table itself already
+spans the row's entire history (one boolean column per daynum, ~650 of them, confirmed live:
+`longi_rank.csv` has 669), so nothing new needed computing — just looping `production_pick()`
+over every column instead of the max one. Refactored the shared Step 0/1 resolution out into
+`_resolve_history()`, kept by both `current_pick()` (still newest-daynum only, used by
+`--production` and the Runs/Step1_groups/Step2_picks sheets — unchanged, still cheap) and the
+new `pick_history()` (every daynum, dev-tick only).
+
+`outputboard.write_picks_workbook()`: one sheet per active `D` row (label as sheet name,
+31-char Excel limit), built by `_picks_matrix()` — a `pandas.DataFrame` pivot, index=ticker
+(alphabetical), columns=daynum (descending, newest-left — matches Longi's own convention),
+values = the pick's 1-based priority within that day's `production_pick()` order (same number
+`Step2_picks`' `priority` column shows). No attribute columns, by request. NaN wherever a
+ticker wasn't picked that day, which is most cells — expected sparseness, not a bug. Prior
+`picks_*.xlsx` moved to `_archive/` before a new one is written, same pattern as
+`compare_strategies_*`/`StrategicStocks*`. Wired into `assemble()` right after the current-
+daynum Steps 0-2 pass; never called by `conductor.cmd_production` (no reason for an unattended
+production fire to spend time pulling 650 daynums of history) and never Drive-published — this
+is a research/backtesting artifact, not the day's advice list.
+
+Verified live (daynum 2211, the board's one `D` row, `GICS-beta3m(beta3m 1)`): 154 distinct
+tickers across all 669 daynums, columns ran 2211 down to 1543 newest-first, spot-checked cells
+held small sparse integer priorities (e.g. one ticker picked on 237 of 669 days, values 10-15).

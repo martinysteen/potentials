@@ -13,6 +13,11 @@ DesignVersion2.md's input/output separation principle:
 
 Prior dated workbooks move to `_archive/` only once new output exists (matches
 strategy_grp v1's rule for its own combined report).
+
+Development ticks also write `report/picks_<daynum>.xlsx` (2026-08-13, see
+write_picks_workbook) — one tab per active `D` row, a ticker x daynum matrix of
+production_pick()'s priority across the row's ENTIRE dominance history, not just today.
+Separate file, not a sheet here, since it is one grid per row rather than a shared table.
 """
 
 from __future__ import annotations
@@ -919,6 +924,72 @@ def write_strategic_stocks(picks: dict[str, dict]) -> tuple[Path, Path]:
     return xlsx_path, csv_path
 
 
+def _picks_matrix(history: dict[int, list[str]]) -> pd.DataFrame:
+    """ticker x daynum matrix of 1-based priority (production_pick's own order — same
+    number Step2_picks' `priority` column shows), columns newest-first (Longi's own
+    newest-left convention). NaN wherever a ticker wasn't picked that day — expected to be
+    sparse (SM: "may be a bit sparse, but easy to see in excel")."""
+    data = {daynum: {ticker: i for i, ticker in enumerate(tickers, start=1)}
+            for daynum, tickers in history.items()}
+    df = pd.DataFrame(data)
+    return df.reindex(sorted(df.columns, reverse=True), axis=1).sort_index()
+
+
+def write_picks_workbook(active_rows: list["cb.RunRow"]) -> Path | None:
+    """picks_<daynum>.xlsx — one tab per active `D` row: a ticker x daynum matrix of
+    production_pick()'s priority across the row's ENTIRE dominance history (~650 daynums),
+    not just today (SM, 2026-08-13: "A similar list must be pulled on any other of the time
+    line ... in wide form ... x: daynum (reversed as usual), y: ticker and inside the
+    priority"). No attribute columns, by request — purely the daynum-ticker-priority list.
+
+    Development-tick only. Never written by --production and never Drive-published — this
+    is a research/backtesting artifact, not the day's advice list. None if every row
+    failed step 0/1 (nothing to write)."""
+    sheets: dict[str, pd.DataFrame] = {}
+    daynums_seen: set[int] = set()
+    for row in active_rows:
+        label = row.resolved.get("label")
+        print(f"[picks] {label}: pulling full history ...", flush=True)
+        try:
+            _s0, history = step2_focusset.pick_history(row.resolved)
+        except (expr.ExpressionError, ValueError) as exc:
+            print(f"    FAILED: {exc}", flush=True)
+            continue
+        df = _picks_matrix(history)
+        sheets[label] = df
+        daynums_seen.update(history)
+        print(f"    {len(df)} distinct ticker(s) across {len(history)} daynum(s)", flush=True)
+
+    if not sheets:
+        return None
+
+    for path in REPORT_ROOT.glob("picks_*.xlsx"):
+        dest = REPORT_ROOT / "_archive" / time.strftime("%Y%m%d_%H%M%S")
+        dest.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(path), str(dest / path.name))
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    for label, df in sheets.items():
+        ws = wb.create_sheet(label[:31])
+        cell = ws.cell(1, 1, "ticker"); cell.font, cell.fill = _BOLD, _HEAD
+        for c, daynum in enumerate(df.columns, start=2):
+            cell = ws.cell(1, c, int(daynum)); cell.font, cell.fill = _BOLD, _HEAD
+        for r, (ticker, vals) in enumerate(df.iterrows(), start=2):
+            ws.cell(r, 1, ticker)
+            for c, val in enumerate(vals, start=2):
+                if pd.notna(val):
+                    ws.cell(r, c, int(val))
+        ws.freeze_panes = "B2"
+        ws.column_dimensions["A"].width = 12
+
+    daynum = max(daynums_seen) if daynums_seen else "unknown"
+    REPORT_ROOT.mkdir(parents=True, exist_ok=True)
+    path = REPORT_ROOT / f"picks_{daynum}.xlsx"
+    wb.save(path)
+    return path
+
+
 def assemble(board: "cb.BoardResult", settings: dict) -> Path:
     """Build the development-tick workbook (compare_strategies_<date>.xlsx) only.
 
@@ -945,6 +1016,11 @@ def assemble(board: "cb.BoardResult", settings: dict) -> Path:
             print(f"    BOARD: {msg}", flush=True)
     print(f"\n=== Steps 0-2: {len(active_rows)} active row(s) ===", flush=True)
     picks = current_picks(active_rows)
+
+    print(f"\n=== Step 2 (dev-only): picks_<daynum>.xlsx, full history ===", flush=True)
+    picks_path = write_picks_workbook(active_rows)
+    if picks_path:
+        print(f"    wrote {picks_path}", flush=True)
 
     active_by_label = {r.resolved["label"]: r.resolved for r in active_rows}
 
