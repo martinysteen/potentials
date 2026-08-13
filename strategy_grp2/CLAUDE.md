@@ -66,6 +66,10 @@ real users read as the day's advice, and a development tick is exactly where wil
 live. Both are 2026-08-13 corrections, reversing the 2026-08-12 "every active row ships in one
 invocation" decision in two steps. See DesignVersion2.md's 2026-08-13 corrections.
 
+**Cron'd** (2026-08-13): `run_production.sh` at 01:00/11:00/19:00 runs `conductor.py
+--production` unattended — this is exactly the scenario the `D`/`P` split above exists for.
+See the root `CLAUDE.md`'s daily-chain diagram.
+
 ## Status
 
 Full pipeline (steps 0-4) built and verified end-to-end, including the output board with

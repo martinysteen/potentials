@@ -1029,5 +1029,20 @@ grey trailing columns. **SM still needs to run `--make-board` on the live board*
 get the `D`/`P` columns (and, per the migration, mark today's one already-active row `D`-only)
 — not done automatically in this session, since the file carries SM's own in-progress edits.
 
+**Follow-up, same day: SM ran `--make-board` on the live board — confirmed working.** Code +
+docs + the migrated `control_board.xlsx` committed (`91a7a04`, not pushed).
+
+**Follow-up, same day: `--production` cron'd.** SM: *"Production run should be added to
+cron. 01:00, 11:00 and 19:00 would be fine."* `strategy_grp2/run_production.sh` (new,
+modelled on `longi/start_longi.sh`/`group_conformity/run_conf.sh`) activates
+`potsystem_env` and runs `conductor.py --production` — nothing else; it does NOT pass
+`--board-open-ok`, so if SM has the board open in Excel when a cron tick fires, the run
+stops itself (exit 2) exactly as a by-hand run would, rather than risk reading unsaved
+edits. Installed as `0 1,11,19 * * *` in the server crontab, logging to
+`~/logs/run_production_cron.log`. Verified live before wiring into cron: a direct
+invocation (daynum 2211) ran the board's one `P`-marked row, wrote and Drive-published
+`StrategicStocks_2211.xlsx/.csv`, exit 0. This is the exact scenario the `D`/`P` split above
+exists for — an unattended production fire that must never pick up a row someone left
+marked purely for development.
 
 

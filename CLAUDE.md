@@ -44,6 +44,11 @@ longi :15  →  publish ~:17  →  mirror :37  →  group_conformity :45  →  p
                                   ↑ also :07
 ```
 
+**`strategy_grp2`'s production tick is also cron'd**, separately from the hourly chain above:
+`run_production.sh` at 01:00/11:00/19:00 runs `conductor.py --production` — `P`-marked board
+rows only, never `D` rows (see `strategy_grp2/DesignVersion2.md`'s 2026-08-13 corrections).
+It stops itself if `control_board.xlsx` is open in Excel, exactly as a run fired by hand does.
+
 `~/git_pot.sh` at **03:40** commits and pushes anything left uncommitted in this repo, on the
 branch currently checked out — so uncommitted work does not survive the night as a working tree.
 
