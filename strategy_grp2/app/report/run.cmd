@@ -53,4 +53,4 @@ if "%1"=="" goto menu
 goto end
 
 :end
-pause
+
