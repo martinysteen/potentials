@@ -219,10 +219,13 @@ class RunRow:
     @property
     def active(self) -> bool:
         """In play at ALL, in either mode -- for validation-only concerns that don't care
-        which entry point runs (label-dedupe, preflight's data snapshot, --dry-run/--check
-        diagnostics). Never use this to decide which rows a TICK actually runs -- that's
-        d_active for the bare tick, p_active for --production, and they are deliberately
-        independent (2026-08-13 correction, DesignVersion2.md)."""
+        which entry point runs (preflight's data snapshot, --dry-run/--check diagnostics).
+        Never use this to decide which rows a TICK actually runs, nor which rows a label
+        must stay unique against -- that's d_active for the bare tick, p_active for
+        --production, deliberately independent (2026-08-13 correction, DesignVersion2.md).
+        Label-dedupe (2026-08-14) checks within each scope separately for the same reason:
+        a D-only row and a P-only row sharing a label never share a dict, so the union
+        would flag a false collision."""
         return self.d_active or self.p_active
 
 
@@ -354,18 +357,28 @@ def _dedupe_active_labels(runs: list["RunRow"]) -> list[str]:
     unique labels"). In-memory only -- `row.resolved["label"]` changes for THIS run's
     dict keys and report sheets; control_board.xlsx itself is never touched here (reading
     the board never writes to it). First active occurrence keeps its plain label; later
-    ones get numbered, in row order."""
-    seen: dict[str, int] = {}
+    ones get numbered, in row order.
+
+    Checked WITHIN `D` and WITHIN `P` separately, not over the union (2026-08-14 fix).
+    `cmd_develop` and `cmd_production` each build their own dict from their own scope's
+    rows only (`d_active`/`p_active`), never both together, so a `D`-only row and a
+    `P`-only row sharing a label can never actually collide -- that is exactly the shape
+    a deliberate P/D split of one strategy takes (same params, one copy fast-pathed to
+    production, one copy carried through backtest/walk-forward). Flagging that pair was a
+    false positive: SM, 2026-08-14, on a live 'GICS-beta3m(beta3m 1 3)' P/D pair -- "it
+    states a BOARD ERROR which is erroneous.\""""
     renamed: list[str] = []
-    for row in runs:
-        if not row.active:
-            continue
-        label = row.resolved.get("label")
-        seen[label] = seen.get(label, 0) + 1
-        if seen[label] > 1:
-            new_label = f"{label} ({seen[label]})"
-            row.resolved["label"] = new_label
-            renamed.append(f"row {row.row_num}: '{label}' -> '{new_label}'")
+    for scope, in_scope in (("D", lambda r: r.d_active), ("P", lambda r: r.p_active)):
+        seen: dict[str, int] = {}
+        for row in runs:
+            if not in_scope(row):
+                continue
+            label = row.resolved.get("label")
+            seen[label] = seen.get(label, 0) + 1
+            if seen[label] > 1:
+                new_label = f"{label} ({seen[label]})"
+                row.resolved["label"] = new_label
+                renamed.append(f"row {row.row_num} [{scope}]: '{label}' -> '{new_label}'")
     return renamed
 
 

@@ -155,10 +155,11 @@ a one-screen table of every required file's daynum, age and status.
   across stop levels, one block per eligible row — see the 2026-08-05 refinement below),
   `Step4_walkforward` (one block per *candidate set*: summary + per-candidate table + fold table —
   see the 2026-08-04 refinement below), `Charts`.
-* **`report/picks_<daynum>.xlsx`** (2026-08-13, dev-tick only) — one tab per active `D` row: a
-  ticker (rows) x daynum (columns, newest-first) matrix of `production_pick()`'s 1-based
-  priority across the row's ENTIRE dominance history (~650 daynums), not just today. No
-  attribute columns. See the 2026-08-13 correction below.
+* **`report/picks_<daynum>.csv`** (2026-08-13, long format since 2026-08-14, dev-tick only) —
+  one row per (label, daynum, ticker) pick, columns `label`/`daynum`/`ticker`/`priority`
+  (1-based, `production_pick()`'s own order), across every active `D` row's ENTIRE dominance
+  history (~650 daynums), not just today. European format (`sep=';', decimal=','`). No
+  attribute columns. See the 2026-08-13 and 2026-08-14 corrections below.
 * **Not yet built**: standalone per-run/per-fold files under `report/backtesting/` and
   `report/walkforward/` (the folders exist; `outputboard.py` currently only writes the one
   combined workbook above) — see Status.
@@ -1083,3 +1084,46 @@ is a research/backtesting artifact, not the day's advice list.
 Verified live (daynum 2211, the board's one `D` row, `GICS-beta3m(beta3m 1)`): 154 distinct
 tickers across all 669 daynums, columns ran 2211 down to 1543 newest-first, spot-checked cells
 held small sparse integer priorities (e.g. one ticker picked on 237 of 669 days, values 10-15).
+
+## Correction 2026-08-14 — label-dedupe's false BOARD ERROR on a deliberate P/D pair
+
+**Symptom:** `compare_strategies_20260814.xlsx`'s `Runs` sheet opened with `BOARD ERROR:
+duplicate active labels auto-renamed ... row 3: 'GICS-beta3m(beta3m 1 3)' ->
+'GICS-beta3m(beta3m 1 3) (2)'`. SM: *"it states a BOARD ERROR which is erroneous."*
+
+**Cause:** row 2 (`P` only, note "Bedst") and row 3 (`D` only, same note) are the SAME
+strategy deliberately split across the two entry points the 2026-08-13 `D`/`P` correction
+exists for — every label-forming field (`dominance_attribute`, `priority_attribute`,
+`from_rank`, `focusset_size`, all fed by an Excel formula in the `label` cell so SM never
+retypes it by hand) is genuinely identical between them, by design, not by accident.
+`_dedupe_active_labels()` checked uniqueness over `row.active` (`d_active OR p_active`),
+i.e. the union — but `current_picks`/`Step2_picks`/walk-forward candidate sets are each
+built from exactly ONE scope per invocation (`cmd_develop` from `d_active` rows only,
+`cmd_production` from `p_active` rows only, never both together), so a `D`-only row and a
+`P`-only row sharing a label can never actually collide in the same dict. The check was
+strictly wider than the failure mode it exists to catch.
+
+**Fix:** `_dedupe_active_labels()` now runs the same seen-count logic twice, once over
+`d_active` rows and once over `p_active` rows, independently — a collision still gets
+caught (and renamed) within either scope, but never across them. Verified live (daynum
+2212): `control_board.read_board()` on the unmodified live board now returns
+`board_errors=[]`, both row 2 and row 3 keep the identical label
+`'GICS-beta3m(beta3m 1 3)'` unchanged.
+
+## Correction 2026-08-14 (same day) — `picks_<daynum>` switches from wide xlsx to long-format csv
+
+SM: *"In step2 picks please cancel Excel output and deliver instead a long format csv
+containing label-daynum-ticker-priority. I will then import this in as needed Excel and
+pivot the long format there."*
+
+The 2026-08-13 version (`outputboard.write_picks_workbook()`) pivoted each active `D`
+row's full pick history into its own Excel tab, ticker x daynum. Replaced by
+`write_picks_csv()`: one flat table, `label`/`daynum`/`ticker`/`priority` columns, across
+ALL active `D` rows in one file (no more per-row tabs — a pivot is now something SM builds
+in Excel from the long CSV as needed, not something the processor pre-builds). European
+format (`sep=';', decimal=','`), same convention as `StrategicStocks_<daynum>.csv`.
+Filename unchanged in shape (`picks_<daynum>.csv`, daynum = max daynum seen across every
+row's history); the prior-file archive glob widened to catch both `picks_*.xlsx` (a
+one-time cleanup of files written under the old scheme) and `picks_*.csv`. Still
+dev-tick only, still never Drive-published — a research/backtesting artifact, not the
+day's advice list, per the 2026-08-13 correction above.

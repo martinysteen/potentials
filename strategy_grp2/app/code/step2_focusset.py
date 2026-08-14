@@ -174,7 +174,7 @@ def pick_history(row_resolved: dict) -> tuple["step0_data.Step0Result", dict[int
     list must be pulled on any other of the time line"). tickers is [] for a daynum with no
     elevated group, same clean-no-pick convention as production_pick/current_pick.
 
-    Development-tick only (feeds picks_<daynum>.xlsx) — never called by --production, which
+    Development-tick only (feeds picks_<daynum>.csv) — never called by --production, which
     only ever needs the one newest-daynum pick current_pick gives it."""
     s0, dom_table, params = _resolve_history(row_resolved)
     history: dict[int, list[str]] = {}
