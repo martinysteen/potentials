@@ -141,14 +141,24 @@ measured against something other than the ticker's own price history:
 
 36. **longi_coreindex.csv** - The price row of the ticker's CoreIndex (from `Stamdata.csv`), copied onto every ticker that belongs to it ✓ IMPLEMENTED
 37. **longi_coreindexRSI.csv** - Same, but the CoreIndex's RSI row (from `longi_rsi.csv`) ✓ IMPLEMENTED
-38. **longi_beta3m.csv** - Beta vs the ticker's CoreIndex over 67 days ✓ IMPLEMENTED
-39. **longi_beta6m.csv** - Beta over 133 days ✓ IMPLEMENTED
-40. **longi_beta1yr.csv** - Beta over 265 days ✓ IMPLEMENTED
-41. **longi_trump.csv** - Price index rebased to daynum **1863** (2 Apr 2025, the retaliatory-tariff announcement); origin = 1.0, older daynums blank ✓ IMPLEMENTED
-42. **longi_iran.csv** - Price index rebased to daynum **2094** (27 Feb 2026, last ordinary session before the Iran War); origin = 1.0, older daynums blank ✓ IMPLEMENTED
+38. **longi_beta1m.csv** - Beta vs the ticker's CoreIndex over 23 days ✓ IMPLEMENTED
+39. **longi_beta2m.csv** - Beta over 45 days ✓ IMPLEMENTED
+40. **longi_beta3m.csv** - Beta over 67 days ✓ IMPLEMENTED
+41. **longi_beta6m.csv** - Beta over 133 days ✓ IMPLEMENTED
+42. **longi_beta1yr.csv** - Beta over 265 days ✓ IMPLEMENTED
+43. **longi_trump.csv** - Price index rebased to daynum **1863** (2 Apr 2025, the retaliatory-tariff announcement); origin = 1.0, older daynums blank ✓ IMPLEMENTED
+44. **longi_iran.csv** - Price index rebased to daynum **2094** (27 Feb 2026, last ordinary session before the Iran War); origin = 1.0, older daynums blank ✓ IMPLEMENTED
 
 Beta is `Cov(stock returns, index returns) / Var(index returns)`, the index being the ticker's own
 CoreIndex — so these are per-ticker features despite reading a shared row.
+
+**Implementation:** all five windows are produced by one script, `longi_beta.py`, which reads
+PotDat.csv/Stamdata.csv once and loops a `PERIODS` list of `(name, window, output_file)` —
+mirroring how `longi_future_performance.py` loops its own periods internally rather than being
+one script per window. Window sizes follow the same `months × 22 + 1` trading-day rule as the
+system's other month-based windows (sh3m/sh6m/sh1yr). (Until 2026-08-14 this was five separate
+~230-line one-window scripts, each its own `longi.py` module; consolidated since they carried no
+logic beyond a window size and an output filename. The five originals are in `_not_used/`.)
 
 ### Forward-Looking Tables (longi_future_per*) — the backtest targets
 
@@ -357,12 +367,17 @@ Follow the same pattern:
 - ✓ Pipeline orchestrator (longi.py) fully implemented
   - Dependency management working
   - Parallel execution capability ready
-  - 35 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_performance, coreindex, coreindexRSI, beta3m, beta6m, beta1yr, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_performance, future_minaggr, across
+  - 33 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_performance, coreindex, coreindexRSI, beta, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_performance, future_minaggr, across
     (`future_gain20d`/`future_gain50d` were retired 2026-07-31 — one `future_performance`
     module now emits the whole `longi_future_per*` "seven-pack" ladder — 1d/5d/10d/20d/50d/100d/200d,
     replacing the earlier six-entry semantic ladder the same day. The 14 `grp_{GICS,Sector2}_per*`
     modules were consolidated into a single `grp_performance` module the same day too — was 47
-    modules briefly. `future_minaggr` was added 2026-08-04, bringing the count to the 35 above.)
+    modules briefly. `future_minaggr` was added 2026-08-04, bringing the count to 35. `beta1m`/`beta2m`
+    were added 2026-08-14 as their own scripts (bringing the count to 37 briefly), then the same day
+    all five beta scripts (`beta1m/2m/3m/6m/1yr`) were consolidated into a single `beta` module —
+    `longi_beta.py`, looping a `PERIODS` list — mirroring the `grp_performance` and
+    `future_performance` precedents; the five one-window scripts moved to `_not_used/`. Net effect
+    of both changes: 35 → 33.)
 - ✓ longi_price.py fully implemented
   - Outputs: longi_price.csv (byte-exact copy of PotDat.csv via shutil.copyfile, no reformatting)
   - Purpose: (a) reference raw price data under the longi_ naming convention, (b) record the exact PotDat.csv snapshot used to derive all longi_*.csv outputs for this run, since PotDat.csv is updated asynchronously relative to them

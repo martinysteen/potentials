@@ -149,19 +149,9 @@ MODULES: Dict[str, Module] = {
         script="longi_coreindexRSI.py",
         depends_on=["rsi"],  # Depends on longi_rsi.csv
     ),
-    "beta3m": Module(
-        name="3-Month Beta (Market Sensitivity)",
-        script="longi_beta3m.py",
-        depends_on=[],  # Independent - reads PotDat.csv and Stamdata.csv
-    ),
-    "beta6m": Module(
-        name="6-Month Beta (Market Sensitivity)",
-        script="longi_beta6m.py",
-        depends_on=[],  # Independent - reads PotDat.csv and Stamdata.csv
-    ),
-    "beta1yr": Module(
-        name="1-Year Beta (Market Sensitivity)",
-        script="longi_beta1yr.py",
+    "beta": Module(
+        name="Beta (Market Sensitivity: 1m/2m/3m/6m/1yr)",
+        script="longi_beta.py",
         depends_on=[],  # Independent - reads PotDat.csv and Stamdata.csv
     ),
     "trump": Module(
@@ -213,7 +203,7 @@ MODULES: Dict[str, Module] = {
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="longi_across.py",
-        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "quot1020", "quot2050", "sh3m", "sh6m", "sh1yr", "coreindex", "coreindexRSI", "beta3m", "beta6m", "beta1yr", "trump", "iran"],  # Depends on ALL modules - must run last
+        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "quot1020", "quot2050", "sh3m", "sh6m", "sh1yr", "coreindex", "coreindexRSI", "beta", "trump", "iran"],  # Depends on ALL modules - must run last
     ),
     # Add more modules here:
     # "module_name": Module(

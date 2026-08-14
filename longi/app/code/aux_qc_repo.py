@@ -52,7 +52,9 @@ BLANK_LEAD_COLS: dict[str, int] = {
 
 # Canonical file set — update here when modules are added or removed
 EXPECTED_FILES: set[str] = {
+    "longi_beta1m.csv",
     "longi_beta1yr.csv",
+    "longi_beta2m.csv",
     "longi_beta3m.csv",
     "longi_beta6m.csv",
     "longi_coreindex.csv",
