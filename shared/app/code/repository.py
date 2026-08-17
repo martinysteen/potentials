@@ -187,6 +187,7 @@ OWNERS: dict[str, Owner] = {
             "*.xlsx",           # StrategicStocks_*.xlsx, compare_strategies_*.xlsx, Excel's own ~$ lock file
             "*.cmd",            # strategy_grp2.cmd (renamed from run.cmd, 2026-08-13)
             "*.lnk",            # control_board.lnk
+            "picks_*.csv",      # dev-tick only (DesignVersion2.md), never Drive-published
             "backtesting/**",
             "walkforward/**",
             "_archive/**",
