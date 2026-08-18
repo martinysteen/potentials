@@ -137,6 +137,7 @@ OWNERS: dict[str, Owner] = {
             "/longi_price.csv",
             "/longi_quot*.csv",
             "/longi_rank.csv",
+            "/longi_regr*.csv",
             "/longi_rsi.csv",
             "/longi_sh*.csv",
             "/longi_spr*.csv",

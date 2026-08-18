@@ -154,6 +154,11 @@ MODULES: Dict[str, Module] = {
         script="longi_beta.py",
         depends_on=[],  # Independent - reads PotDat.csv and Stamdata.csv
     ),
+    "regression": Module(
+        name="Log-Price Regression (growth rate + fit: 20d/50d/100d/200d)",
+        script="longi_regression.py",
+        depends_on=[],  # Independent - reads only PotDat.csv
+    ),
     "trump": Module(
         name="Trump Tariff Price Index",
         script="longi_trump.py",
@@ -203,7 +208,7 @@ MODULES: Dict[str, Module] = {
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="longi_across.py",
-        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "quot1020", "quot2050", "sh3m", "sh6m", "sh1yr", "coreindex", "coreindexRSI", "beta", "trump", "iran"],  # Depends on ALL modules - must run last
+        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "quot1020", "quot2050", "sh3m", "sh6m", "sh1yr", "coreindex", "coreindexRSI", "beta", "trump", "iran", "regression"],  # Depends on ALL modules - must run last
     ),
     # Add more modules here:
     # "module_name": Module(

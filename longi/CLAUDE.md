@@ -152,6 +152,33 @@ measured against something other than the ticker's own price history:
 Beta is `Cov(stock returns, index returns) / Var(index returns)`, the index being the ticker's own
 CoreIndex — so these are per-ticker features despite reading a shared row.
 
+45. **longi_regr20d.csv**, **_50d**, **_100d**, **_200d** - Annualized growth rate (%) from an OLS
+    regression of log(price) on time, over the trailing N days ✓ IMPLEMENTED
+46. **longi_regrfit20d.csv**, **_50d**, **_100d**, **_200d** - R² × 100 (0-100) of that same fit —
+    how well "constant growth" describes the ticker over that window ✓ IMPLEMENTED
+
+`log P(t) = log P0 + t·log(1+r)` under constant compounding, so the OLS slope of log(price) against
+time **is** `log(1+r)`. Each window's fit is assigned to its **newest** day — never the midpoint,
+which would leak information from days after the assignment day into that column, the same
+look-ahead hazard `longi_across.py`'s `longi_future_` skip-guard exists to prevent.
+
+**Not a replacement for `longi_per*.csv`, and not intended as one.** `per20d` is a realized endpoint
+return (money someone could have earned); `regr20d` is a smoothed trend estimate (a rate nobody
+received) that uses every day in the window instead of two endpoints, so a single noisy close moves
+it far less and a one-off jump reads differently from a steady climb to the same place. Both stay:
+removing `per*` would break `longi_rank.py`'s `PERFORMANCE_FILES` (and the 6 median + 2 stepup files
+downstream), `strategy_grp2`'s `post_filter`/`datacheck.py` consumption, and the
+`longi_future_perX[i] == longi_perX[i-1-days]` parity check — none of which have a regression-based
+substitute. `regr5d`/`regr10d` were deliberately not added: a 5-point OLS fit sits close to `per5d`
+anyway, with an erratic R² and a `×265` annualization that turns small wobbles into four-digit
+percentages. 20 days is the shortest window worth fitting.
+
+**Implementation:** one script, `longi_regression.py`, looping a `PERIODS` list of
+`(name, window, rate_file, fit_file)` — same idiom as `longi_beta.py`. Reads `PotDat.csv` once;
+per ticker, per window, a `numpy.lib.stride_tricks.sliding_window_view` turns the rolling regression
+into a small number of vectorized sums rather than a Python loop over ~3000 tickers × ~470 columns ×
+up to 200-wide windows, which would exceed the pipeline's 600s per-module timeout.
+
 **Implementation:** all five windows are produced by one script, `longi_beta.py`, which reads
 PotDat.csv/Stamdata.csv once and loops a `PERIODS` list of `(name, window, output_file)` —
 mirroring how `longi_future_performance.py` loops its own periods internally rather than being
@@ -367,7 +394,7 @@ Follow the same pattern:
 - ✓ Pipeline orchestrator (longi.py) fully implemented
   - Dependency management working
   - Parallel execution capability ready
-  - 33 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_performance, coreindex, coreindexRSI, beta, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_performance, future_minaggr, across
+  - 34 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_performance, coreindex, coreindexRSI, beta, regression, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_performance, future_minaggr, across
     (`future_gain20d`/`future_gain50d` were retired 2026-07-31 — one `future_performance`
     module now emits the whole `longi_future_per*` "seven-pack" ladder — 1d/5d/10d/20d/50d/100d/200d,
     replacing the earlier six-entry semantic ladder the same day. The 14 `grp_{GICS,Sector2}_per*`
@@ -377,7 +404,7 @@ Follow the same pattern:
     all five beta scripts (`beta1m/2m/3m/6m/1yr`) were consolidated into a single `beta` module —
     `longi_beta.py`, looping a `PERIODS` list — mirroring the `grp_performance` and
     `future_performance` precedents; the five one-window scripts moved to `_not_used/`. Net effect
-    of both changes: 35 → 33.)
+    of both changes: 35 → 33. `regression` was added 2026-08-18, bringing the count to 34.)
 - ✓ longi_price.py fully implemented
   - Outputs: longi_price.csv (byte-exact copy of PotDat.csv via shutil.copyfile, no reformatting)
   - Purpose: (a) reference raw price data under the longi_ naming convention, (b) record the exact PotDat.csv snapshot used to derive all longi_*.csv outputs for this run, since PotDat.csv is updated asynchronously relative to them
@@ -439,6 +466,12 @@ Follow the same pattern:
     namespace declaration, the two guards and the scoped rclone sync
   - Only longi's own files are cleaned up at the destination; other families' files there
     are invisible to the transfer
+- ✓ longi_regression.py fully implemented (one module, `regression`)
+  - Outputs: longi_regr{20,50,100,200}d.csv (annualized growth rate, %) and
+    longi_regrfit{20,50,100,200}d.csv (R² × 100), one script looping a `PERIODS` list
+  - OLS fit of log(price) vs time per rolling window, assigned to the window's newest day
+  - Independent module (reads only PotDat.csv); `across` depends on it (added to its
+    `depends_on` list) so the 8 new columns land in the same run's `across_<daynum>.csv`
 - GDrive integration working (shared gd_download.py, longi_upload.py)
 - Shared modules in /home/sm/potentials/shared/app/code/
 
@@ -501,6 +534,13 @@ these before any other project can read it. **Registering the module (step 2) do
 The pattern in list 1 is what scopes longi's `rclone sync`. It is an **includes** list, never an
 excludes list — see that module's docstring for the n² argument, and
 [../repositoryRTBI/CLAUDE.md](../repositoryRTBI/CLAUDE.md) for the three-layer contract it serves.
+
+**A fifth list, easy to miss because it produces a race rather than an error:** if the new output
+should appear in the same run's `across_<daynum>.csv`, add the new module's id to
+`MODULES["across"].depends_on` in `longi.py`. `longi_across.py` itself needs no edit — it
+auto-discovers any `longi_*.csv` not prefixed `longi_grp_`/`longi_future_` — but without the
+`depends_on` entry, `across` can start running before the new module finishes, and the new columns
+land missing or empty with no error at all.
 
 Verify the whole set in one call, before trusting a new file downstream:
 
