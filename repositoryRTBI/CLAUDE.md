@@ -8,13 +8,16 @@ Mirrors `GoogleDrive:PotSystem/repositoryRTBI` to local `data/` on Ubuntu (`~/po
 
 | Layer | Who | Does |
 |-------|-----|------|
-| Producers | `longi`, `group_conformity`, … | compute, then publish **their own namespace** to Drive. Never pull, never trigger anything downstream. |
-| Mirror | this project (`sync_rtbi.sh`) | pulls Drive → `data/` **on its own cron**, for its own reasons |
+| Producers | `longi`, `group_conformity`, … | compute, then publish **their own namespace** to Drive *and* directly into the local mirror, in one `repository.py::publish(..., target="both")` call. Never pull, never call `sync_rtbi.sh` or trigger anything else downstream. |
+| Mirror | this project (`sync_rtbi.sh`) | pulls Drive → `data/` **on its own cron**, for content that actually originates on Drive rather than from a registered producer |
 | Consumers | `strategy_grp2`, and every family's `fetch_input.sh` | read `data/`. **Never Google Drive directly.** |
 
 A producer must not call `sync_rtbi.sh` — both `start_longi.sh` and `run_conf.sh` used to,
-which made every family's timing depend on every other family's. If consumers need fresher
-data, this project changes **its own** cron; that is not a producer's business.
+which made every family's timing depend on every other family's, and it stayed removed. What
+closes the publish→mirror lag instead is `publish()` itself writing both destinations, scoped to
+the owner's own `owns` namespace exactly as the Drive leg always was — so a family still never
+touches another family's files, it just also writes its own into `data/` directly rather than
+waiting for the next cron tick to fetch them back from Drive.
 
 ### Where the ownership list is
 
@@ -42,12 +45,18 @@ at :31, every hour, for weeks.
 `{"finished": ISO8601, "exit_code": N, "files": N}` — including on failure. Consumers gate on
 it (`repository.py fetch` refuses a mirror that failed, or is over 90 min stale, unless
 `--stale-ok`). It lives **outside** `data/` on purpose: anything inside `data/` that Drive
-does not have is deleted by the next sync.
+does not have is deleted by the next sync. Since producers now write `data/` directly, this
+stamp certifies the last Drive-originated pull, not "everything in `data/` is current" — the
+90-minute staleness window still holds because `sync_rtbi.sh` keeps running on its own cron
+regardless of producer activity.
 
 ### Cron
-`:07`, `:37`, `:55` — three ticks. `:55` exists so `group_conformity`'s `:45` output reaches
-the mirror in the hour it was computed. Full chain:
-`longi :15 → publish ~:17 → mirror :37 → group_conformity :45 → publish ~:47 → mirror :55`.
+`:07`, `:37`, `:55` — three ticks, now a safety net rather than the path producer output takes
+to reach the mirror (that happens inline with each publish, in about a second). The ticks still
+matter: they catch a mirror-leg publish failure, a manual edit made directly on Drive, and
+`yf3`'s bespoke `rclone copy` (which never registers with `repository.py` and so never writes
+the mirror directly). Full producer chain: `longi :15 → publish ~:17 (Drive + mirror) →
+group_conformity :45 → publish ~:47 (Drive + mirror)`.
 
 ## Environment
 - Ubuntu server: `gandalf` (accessed via SSH on `innovia.dk:2222`)

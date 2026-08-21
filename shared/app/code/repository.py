@@ -6,11 +6,15 @@ publishes, and where a family reads its input from.
 Three layers, and nothing crosses
 ---------------------------------
   PRODUCERS   (longi, group_conformity, ...) compute, then publish THEIR OWN
-              namespace and nothing else. They never pull, and they never trigger
-              anything downstream.
+              namespace and nothing else, to Drive AND directly into the local
+              mirror (target="both", the default - see publish()). They never
+              pull, and they never call sync_rtbi.sh or trigger anything else
+              downstream; writing their own namespace into data/ is a publish,
+              not a sync.
   MIRROR      repositoryRTBI/sync_rtbi.sh pulls Google Drive -> data/ on its own
-              schedule, for its own reasons. If it wants fresher data it changes
-              its own cron; that is not a producer's business.
+              schedule, for content that actually originates on Drive (PotDat.csv
+              from the G Sheet, a manual Drive edit, yf3's Yfinance/) rather than
+              from a registered producer here.
   CONSUMERS   read the local mirror. Never Google Drive. The mirror is the single
               authoritative copy on this machine, so "complete" and "up to date"
               are properties it has to certify - see mirror_status().
@@ -71,12 +75,14 @@ depth, which would quietly pull subfolder files into a namespace.
 CLI
 ---
     python3 repository.py check                 registry self-check, all owners
-    python3 repository.py publish <owner> [--dry-run] [--target drive|mirror]
+    python3 repository.py publish <owner> [--dry-run] [--target drive|mirror|both]
     python3 repository.py fetch   <owner> [--stale-ok] [--max-age-min N]
 
-`--target mirror` publishes into the local mirror instead of Drive. Nothing uses
-it yet; it exists so that reversing the dataflow later (family -> Gandalf repos
--> Drive, rather than family -> Drive -> Gandalf repos) is a flag, not a rewrite.
+`--target both` (the default) publishes to Drive and to the local mirror in one
+call - Drive first, mirror skipped if that fails. This is what makes a producer's
+output visible to consumers within about a second instead of on sync_rtbi.sh's
+own next cron tick. `--target drive` / `--target mirror` publish to one
+destination only, for ad-hoc use.
 """
 from __future__ import annotations
 
@@ -368,20 +374,14 @@ def destination(owner: Owner, target: str = "drive") -> str:
     return f"{root}/{owner.subdir}" if owner.subdir else root
 
 
-def publish(owner: Owner, target: str = "drive", dry_run: bool = False) -> int:
-    """rclone sync, scoped to this owner's namespace.
+def _sync(owner: Owner, target: str, dry_run: bool) -> int:
+    """One rclone sync leg, scoped to this owner's namespace, to one destination.
 
     `sync` and not `copy`, so retired outputs are cleaned up; scoped by filter, so
     the cleanup can only ever reach this owner's own files. The trailing `- **`
     is what makes every other family's files invisible to the transfer, including
     for deletion.
     """
-    problems = check_owner(owner)
-    if problems:
-        for p in problems:
-            print(f"ERROR: {p}")
-        return 1
-
     dest = destination(owner, target)
     cmd = ["rclone", "sync", str(owner.source), dest, "--verbose", "--drive-skip-gdocs"]
     for pattern in owner.owns:
@@ -402,10 +402,40 @@ def publish(owner: Owner, target: str = "drive", dry_run: bool = False) -> int:
     if result.stdout:
         print(result.stdout, end="")
     if result.returncode == 0:
-        print(f"SUCCESS: {owner.name} published")
+        print(f"SUCCESS: {owner.name} published to {target}")
     else:
         print(f"ERROR: rclone failed with exit code {result.returncode}")
     return result.returncode
+
+
+def publish(owner: Owner, target: str = "both", dry_run: bool = False) -> int:
+    """Publish this owner's namespace to Drive, the local mirror, or both.
+
+    `target="both"` (the default) is what closes the publish -> mirror lag: a
+    consumer reading `data/` sees this owner's output within about a second,
+    rather than waiting for sync_rtbi.sh's own next cron tick. Drive publishes
+    first, and the mirror leg is skipped if that fails - the mirror must never
+    hold a file Drive lacks, or sync_rtbi.sh's next full-tree pull (which is
+    deletion-authoritative) would silently revert what looked like a successful
+    publish. `target="drive"` / `target="mirror"` publish to one destination only,
+    for ad-hoc use.
+    """
+    problems = check_owner(owner)
+    if problems:
+        for p in problems:
+            print(f"ERROR: {p}")
+        return 1
+
+    if target != "both":
+        return _sync(owner, target, dry_run)
+
+    rc = _sync(owner, "drive", dry_run)
+    if rc != 0:
+        print(f"SKIPPING mirror publish for {owner.name}: Drive publish failed "
+              f"(exit {rc}) - publishing to the mirror now would let consumers see "
+              f"output the next sync_rtbi.sh tick would then revert")
+        return rc
+    return _sync(owner, "mirror", dry_run)
 
 
 # --------------------------------------------------------------------------- #
@@ -435,7 +465,7 @@ def main() -> int:
 
     p_pub = sub.add_parser("publish", help="sync one owner's namespace to the repository")
     p_pub.add_argument("owner", choices=sorted(OWNERS))
-    p_pub.add_argument("--target", choices=("drive", "mirror"), default="drive")
+    p_pub.add_argument("--target", choices=("drive", "mirror", "both"), default="both")
     p_pub.add_argument("--dry-run", action="store_true")
 
     p_fetch = sub.add_parser("fetch", help="copy one owner's inputs out of the mirror")

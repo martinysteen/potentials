@@ -130,16 +130,20 @@ python ~/potentials/shared/app/code/repository.py check     # both guards, all f
 ### `run_conf.sh` — the cron entry point
 Chains fetch → `analyze_conformity.py` → `analyze_conformity_gains.py` → `upload_output.sh`,
 gating each step on the previous one's exit code, logging to `~/logs/run_conf.log`. Modeled on
-`~/potentials/longi/start_longi.sh`. It deliberately does **not** call `sync_rtbi.sh` any more:
-a producer's job ends when its own outputs are published, and refreshing the local mirror is
-the mirror's business on the mirror's own cron. Cron-scheduled the same way `start_longi.sh`
-is: this is the one entry point that should be cron'ed, not `fetch_input.sh`/`upload_output.sh`
-individually.
+`~/potentials/longi/start_longi.sh`. It deliberately does **not** call `sync_rtbi.sh` itself:
+a producer's job ends when its own outputs are published — `upload_output.sh` writes this
+family's namespace to Drive *and* directly into the local mirror in one call
+(`repository.py::publish(..., target="both")`), so refreshing `data/` is part of the publish,
+not a separate step. Cron-scheduled the same way `start_longi.sh` is: this is the one entry
+point that should be cron'ed, not `fetch_input.sh`/`upload_output.sh` individually.
 
-**Cron placement matters now.** `fetch_input.sh` reads `longi_per1d` etc. from the local
-mirror rather than from Drive, so this run must follow a `sync_rtbi.sh` tick that itself
-followed longi's publish, or it grades an hour-old vintage. The chain is
-`longi :15 → publish ~:17 → mirror :37 → run_conf :45 → publish ~:47 → mirror :55`.
+**Cron placement used to matter more than it does now.** `fetch_input.sh` reads `longi_per1d`
+etc. from the local mirror rather than from Drive. Previously this run had to follow a
+`sync_rtbi.sh` tick that itself followed longi's publish, or it graded an hour-old vintage —
+that's why `run_conf` sits at `:45`, well after longi's `:15`. Since longi's publish now writes
+the mirror directly (`longi :15 → publish ~:17`, Drive + mirror in one call), that data is
+current within about a second of `:17`, not gated on `sync_rtbi.sh`'s own `:37` tick — the `:45`
+placement still leaves comfortable headroom, it's just no longer load-bearing the way it was.
 
 ```bash
 bash ~/potentials/group_conformity/run_conf.sh

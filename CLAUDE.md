@@ -11,9 +11,12 @@ belongs in that project's own `CLAUDE.md`, which is always the authority for its
   shell has no conda). **Python is not installed on the Windows host** — this holds for quick
   one-line checks too.
 - **Never pip, never `requirements.txt`.** `potsystem_env` is used as-is.
-- **`repositoryRTBI/data/` is read-only to everyone except the mirror.** Producers publish to
-  Drive and stop; consumers read the local mirror and never Google Drive directly. A producer
-  must never call `sync_rtbi.sh`. See [repositoryRTBI/CLAUDE.md](repositoryRTBI/CLAUDE.md).
+- **`repositoryRTBI/data/` is read-only to everyone except a producer's own publish.** Producers
+  publish their own namespace to Drive *and* directly into the local mirror in one call
+  (`repository.py::publish(..., target="both")`, the default) — consumers still only ever read
+  the local mirror, never Google Drive directly, and a producer still never touches anyone
+  else's files. A producer must never call `sync_rtbi.sh` itself — writing its own namespace
+  into `data/` is a publish, not a sync. See [repositoryRTBI/CLAUDE.md](repositoryRTBI/CLAUDE.md).
 - **All CSV is European:** `sep=';'`, `decimal=','`. No hardcoded paths — each project has a
   `shared/config.py`.
 - **`_archive/` is frozen, and the dependency arrow only ever points out of it.** Files there are
@@ -36,13 +39,17 @@ belongs in that project's own `CLAUDE.md`, which is always the authority for its
 
 ## The daily chain
 
-Producers publish their **own namespace** to Drive; the mirror pulls on its own schedule;
-consumers read the mirror. Cron on the server (`crontab -l`), hours 0-22:
+Producers publish their **own namespace** to Drive and directly into the local mirror in the
+same call, so a consumer sees the output within about a second of publish — not on
+`sync_rtbi.sh`'s own next cron tick. Cron on the server (`crontab -l`), hours 0-22:
 
 ```
-longi :15  →  publish ~:17  →  mirror :37  →  group_conformity :45  →  publish ~:47  →  mirror :55
-                                  ↑ also :07
+longi :15  →  publish ~:17 (Drive + mirror)  →  group_conformity :45  →  publish ~:47 (Drive + mirror)
 ```
+
+`sync_rtbi.sh` still runs at `:07/:37/:55`, now for a narrower job: pulling content that
+actually originates on Drive (`PotDat.csv` from the G Sheet, `yf3`'s `Yfinance/`, a manual Drive
+edit) rather than gating when a registered producer's output becomes visible.
 
 **`strategy_grp2`'s production tick is also cron'd**, separately from the hourly chain above:
 `run_production.sh` at 01:00/11:00/19:00 runs `conductor.py --production` — `P`-marked board

@@ -30,7 +30,7 @@ def main() -> int:
         description="Publish group_conformity factor files to repositoryRTBI")
     parser.add_argument("--dry-run", action="store_true",
                         help="show what rclone would transfer and delete, change nothing")
-    parser.add_argument("--target", choices=("drive", "mirror"), default="drive")
+    parser.add_argument("--target", choices=("drive", "mirror", "both"), default="both")
     args = parser.parse_args()
 
     return repository.publish(repository.OWNERS["group_conformity"],
