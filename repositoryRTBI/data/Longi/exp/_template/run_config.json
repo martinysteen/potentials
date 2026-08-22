@@ -1,0 +1,14 @@
+{
+  "exp_id": "EXP-YYYY-MM-DD-001",
+  "date": "YYYY-MM-DD",
+  "owner": "initials",
+  "git_commit": "<commit-hash>",
+  "command": "python3 app/code_exp/<script>.py",
+  "seed": 0,
+  "inputs": [
+    "app/input/PotDat.csv",
+    "app/input/Stamdata.csv",
+    "app/input/Cal.csv"
+  ],
+  "notes": "Add relevant parameters and assumptions."
+}
