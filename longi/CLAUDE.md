@@ -152,8 +152,8 @@ measured against something other than the ticker's own price history:
 Beta is `Cov(stock returns, index returns) / Var(index returns)`, the index being the ticker's own
 CoreIndex — so these are per-ticker features despite reading a shared row.
 
-45. **longi_regr20d.csv**, **_50d**, **_100d**, **_200d** - Annualized growth rate (%) from an OLS
-    regression of log(price) on time, over the trailing N days ✓ IMPLEMENTED
+45. **longi_regr20d.csv**, **_50d**, **_100d**, **_200d** - Trend gain over the window (%) from an
+    OLS regression of log(price) on time, over the trailing N days ✓ IMPLEMENTED
 46. **longi_regrfit20d.csv**, **_50d**, **_100d**, **_200d** - R² × 100 (0-100) of that same fit —
     how well "constant growth" describes the ticker over that window ✓ IMPLEMENTED
 
@@ -161,6 +161,15 @@ CoreIndex — so these are per-ticker features despite reading a shared row.
 time **is** `log(1+r)`. Each window's fit is assigned to its **newest** day — never the midpoint,
 which would leak information from days after the assignment day into that column, the same
 look-ahead hazard `longi_across.py`'s `longi_future_` skip-guard exists to prevent.
+
+`regr{N}d` reports the fitted trend's own compounded return over its own N days —
+`(exp(slope * N) - 1) * 100` — not annualized to a common 265-day year. Changed 2026-08-24: the
+original version annualized every window to one year, which was meant for comparing slopes across
+tickers but made the number read as a hypothetical yearly rate nobody experienced. The window-scoped
+version instead lands in the same units as `longi_per{N}d.csv` (a same-length realized return), so
+`regr20d` is "what would 20 days of this ticker's steady trend amount to", directly next to
+`per20d`'s "what 20 days actually returned" — better suited to reading recent price action than to
+cross-ticker slope comparison.
 
 **Not a replacement for `longi_per*.csv`, and not intended as one.** `per20d` is a realized endpoint
 return (money someone could have earned); `regr20d` is a smoothed trend estimate (a rate nobody
@@ -170,8 +179,7 @@ removing `per*` would break `longi_rank.py`'s `PERFORMANCE_FILES` (and the 6 med
 downstream), `strategy_grp2`'s `post_filter`/`datacheck.py` consumption, and the
 `longi_future_perX[i] == longi_perX[i-1-days]` parity check — none of which have a regression-based
 substitute. `regr5d`/`regr10d` were deliberately not added: a 5-point OLS fit sits close to `per5d`
-anyway, with an erratic R² and a `×265` annualization that turns small wobbles into four-digit
-percentages. 20 days is the shortest window worth fitting.
+anyway, with too few points for a stable R². 20 days is the shortest window worth fitting.
 
 **Implementation:** one script, `longi_regression.py`, looping a `PERIODS` list of
 `(name, window, rate_file, fit_file)` — same idiom as `longi_beta.py`. Reads `PotDat.csv` once;

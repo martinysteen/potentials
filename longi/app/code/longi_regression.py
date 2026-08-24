@@ -19,8 +19,11 @@ would leak information from days after the assignment day into that column
 exists to prevent).
 
 Outputs, per window N:
-- longi_regr{N}d.csv     annualized growth rate (%): (exp(slope * 265) - 1) * 100
-                          265 = longi's trading year (see longi_sh1yr.py)
+- longi_regr{N}d.csv     trend gain over the window (%): (exp(slope * N) - 1) * 100
+                          — the fitted trend's own compounded return over its N days,
+                          not annualized. Answers "what did this window's steady trend
+                          amount to", the same units as longi_per{N}d.csv, so the two
+                          are directly comparable (endpoint return vs. trend return).
 - longi_regrfit{N}d.csv  R^2 * 100 (0-100): how well "constant growth"
                           actually describes the ticker over that window —
                           a numeric cousin of longi_stepup*.csv
@@ -45,15 +48,13 @@ import numpy as np
 INPUT_FILE = Path(__file__).parent.parent / "input" / "PotDat.csv"
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 
-TRADING_DAYS_PER_YEAR = 265  # matches longi_sh1yr.py's window convention
-
 
 @dataclass
 class RegrPeriod:
     """Definition of a regression window."""
     name: str          # Display name
     window: int        # Trading days in the window (N)
-    rate_file: str      # Output CSV filename: annualized growth rate
+    rate_file: str      # Output CSV filename: trend gain over the window
     fit_file: str        # Output CSV filename: R^2 x100
 
 
@@ -112,7 +113,7 @@ def calculate_regression(
         u_k   = (N-1)/2 - k                     centred time, sum(u_k) == 0
         SU2   = N*(N**2-1)/12                   == sum(u_k**2), constant per N
         slope = sum(u_k*y_k) / SU2               log-price units per day
-        rate  = (exp(slope * 265) - 1) * 100     <- longi_regr{N}d.csv
+        rate  = (exp(slope * N) - 1) * 100       <- longi_regr{N}d.csv (trend gain over the window)
         R^2   = sum(u_k*y_k)**2 / (SU2 * Syy)    <- longi_regrfit{N}d.csv (x100)
 
     Vectorized with a sliding-window view rather than a Python loop: at
@@ -151,7 +152,7 @@ def calculate_regression(
 
     slope = sw / su2
     with np.errstate(over='ignore', invalid='ignore'):
-        rate = (np.exp(slope * TRADING_DAYS_PER_YEAR) - 1.0) * 100.0
+        rate = (np.exp(slope * N) - 1.0) * 100.0  # trend's own compounded return over its N days
 
     sstot = s2 - (s1 ** 2) / N  # == Syy, the total sum of squares
     flat = sstot <= 0
