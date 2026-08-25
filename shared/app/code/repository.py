@@ -179,6 +179,18 @@ OWNERS: dict[str, Owner] = {
         # analyzer. They stay local on purpose.
         local_only=("conformity_*.csv", "conformity_*.xlsx", "*.xlsx.csv"),
     ),
+    "potrank": Owner(
+        name="potrank",
+        source=POTENTIALS / "potrank" / "app" / "output",
+        input_dir=POTENTIALS / "potrank" / "app" / "input",
+        subdir="",                       # repository root, beside Stamdata.csv / Cal.csv
+        owns=(
+            "/potrank2.csv",
+        ),
+        # needs=() deliberately, same as strategy_grp2: potrank's real input list lives in
+        # app/code/columns.py / preflight.py, where it drives the vintage-coherence check,
+        # not just a flat file copy.
+    ),
     "strategy_grp2": Owner(
         name="strategy_grp2",
         source=POTENTIALS / "strategy_grp2" / "app" / "report",

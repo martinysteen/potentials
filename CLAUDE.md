@@ -33,6 +33,7 @@ belongs in that project's own `CLAUDE.md`, which is always the authority for its
 | [longi/](longi/) | **Producer.** Per-ticker factor matrices `longi_*.csv`, sector aggregates, forward-gain targets | its `CLAUDE.md` |
 | [group_conformity/](group_conformity/) | **Producer.** Conformity/sector-beta grades | its `README.md` |
 | [yf3/](yf3/) | **Producer.** yFinance fundamentals | its `CLAUDE.md` |
+| [potrank/](potrank/) | **Producer.** The PotRank wide snapshot, `potrank2.csv` — one row per ticker, replaces the PotRank Google Sheet's own calculations | its `CLAUDE.md` |
 | [strategy_grp2/](strategy_grp2/) | **The consumer — current work.** One Excel control board drives steps 0-4 | [DesignVersion2.md](strategy_grp2/DesignVersion2.md) |
 | [shared/](shared/) | `app/code/repository.py` — the one publish/fetch registry every family uses | the module docstring |
 | [_archive/](_archive/) | Retired projects (`strategy/`, `strategy_grp/`), frozen | — |
@@ -45,11 +46,16 @@ same call, so a consumer sees the output within about a second of publish — no
 
 ```
 longi :15  →  publish ~:17 (Drive + mirror)  →  group_conformity :45  →  publish ~:47 (Drive + mirror)
+                                              →  potrank :25          →  publish ~:26 (Drive + mirror)
 ```
 
 `sync_rtbi.sh` still runs at `:07/:37/:55`, now for a narrower job: pulling content that
 actually originates on Drive (`PotDat.csv` from the G Sheet, `yf3`'s `Yfinance/`, a manual Drive
 edit) rather than gating when a registered producer's output becomes visible.
+
+**`potrank` is also user-triggerable**, on top of its `:25` cron tick: `potrank.cmd` on the
+Windows side runs the identical `run_potrank.sh` over SSH, guarded by a `flock` so a manual
+refresh landing near the cron tick is a no-op, not a race — see `potrank/CLAUDE.md`.
 
 **`strategy_grp2`'s production tick is also cron'd**, separately from the hourly chain above:
 `run_production.sh` at 01:00/11:00/19:00 runs `conductor.py --production` — `P`-marked board
