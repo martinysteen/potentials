@@ -138,7 +138,11 @@ def main() -> int:
     df = build()
 
     config.OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
-    df.to_csv(config.POTRANK2_PATH, sep=";", index=False, encoding="utf-8")
+    # utf-8-sig, not utf-8: a double-clicked CSV is opened by Excel using the Windows
+    # system codepage unless a UTF-8 BOM is present, so aeoeaa/AEOEAA in Stamnote (and any
+    # other free-text Stamdata field) came out garbled. The BOM is a no-op for every other
+    # consumer -- pandas, the GS import, the REST API -- which all already strip or ignore it.
+    df.to_csv(config.POTRANK2_PATH, sep=";", index=False, encoding="utf-8-sig")
     print(f"Wrote {config.POTRANK2_PATH} ({len(df)} rows, {len(df.columns)} columns)")
     print(data_loader.load_manifest_line())
     return 0
