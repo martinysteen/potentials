@@ -25,9 +25,14 @@ The yf3 app fetches fundamentals from yFinance for all tickers in the Potentials
      - (b) fetches desired fundamentals from yFinance.com and stores those in output/
 - **updgd_yf3.sh** - Uploads the content of output/ to Google Drive
 
-The personal crontab calls ~/time_wrapper.sh which takes care of activating start_yf3.sh and updgd_yf3.sh at desired points of time around the clock. At rather random occasions those yFinance calls result in successful catch of data, others do not.
+The personal crontab calls `~/potentials/yf3/yf3_wrapper.sh` (in line with the other Potentials
+families) which takes care of activating start_yf3.sh and updgd_yf3.sh at desired points of time
+around the clock. At rather random occasions those yFinance calls result in successful catch of
+data, others do not.
 
-**Log files:** Both shell scripts write their logs to /home/sm/ (start_yf3.log and updgd_yf3.log)
+**Log files:** All in `~/logs/` (also matching the other families): `yf3_wrapper.log`
+(wrapper's own run log), `yf3_timing_results.log` (one-line success/fail per fired hour),
+`start_yf3.log`, `updgd_yf3.log`.
 
 ## Notes
 - Existing app, developed without Claude Code

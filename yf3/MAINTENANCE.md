@@ -1,5 +1,70 @@
 # yf3 Maintenance Notes
 
+## 2026-08-24 — Evening fetch window (22:xx) trialed alongside the night one (02:xx)
+
+**Why:** the 02:25 fetch sits right on top of several exchange opens (ASX opens exactly
+00:00 Danish winter / 02:00 summer; HK/SS open ~02:30 Danish winter) -- a few minutes'
+timing drift can flip a ticker between "market open (day D)" and "market still closed
+(day D-1)" run to run. This is the mixed-trading-day symptom visible in
+`makeYfinanceSnapshot.py`'s output. 02:25 was originally picked because pre-midnight
+yFinance traffic used to be unstable; SM believes that's since improved and wants to
+verify with a real trial rather than assume.
+
+**What changed:**
+- `stackYfinanceData.py`'s `add_daynum_date()` now branches on `FetchedDate`'s local hour
+  (`EVENING_HOUR = 12`): night-window fetches (hour < 12) keep the existing per-suffix/
+  seasonal D vs D-1 table; evening-window fetches (hour >= 12) use basis = D for every
+  suffix, since by ~22:25 Danish every exchange in scope (US, EU, and all the Asia/Pacific
+  suffixes) has already closed for the day -- no per-suffix or seasonal split needed.
+  Verified with a synthetic dry run across `.AX`/`.HK`/`.SI`(both seasons)/no-suffix before
+  deploying.
+- `yf3_wrapper.sh`: `TARGET_HOURS=(02 22)` -- reusing the same array mechanism previously
+  used to trial `(02 08 15)` before settling on `(02)`.
+- Crontab: `25 0-15 * * *` widened to `25 0-15,22 * * *` (same script, same minute --
+  fires Danish ~22:25, inside SM's stated 22:30-23:30 acceptable window).
+
+**Does 02:25 cover for a failed 22:25 run?** Yes for the bulk of tickers (US no-suffix, EU,
+`.HK`, `.SS`, `.JO`) -- both windows resolve to the same Daynum for these, and `yf3.py`
+always does a full re-fetch, so a failed evening run is transparently backfilled by the
+next night run. Not for `.AX`/`.T`/`.KS` (and `.SI` in Danish winter) -- these target
+genuinely different sessions (evening = day D, night = day D+1), so a failed evening run
+just means that day's extra data point is missing, not a regression vs. today's
+single-run baseline.
+
+**Known consequence during the trial:** for tickers where both windows converge on the
+same Daynum, `dedupe()`'s latest-FetchedDate-wins rule means the following night's run
+supersedes the evening run's row in the *merged* stacked file before the two can be
+compared there. Compare via the untouched per-run files in `app/output/`
+(`StockData2-<date>-2225.csv` vs `StockData2-<date>-0225.csv`) and their
+`Failed_stocks_*.txt` companions instead.
+
+**PENDING:** this is a trial, not a decision. Once SM has watched the evening run for a
+while, one window will be dropped (remove its hour from `TARGET_HOURS` and narrow the
+crontab range back down) -- nothing here automates that call.
+
+## 2026-08-24 — Wrapper script relocated/renamed to match other Potentials families
+
+yf3 is the oldest family and had drifted from the layout the newer families (longi,
+strategy_grp2, group_conformity, ...) settled on: its cron wrapper lived loose in
+`/home/sm/` instead of under `~/potentials/<family>/`, and its logs wrote to `/home/sm/`
+instead of `~/logs/`. Straightened out before making cron-timing changes, so a later
+timing bug can't be conflated with this relocation.
+
+- `/home/sm/time_wrapper.sh` → `~/potentials/yf3/yf3_wrapper.sh` (moved into the repo,
+  git-tracked from now on). All internal self-references (`echo` messages) renamed
+  to match.
+- Logs moved from `/home/sm/` to `~/logs/`, history preserved via `mv`:
+  `time_wrapper.log` → `yf3_wrapper.log`, `updgd_yf3.log` → `updgd_yf3.log`,
+  `yf3_timing_results.log` → `yf3_timing_results.log`. `start_yf3.log` was already
+  correctly under `~/logs/` (its `LOGFILE` var predates this cleanup); `updgd_yf3.sh`'s
+  `LOGFILE` was corrected to point at `~/logs/updgd_yf3.log`.
+- Crontab line updated: `25 0-15 * * * /bin/bash /home/sm/time_wrapper.sh` →
+  `25 0-15 * * * /bin/bash /home/sm/potentials/yf3/yf3_wrapper.sh`. Timing itself
+  (`TARGET_HOURS=(02)`, `0-15` cron range) untouched in this pass.
+- No crontab-level `>> log 2>&1` redirect was added (unlike e.g. `run_production_cron.log`)
+  — the wrapper already self-redirects everything internally via `exec`/`{ } >> $LOGFILE`,
+  so a second redirect would just duplicate the same content under a different name.
+
 ## 2026-07-01 — Trading-day index on the stacked file + PotDatML snapshot
 
 **Nightly chain (`start_yf3.sh`):** fetch (`yf3.py`) → stack (`stackYfinanceData.py`) →

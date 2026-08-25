@@ -13,15 +13,25 @@ On top of stacking, each row is given a trading-day index derived from Cal.csv:
   * (Symbol, Daynum) is the intended downstream index. Duplicate rows on that key
     are collapsed, keeping the row with the most recent FetchedDate.
 
-Exchange day-shift (valid only for the 02:15-02:35 Danish-time fetch window):
-whether a fetch reflects date D or the previous session depends on whether the
-ticker's home market has opened by ~02:35 Danish time.
+Exchange day-shift: whether a fetch reflects date D or the previous session
+depends on the FetchedDate's own local hour, since yf3 now fires at two points
+in the day (see yf3_wrapper.sh / TARGET_HOURS) and each sees a different set of
+markets open or closed:
+
+  Night window (FetchedDate hour < EVENING_HOUR, ~02:15-02:35 Danish, right after
+  midnight): whether the fetch reflects date D depends on whether the ticker's
+  home market has opened by ~02:35 Danish time.
 
     Suffix              Market                       Basis
     .AX .T .KS          Sydney, Tokyo, Korea         D        (open both seasons)
     .HK .SS             Hong Kong, Shanghai          D-1      (not open either season)
     .SI                 Singapore                    winter -> D, summer -> D-1
     everything else     US (no suffix), .L, .JO, EU  D-1
+
+  Evening window (FetchedDate hour >= EVENING_HOUR, ~22:25 Danish): every market
+  in scope (US, EU, and all of the Asia/Pacific suffixes above) has already
+  closed for the day by then, so the basis is simply D for every suffix -- no
+  per-suffix or seasonal split needed.
 
 The chosen basis date is then resolved to a trading day via a backfill lookup in
 Cal.csv (most recent trading date <= basis), which also folds weekend/holiday
@@ -59,12 +69,20 @@ CAL_FILE     = '../input/Cal.csv'
 
 CSV_PARAMS = dict(sep=';', decimal=',', encoding='utf-8')
 
+# Night-window only (see module docstring). The evening window doesn't need any of
+# this -- basis = D for every suffix, since all markets are closed by ~22:25 Danish.
+
 # Exchange suffixes whose market has opened by the ~02:35 Danish fetch time in both
 # seasons -> the fetch reflects date D itself.
 SAME_DAY_SUFFIXES   = {'AX', 'T', 'KS'}
 # Season-dependent: Danish winter -> D (open), Danish summer -> D-1 (not yet open).
 SEASON_DEP_SUFFIXES = {'SI'}
 # All other suffixes (incl. HK, SS) and US no-suffix -> D-1.
+
+# FetchedDate hour >= this => evening-window fetch (basis = own calendar day for
+# every suffix); < this => night-window fetch (per-suffix table above). The
+# threshold is arbitrary but safe -- real fetches only ever land near 02:xx or 22:xx.
+EVENING_HOUR = 12
 
 _CPH = ZoneInfo('Europe/Copenhagen')
 
@@ -122,13 +140,16 @@ def add_daynum_date(df: pd.DataFrame, cal: tuple) -> pd.DataFrame:
 
     same_day = suffix.isin(SAME_DAY_SUFFIXES)
     si       = suffix.isin(SEASON_DEP_SUFFIXES)
+    night    = dt.dt.hour < EVENING_HOUR
 
-    # Default basis = D; shift back one calendar day for the "other" markets.
+    # Default basis = D for every row (this is already correct for the whole
+    # evening window). Night-window rows get the per-suffix/seasonal shift back.
     basis = day.copy()
     other = ~same_day & ~si
-    basis.loc[other] = day.loc[other] - pd.Timedelta(days=1)
-    if si.any():
-        summer = day.loc[si].map(_is_danish_summer)
+    basis.loc[night & other] = day.loc[night & other] - pd.Timedelta(days=1)
+    si_night = si & night
+    if si_night.any():
+        summer = day.loc[si_night].map(_is_danish_summer)
         shift_idx = summer.index[summer.to_numpy()]
         basis.loc[shift_idx] = basis.loc[shift_idx] - pd.Timedelta(days=1)
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Testing from ~/potentials/yf3? Use: bash updgd_yf3.sh
 
-LOGFILE=/home/sm/updgd_yf3.log
+LOGFILE=/home/sm/logs/updgd_yf3.log
 
 # Delete log file if it exists
 #if [ -f "$LOGFILE" ]; then
