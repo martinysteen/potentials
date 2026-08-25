@@ -1,5 +1,20 @@
 # yf3 Maintenance Notes
 
+## 2026-08-25 — Yfinance.csv snapshot cleaned up against PotDat.csv
+
+**Why:** `StockData2_stacked.csv` only ever accumulates -- `makeYfinanceSnapshot.py` picks
+the most-recent Daynum row per Symbol ever seen, so a ticker dropped from the universe kept
+showing up in `Yfinance.csv` forever with increasingly stale data, since nothing removed it.
+
+**Change:** `makeYfinanceSnapshot.py` now filters the snapshot down to tickers currently
+present in `../input/PotDat.csv` (same file yf3.py fetches from, freshly re-downloaded by
+`gd_download.main()` earlier in the same `start_yf3.sh` chain, so it reflects the current
+universe by the time the snapshot step runs). `^`-prefixed indices are excluded from the
+valid set the same way `yf3.py`'s `load_stock_codes()` excludes them from fetching. Verified
+on the server: 39 tickers dropped (e.g. `ROG.SW`, `MPW`, `CVAC` -- confirmed genuinely absent
+from the current PotDat.csv), 1201 of PotDat's 1202 non-index tickers remaining (the other
+has no stacked yFinance data yet).
+
 ## 2026-08-25 — Evening window (22:25) confirmed as standard, night window (02:25) disabled
 
 **Decision:** the 22:25 trial (below) ran clean, so 22:25 is now the sole standard fetch.
