@@ -13,9 +13,10 @@ imports it for onward importRange.
 
 Because StockData2_stacked.csv only ever accumulates (a ticker dropped from the
 universe still has its last-known row in there forever), the snapshot is filtered
-down to tickers currently present in ../input/PotDat.csv -- the same universe file
-yf3.py fetches from. A ticker delisted / removed from PotDat.csv therefore drops
-out of Yfinance.csv on the next run, instead of showing stale data indefinitely.
+down to tickers currently present in ../input/Stamdata.csv -- the system-wide root
+ticker list every family's universe derives from. A ticker removed from Stamdata.csv
+therefore drops out of Yfinance.csv on the next run, instead of showing stale data
+indefinitely.
 """
 
 import os
@@ -24,7 +25,7 @@ import pandas as pd
 
 STACKED_FILE  = '../output_stacked/StockData2_stacked.csv'
 SNAPSHOT_FILE = '../output_stacked/Yfinance.csv'
-POTDAT_FILE   = '../input/PotDat.csv'
+STAMDATA_FILE = '../input/Stamdata.csv'
 
 CSV_PARAMS = dict(sep=';', decimal=',', encoding='utf-8')
 
@@ -47,10 +48,10 @@ INT_COLUMNS = ['Daynum', 'NumberOfAnalysts']
 
 
 def load_valid_tickers() -> set:
-    """Current ticker universe: PotDat.csv's first column, minus the ^-prefixed
+    """Root ticker universe: Stamdata.csv's first column, minus the ^-prefixed
     market indices yf3.py never fetches (same filter as its load_stock_codes()).
     """
-    col0 = pd.read_csv(POTDAT_FILE, sep=';', usecols=[0]).iloc[:, 0].astype(str)
+    col0 = pd.read_csv(STAMDATA_FILE, sep=';', usecols=[0]).iloc[:, 0].astype(str)
     return set(col0[~col0.str.startswith('^')])
 
 
@@ -76,7 +77,7 @@ def main():
     snap.to_csv(SNAPSHOT_FILE, sep=';', decimal=',', index=False, encoding='utf-8')
 
     print(f'makeYfinanceSnapshot: {len(snap)} tickers -> {SNAPSHOT_FILE} '
-          f'({n_dropped} dropped, no longer in PotDat.csv)')
+          f'({n_dropped} dropped, no longer in Stamdata.csv)')
 
 
 if __name__ == '__main__':
