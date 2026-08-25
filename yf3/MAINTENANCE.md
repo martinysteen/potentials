@@ -1,5 +1,20 @@
 # yf3 Maintenance Notes
 
+## 2026-08-25 — Evening window (22:25) confirmed as standard, night window (02:25) disabled
+
+**Decision:** the 22:25 trial (below) ran clean, so 22:25 is now the sole standard fetch.
+02:25 is disabled, not removed:
+
+- `yf3_wrapper.sh`: `TARGET_HOURS=(22)`, with `TARGET_HOURS=(02 22)` left commented
+  directly above it -- reverting to the night window (or both) is a one-line
+  uncomment/edit if evening fetching ever regresses.
+- Crontab: `25 0-15,22 * * *` narrowed back to `25 22 * * *`.
+- `stackYfinanceData.py`'s day-shift logic is untouched and needs no change to keep
+  this reversible: `add_daynum_date()` branches purely on each row's own
+  `FetchedDate` hour (`EVENING_HOUR = 12`), not on which hours are currently
+  cron'd. So it continues to stack the historical 02:25 files correctly, and would
+  handle a resumed 02:25 fetch correctly too, without any code change.
+
 ## 2026-08-24 — Evening fetch window (22:xx) trialed alongside the night one (02:xx)
 
 **Why:** the 02:25 fetch sits right on top of several exchange opens (ASX opens exactly

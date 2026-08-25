@@ -18,10 +18,13 @@ LOCAL_HOUR=$(date +%H)
 # TARGET_HOURS=(02 05 08 10 12 15)
 # indtil 19.3.26 kl 14: TARGET_HOURS=(02 08 15)
 # indtil 24.8.26: TARGET_HOURS=(02)
-# 24.8.26: trialing an evening fetch (22) alongside the night one (02), to sidestep
-# the ASX/HK/SS open-boundary ambiguity the 02:xx window sits on top of -- see
-# MAINTENANCE.md. Both run for now; one will be dropped once SM has compared them.
-TARGET_HOURS=(02 22)
+# 24.8.26-25.8.26: trialed an evening fetch (22) alongside the night one (02), to
+# sidestep the ASX/HK/SS open-boundary ambiguity the 02:xx window sits on top of --
+# see MAINTENANCE.md.
+# 25.8.26: trial passed -- 22 is now standard. 02 disabled (commented, not deleted)
+# so it can be put back with a one-line uncomment if evening fetching regresses.
+# TARGET_HOURS=(02 22)
+TARGET_HOURS=(22)  # 02 kept above for quick revert -- see MAINTENANCE.md
 
 # Check if current hour matches any target hour
 SHOULD_RUN=false
