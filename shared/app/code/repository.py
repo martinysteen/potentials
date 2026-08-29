@@ -95,6 +95,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 POTENTIALS = Path("/home/sm/potentials")
 DRIVE_ROOT = "GoogleDrive:PotSystem/repositoryRTBI"
@@ -346,6 +347,33 @@ def require_fresh_mirror(max_age_min: int = DEFAULT_MAX_AGE_MIN,
 # fetch (mirror -> family input)                                              #
 # --------------------------------------------------------------------------- #
 
+def _looks_intact(path: Path) -> Optional[str]:
+    """Cheap structural sanity check on a mirror file, run before it is copied
+    into a family's input_dir. Catches a source caught mid-write - e.g. a Sheet
+    -> Drive CSV export still in flight when sync_rtbi.sh pulled it, or a fetch
+    that happened to race that same window - before it silently cascades
+    through however many downstream modules read it as if it were valid.
+
+    Deliberately not a schema check: just "this is not an empty or truncated
+    stub." Every file these owners declare in `needs` is this repository's
+    European-CSV convention (';'-delimited, header + data rows), so the check
+    is generic rather than per-owner.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            header = f.readline()
+            first_data_row = f.readline()
+    except OSError as exc:
+        return f"cannot read {path.name}: {exc}"
+    if not header.strip():
+        return f"{path.name} is empty"
+    if header.count(";") < 1:
+        return f"{path.name} header has no ';' fields, looks truncated ({header[:60]!r})"
+    if not first_data_row.strip():
+        return f"{path.name} has a header but no data rows"
+    return None
+
+
 def fetch(owner: Owner, max_age_min: int = DEFAULT_MAX_AGE_MIN,
           stale_ok: bool = False) -> int:
     """Copy this family's declared inputs out of the local mirror.
@@ -360,6 +388,17 @@ def fetch(owner: Owner, max_age_min: int = DEFAULT_MAX_AGE_MIN,
     if missing:
         for m in missing:
             print(f"ERROR: {m}")
+        return 1
+
+    # Validate every source before touching input_dir - a refused fetch must
+    # leave the previous (good) input files in place, not a half-replaced mix.
+    problems = [p for p in (_looks_intact(MIRROR_ROOT / rel) for rel in owner.needs) if p]
+    if problems:
+        for p in problems:
+            print(f"ERROR: {p}")
+        print("Refusing fetch, existing input files left untouched - this usually "
+              "means the mirror caught an upstream file mid-write; rerun after the "
+              "next sync_rtbi.sh tick")
         return 1
 
     owner.input_dir.mkdir(parents=True, exist_ok=True)
