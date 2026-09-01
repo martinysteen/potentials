@@ -40,8 +40,9 @@ COLUMNS = {
     'Recommendation_Mean': 'Recomm_Mean',
     'Recommendation_Key':  'Recomm_Key',
     'NumberOfAnalysts':    'NumberOfAnalysts',
-    "PreviousClose":       'PrevClose',
-    "CurrentPrice":        'Close',
+    'PreviousClose':       'PrevClose',
+    'CurrentPrice':        'Close',
+    'TrailingPEG':         'PEG', 
 }
 # Output columns written as plain integers (no European decimal comma).
 INT_COLUMNS = ['Daynum', 'NumberOfAnalysts']
