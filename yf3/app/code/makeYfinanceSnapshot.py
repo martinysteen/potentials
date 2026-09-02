@@ -42,7 +42,10 @@ COLUMNS = {
     'NumberOfAnalysts':    'NumberOfAnalysts',
     'PreviousClose':       'PrevClose',
     'CurrentPrice':        'Close',
-    'TrailingPEG':         'PEG', 
+    'TrailingPEG':         'PEG',
+    'RevenueGrowth':       'Gr_Sales',
+    'EarningsGrowth':      'Gr_Earnings',
+    'FullTimeEmpl':        'Empl',
 }
 # Output columns written as plain integers (no European decimal comma).
 INT_COLUMNS = ['Daynum', 'NumberOfAnalysts']
