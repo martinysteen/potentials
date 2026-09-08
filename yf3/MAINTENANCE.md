@@ -1,5 +1,37 @@
 # yf3 Maintenance Notes
 
+## 2026-09-08 — gd_download.py now refuses a truncated PotDat.csv instead of overwriting the last good copy
+
+**Why:** no data was fetched on 2026-09-06 or 2026-09-07. Both nights, yf3's single
+22:25 run downloaded `PotDat.csv` from Drive while the upstream file was mid-rebuild --
+reduced to a 1-byte `-` stub for several hours (confirmed via `longi`'s hourly fetch
+hitting the same stub and its `repository.py` mid-write guard refusing it, recovering
+each morning). `gd_download.py` had no such guard: it deleted the previous good
+`PotDat.csv` *before* downloading, so the stub silently replaced it. `load_stock_codes()`
+then parsed 0 tickers, and since 0-expected == 0-fetched, `yf3.py` reported
+`SUCCESS -- Exit: 0` with no error signal anywhere in the logs.
+
+**Change:** `download_file()` now downloads into `<file>.download_tmp`, runs a
+structural sanity check (non-empty, ';'-delimited header, at least one data row --
+same convention `repository.py`'s `_looks_intact` uses for the mirror) before touching
+the real file, and only replaces the existing copy if the check passes. On failure it
+prints `ERROR: ... -- keeping previous copy of <file>` to `start_yf3.log` and leaves
+the prior file in place, so `yf3.py` fetches against yesterday's (still valid) ticker
+list instead of silently doing nothing. Applies to every file `gd_download.py` pulls
+(all are this repository's European `;`-CSV convention), not just `PotDat.csv`.
+Verified with a mocked Drive download (bad-stub-then-good-download sequence) on the
+server; not yet observed catching a real live outage.
+
+**Deliberate choice, asked of SM directly:** on a bad file yf3 keeps fetching against
+the previous day's ticker list rather than aborting the whole run like `longi` does.
+Reasoning offered: `PotDat.csv` only supplies the ticker list here, not the fetched
+values themselves (those come live from Yahoo per ticker), so a day-stale list still
+produces useful output for the ~99.9% of tickers that didn't change -- unlike `longi`,
+where `PotDat.csv`'s values feed directly into every computed indicator. SM confirmed
+keep the fallback behavior, but pushed back on the *label*: a corrupted upstream input
+is fatal in the sense that "no correct upstream inputted" regardless of what the
+fallback still manages to salvage, so the log line reads `ERROR:`, not `WARNING:`.
+
 ## 2026-08-25 — Yfinance.csv snapshot cleaned up against Stamdata.csv
 
 **Why:** `StockData2_stacked.csv` only ever accumulates -- `makeYfinanceSnapshot.py` picks

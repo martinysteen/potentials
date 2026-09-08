@@ -37,23 +37,59 @@ def authenticate_google_drive():
             token.write(creds.to_json())
     return creds
 
+def _looks_intact(file_path):
+    """Cheap structural sanity check: not empty, not truncated to a stub.
+    Every file in this Drive folder is this repository's European-CSV
+    convention (';'-delimited, header + data rows), so the check is generic.
+    Mirrors repository.py's _looks_intact, kept as its own copy here since
+    yf3 downloads straight from Drive rather than through the shared mirror.
+    """
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            header = f.readline()
+            first_data_row = f.readline()
+    except OSError as exc:
+        return f"cannot read {os.path.basename(file_path)}: {exc}"
+    if not header.strip():
+        return f"{os.path.basename(file_path)} is empty"
+    if header.count(";") < 1:
+        return f"{os.path.basename(file_path)} header has no ';' fields, looks truncated ({header[:60]!r})"
+    if not first_data_row.strip():
+        return f"{os.path.basename(file_path)} has a header but no data rows"
+    return None
+
+
 def download_file(service, file_id, file_name, folder_path):
-    # Downloads a file from Google Drive.
+    # Downloads a file from Google Drive into a temp file first, and only
+    # replaces the existing copy once the download passes a structural sanity
+    # check -- protects against an upstream file caught mid-rebuild (seen in
+    # practice: PotDat.csv reduced to a '-' stub for hours), which previously
+    # deleted the last good copy before the bad replacement even landed.
 
     file_path = os.path.join(folder_path, file_name)
-    
-    # Check if the file already exists and delete it if it does
-    if os.path.exists(file_path):
-        os.remove(file_path)
-        print(f"2. File '{file_name}' found and deleted.")
-    
+    tmp_path = file_path + '.download_tmp'
+
     request = service.files().get_media(fileId=file_id)
-    fh = io.FileIO(file_path, 'wb')
+    fh = io.FileIO(tmp_path, 'wb')
     downloader = MediaIoBaseDownload(fh, request)
     done = False
     while done is False:
         status, done = downloader.next_chunk()
-        print(f"3. Downloading new copy of {file_name} ({int(status.progress() * 100)}%)")
+        print(f"2. Downloading new copy of {file_name} ({int(status.progress() * 100)}%)")
+    fh.close()
+
+    problem = _looks_intact(tmp_path)
+    if problem:
+        problem = problem.replace(os.path.basename(tmp_path), file_name)
+        os.remove(tmp_path)
+        fallback = "keeping previous copy" if os.path.exists(file_path) else "no previous copy to fall back on"
+        print(f"ERROR: {problem} -- {fallback} of {file_name}")
+        return
+
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    os.replace(tmp_path, file_path)
+    print(f"3. File '{file_name}' updated.")
 
 def list_files_in_folder(service, folder_id):
     # Include MIME type in the query to filter for CSV files
@@ -79,7 +115,6 @@ def main(local_path):
         print('Download proces:')
         for file in file_list:
             print(f"1. Locating {file['name']} ({file['id']})")
-            # download_file initially deletes the file in scope from target folder
             download_file(service, file['id'], file['name'], local_path)
 
 if __name__ == '__main__':
