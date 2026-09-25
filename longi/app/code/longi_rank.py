@@ -65,23 +65,6 @@ def parse_european_decimal(value: str) -> Optional[float]:
         return None
 
 
-def format_european_decimal(value: Optional[float], decimals: int = 2) -> str:
-    """
-    Format float to European decimal format (comma as decimal separator).
-
-    Args:
-        value: Float value to format
-        decimals: Number of decimal places
-
-    Returns:
-        Formatted string or empty string if value is None
-    """
-    if value is None:
-        return ""
-    # Format with specified decimals and replace dot with comma
-    return f"{value:.{decimals}f}".replace('.', ',')
-
-
 def format_integer(value: Optional[int]) -> str:
     """
     Format integer value.

@@ -3,22 +3,23 @@ Shared utilities for Win/Loss production and QA scripts.
 
 This module centralizes:
 - feature/target loading
-- per-ticker multinomial model fitting
 - prediction/error metric helpers
+
+Kept deliberately after the 2026-07-07 win/loss model retirement for the
+longi/app/exp/ sandbox, which still imports TARGET_SPECS and the CSV IO
+helpers below — see expAdviceModel/REPORT_winloss_experiments_2026-07-07.md.
+The multinomial model-fitting machinery itself was forked into exp_shared.py
+(fit_predict_multinomial_ext) and removed from here as dead weight.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import minimize
-from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 
 
 # All files here must have tickers as rows. build_feature_frame uses an inner join on
@@ -103,15 +104,6 @@ def ensure_files_exist(paths: Iterable[Path]) -> None:
         raise FileNotFoundError("Missing required files:\n" + "\n".join(missing))
 
 
-def get_max_daynum_from_potdat(potdat_path: Path) -> int:
-    """Read maximum numeric daynum from PotDat header."""
-    header = pd.read_csv(potdat_path, sep=";", decimal=",", nrows=0).columns.tolist()
-    daynums = [int(c) for c in header[1:] if str(c).strip().isdigit()]
-    if not daynums:
-        raise ValueError(f"No numeric daynum columns found in {potdat_path}")
-    return int(max(daynums))
-
-
 def get_non_caret_tickers_from_potdat(potdat_path: Path) -> List[str]:
     """Return unique non-caret tickers in source order."""
     df = pd.read_csv(potdat_path, sep=";", decimal=",", usecols=[0])
@@ -166,109 +158,6 @@ def build_labeled_dataset(feature_df: pd.DataFrame, output_dir: Path, spec: Targ
     )
     data["y_int"] = data["y_label"].map(CLASS_TO_INT).astype(int)
     return data
-
-
-def standardize_fit(x_train: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """Compute train mean/std with zero-std guard."""
-    mean = np.mean(x_train, axis=0)
-    std = np.std(x_train, axis=0)
-    std[std == 0.0] = 1.0
-    return mean, std
-
-
-class SoftmaxRegressor:
-    """Multinomial softmax regression with L2 regularization."""
-
-    def __init__(self, reg_lambda: float = 0.01, max_iter: int = 250) -> None:
-        self.reg_lambda = reg_lambda
-        self.max_iter = max_iter
-        self.weights: Optional[np.ndarray] = None
-
-    def fit(self, x: np.ndarray, y: np.ndarray, n_classes: int) -> None:
-        n_samples, n_features = x.shape
-        x_aug = np.hstack([x, np.ones((n_samples, 1), dtype=float)])
-        y_onehot = np.eye(n_classes)[y]
-        w0 = np.zeros((n_features + 1, n_classes), dtype=float)
-
-        def loss_grad(w_flat: np.ndarray) -> Tuple[float, np.ndarray]:
-            w = w_flat.reshape(n_features + 1, n_classes)
-            logits = x_aug @ w
-            logits -= logits.max(axis=1, keepdims=True)
-            exp_logits = np.exp(logits)
-            probs = exp_logits / exp_logits.sum(axis=1, keepdims=True)
-            eps = 1e-12
-
-            ce = -np.sum(y_onehot * np.log(probs + eps)) / n_samples
-            reg = 0.5 * self.reg_lambda * np.sum(w[:-1, :] ** 2)
-            loss = ce + reg
-
-            grad = (x_aug.T @ (probs - y_onehot)) / n_samples
-            grad[:-1, :] += self.reg_lambda * w[:-1, :]
-            return loss, grad.reshape(-1)
-
-        result = minimize(
-            fun=loss_grad,
-            x0=w0.reshape(-1),
-            jac=True,
-            method="L-BFGS-B",
-            options={"maxiter": self.max_iter},
-        )
-        self.weights = result.x.reshape(n_features + 1, n_classes)
-
-    def predict_proba(self, x: np.ndarray) -> np.ndarray:
-        if self.weights is None:
-            raise RuntimeError("Model is not fitted.")
-        x_aug = np.hstack([x, np.ones((x.shape[0], 1), dtype=float)])
-        logits = x_aug @ self.weights
-        logits -= logits.max(axis=1, keepdims=True)
-        exp_logits = np.exp(logits)
-        return exp_logits / exp_logits.sum(axis=1, keepdims=True)
-
-
-def fit_predict_multinomial(
-    x_train: np.ndarray,
-    y_train: np.ndarray,
-    x_test: np.ndarray,
-    reg_lambda: float,
-    max_iter: int,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Fit multinomial model and return predicted class indices + full class probs.
-
-    Scaling is applied internally via StandardScaler. Callers should pass raw
-    (unscaled) feature arrays.
-
-    Handles missing classes in train split by expanding back to full class set.
-    """
-    unique_classes = np.unique(y_train)
-    probs_full = np.zeros((x_test.shape[0], len(CLASS_NAMES)), dtype=float)
-
-    if unique_classes.size == 1:
-        only_class = int(unique_classes[0])
-        probs_full[:, only_class] = 1.0
-        return probs_full.argmax(axis=1), probs_full
-
-    pipeline = Pipeline([
-        ("scaler", StandardScaler()),
-        ("clf", LogisticRegression(
-            solver="newton-cholesky",
-            C=1.0 / reg_lambda,
-            max_iter=max_iter,
-            fit_intercept=True,
-        )),
-    ])
-    pipeline.fit(x_train, y_train)
-    probs_small = pipeline.predict_proba(x_test)
-
-    clf = pipeline.named_steps["clf"]
-    for i, cls in enumerate(clf.classes_):
-        probs_full[:, int(cls)] = probs_small[:, i]
-
-    probs_sum = probs_full.sum(axis=1, keepdims=True)
-    probs_sum[probs_sum == 0.0] = 1.0
-    probs_full = probs_full / probs_sum
-    y_pred = probs_full.argmax(axis=1)
-    return y_pred, probs_full
 
 
 def compute_error_counts(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, int]:

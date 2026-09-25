@@ -2,9 +2,8 @@
 Step 0 — group definition and data procurement.
 
 Resolves one board row's `group_expression` into a ticker universe and a group-key
-Series (shared.expression does the parsing), binds any group-specific Longi factor
-(conf/sectorbeta) to the row's own grouping, and hosts the ad-hoc-builder registry for
-whatever Longi cannot supply directly. See DesignVersion2.md's Step 0 write-up.
+Series (shared.expression does the parsing) and binds any group-specific Longi factor
+(conf/sectorbeta) to the row's own grouping. See DesignVersion2.md's Step 0 write-up.
 """
 
 from __future__ import annotations
@@ -18,8 +17,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from shared import expression as expr
-from shared.config import DERIVED_ROOT
-from shared.data_loader import load_longi, load_stamdata
+from shared.data_loader import load_stamdata
 
 # ---------------------------------------------------------------------------
 # Group-specific Longi factors — twins that exist only for Stamdata.GICS / Stamdata.Sector2
@@ -127,36 +125,3 @@ def resolve_step0(row_resolved: dict) -> Step0Result:
         dominance_attribute=dominance_attribute, priority_attribute=priority_attribute,
         informational_attributes=informational, post_filter=post_filter,
     )
-
-
-# ---------------------------------------------------------------------------
-# Ad-hoc builder registry — for factors Longi cannot supply directly
-# ---------------------------------------------------------------------------
-# Phase 1 (this module) ships exactly one builder: a group-level mean aggregate of any
-# per-ticker Longi factor, for the CURRENT (possibly ad-hoc) grouping — the
-# longi_grp_{GICS,Sector2}_per*.csv idea, generalized to whatever grouping a row defines.
-# Cached under app/data/derived/ since it is cheap to rebuild but no need to redo it for
-# every hop. Not yet consumed by step1/2 (their selection math is per-ticker); it exists
-# for Step-3 informational display and the market-rotation-rate diagnostic DesignVersion2.md
-# and strategy_grp's CLAUDE.md both flag as still open — wiring that in is later work.
-
-
-def build_group_aggregate(factor: str, groups: pd.Series) -> pd.DataFrame:
-    """group-key x daynum mean of longi_<factor>.csv for the given grouping."""
-    df = load_longi(f"longi_{factor}.csv")
-    common = df.index.intersection(groups.index)
-    return df.loc[common].groupby(groups.loc[common]).mean()
-
-
-def cached_group_aggregate(factor: str, groups: pd.Series, cache_key: str) -> pd.DataFrame:
-    """Same as build_group_aggregate, but cached to app/data/derived/grp_<factor>__<cache_key>.csv
-    (European CSV, matching every other file in this project). `cache_key` must uniquely
-    identify the grouping (the group_expression string is enough)."""
-    safe_key = "".join(c if c.isalnum() else "_" for c in cache_key)
-    path = DERIVED_ROOT / f"grp_{factor}__{safe_key}.csv"
-    if path.exists():
-        return pd.read_csv(path, sep=";", decimal=",", index_col=0)
-    result = build_group_aggregate(factor, groups)
-    DERIVED_ROOT.mkdir(parents=True, exist_ok=True)
-    result.to_csv(path, sep=";", decimal=",")
-    return result

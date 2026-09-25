@@ -50,7 +50,7 @@ class BacktestResult:
     hops: list[Hop]              # what was actually traded -- stop-applied when stop_loss is set
     params: dict
     metrics: dict[str, object]
-    hops_raw: list[Hop] = field(default_factory=list)     # pre-stop, for step3a_stopout.sweep()
+    hops_raw: list[Hop] = field(default_factory=list)     # pre-stop, for step3a_stopout.levels_hops()
     stop_profile: object = None                            # step3a_stopout.StopProfile, or None
 
 
@@ -232,7 +232,7 @@ def run_backtest(row_resolved: dict, settings: dict, *, progress_label: str | No
     When the row sets `stop_loss` (Step 3a), `.hops`/`.metrics` are the STOP-APPLIED
     numbers -- what Step3_compare, the charts and step3_report show, so nothing
     downstream needs to know a stop exists. `.hops_raw`/`.stop_profile` keep the
-    pre-stop timeline and its cost/benefit decomposition for step3a_stopout.sweep(),
+    pre-stop timeline and its cost/benefit decomposition for step3a_stopout.levels_hops(),
     which re-scores hops_raw at every level in the board's stop_sweep ladder -- deferred
     import here since step3a_stopout imports this module back for Hop/compute_metrics.
     """

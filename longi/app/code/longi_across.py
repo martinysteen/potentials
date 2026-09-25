@@ -331,26 +331,6 @@ def make_across(daynum: int, target_folder: Optional[str] = None) -> int:
         return 1
 
 
-def get_existing_daynums_to_update(current_daynum: int) -> List[int]:
-    """
-    Scan for existing across_*.csv files to update (legacy - kept for backwards compatibility).
-
-    Returns daynums that need updating (excluding the current daynum being created).
-
-    Args:
-        current_daynum: The daynum currently being created (exclude from update list)
-
-    Returns:
-        List of daynums to update
-    """
-    return []  # No longer auto-updating files
-
-
-def update_existing_cross_sectional_files(current_daynum: int) -> None:
-    """Legacy function - kept for backwards compatibility, does nothing now."""
-    pass
-
-
 def main() -> int:
     """
     Main execution function for CLI usage.

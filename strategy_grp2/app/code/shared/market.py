@@ -69,18 +69,6 @@ def hop_avg(gains: dict[str, float]) -> float:
     return sum(vals) / len(vals) if vals else float("nan")
 
 
-def hop_median(gains: dict[str, float]) -> float:
-    import statistics
-    vals = [v for v in gains.values() if pd.notna(v)]
-    return statistics.median(vals) if vals else float("nan")
-
-
-def hit_rate(gains: dict[str, float]) -> float:
-    """Fraction of non-NaN gains that are > 0, as a percentage. NaN when nothing to score."""
-    vals = [v for v in gains.values() if pd.notna(v)]
-    return (sum(1 for v in vals if v > 0) / len(vals) * 100.0) if vals else float("nan")
-
-
 def market_gain_realized(period: int) -> pd.Series:
     """Benchmark for REALIZED hops: equal-weighted cross-sectional mean of
     longi_future_per<period>d.csv, per daynum."""

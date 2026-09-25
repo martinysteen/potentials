@@ -15,26 +15,6 @@ INPUT_DIR = Path(__file__).parent.parent / "input"
 CAL_FILE = INPUT_DIR / "Cal.csv"
 
 
-def parse_european_decimal(value: str) -> Optional[float]:
-    """
-    Parse European decimal format (comma as decimal separator).
-
-    Args:
-        value: String value to parse (e.g., "123,45")
-
-    Returns:
-        Float value or None if empty/invalid
-    """
-    value = value.strip()
-    if not value:
-        return None
-    try:
-        # Replace comma with dot for Python float parsing
-        return float(value.replace(',', '.'))
-    except ValueError:
-        return None
-
-
 def format_european_decimal(value: Optional[float], decimals: int = 2) -> str:
     """
     Format float to European decimal format (comma as decimal separator).
@@ -150,32 +130,3 @@ def get_daynum_for_date(target_date: datetime, calendar: Optional[Dict[str, int]
     raise ValueError(f"No daynum found for {date_str} or 7 days prior")
 
 
-def get_daynum_from_a1_cell(a1_datetime_str: str) -> int:
-    """
-    Convert A1 cell datetime string to daynum.
-
-    This is the main function to use for converting the timestamp in downloaded files
-    to the corresponding daynum from Cal.csv.
-
-    Args:
-        a1_datetime_str: Datetime string from A1 cell
-                        (e.g., "Thu Nov 06 2025 00:43:29 GMT+0100 (Central European Standard Time)")
-
-    Returns:
-        Daynum (integer)
-
-    Raises:
-        ValueError: If datetime cannot be parsed or daynum not found
-
-    Example:
-        >>> get_daynum_from_a1_cell("Thu Nov 06 2025 00:43:29 GMT+0100 ...")
-        2018
-    """
-    # Parse the datetime string
-    dt = parse_a1_datetime(a1_datetime_str)
-
-    # Load calendar and lookup daynum
-    calendar = load_calendar()
-    daynum = get_daynum_for_date(dt, calendar)
-
-    return daynum

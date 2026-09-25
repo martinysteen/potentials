@@ -131,8 +131,8 @@ def parse_sweep_levels(raw: str) -> list[float]:
 def levels_hops(hops_raw: list["bt.Hop"], period: int,
                 levels: list[float]) -> dict[float | None, tuple[list["bt.Hop"], StopProfile]]:
     """apply_stop, once per level (plus the `None`/off baseline), keyed by level -- shared
-    by sweep() and outputboard's fold-stability table so a level is never re-applied to
-    hops_raw twice for the same row."""
+    by the sweep table and outputboard's fold-stability table so a level is never
+    re-applied to hops_raw twice for the same row."""
     return {stop: apply_stop(hops_raw, stop, period) for stop in [None] + list(levels)}
 
 
@@ -154,15 +154,6 @@ def metrics_rows(by_level: dict[float | None, tuple[list["bt.Hop"], StopProfile]
         row.update(metrics)
         rows.append(row)
     return rows
-
-
-def sweep(hops_raw: list["bt.Hop"], params: dict, settings: dict,
-         levels: list[float]) -> list[dict]:
-    """One row per level in `levels`, plus an 'off' baseline first -- see metrics_rows()
-    for what each row carries. `params`/`settings` are the row's own (no_go gate,
-    min_chain_lots, etc.) -- only the hop gains vary between rows of this table."""
-    by_level = levels_hops(hops_raw, int(params["period"]), levels)
-    return metrics_rows(by_level, params, settings)
 
 
 def fold_metrics(by_level: dict[float | None, tuple[list["bt.Hop"], StopProfile]],

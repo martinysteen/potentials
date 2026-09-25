@@ -20,8 +20,8 @@ from pathlib import Path
 from shared import config
 from shared.datacheck import DataUnavailable
 
-# Every file successfully read this process, in load order — printed by
-# `load_manifest_line()` so a run's log states which vintage it actually ran on.
+# Every file successfully read this process, in load order (deduplicated by the
+# lru_caches below).
 _LOADED: list[str] = []
 
 
@@ -89,14 +89,3 @@ def reset_cache() -> None:
     load_stamdata.cache_clear()
     _load_cal.cache_clear()
     _LOADED.clear()
-
-
-def loaded_files() -> list[str]:
-    """Files actually read so far, in load order (deduplicated by the lru_caches)."""
-    return list(_LOADED)
-
-
-def load_manifest_line() -> str:
-    """One-line summary for the end of a run's log: what was read, from where."""
-    return (f"[input] {len(_LOADED)} file(s) read from {config.active_root()}: "
-            + ", ".join(_LOADED))

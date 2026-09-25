@@ -83,11 +83,6 @@ def reset_cache() -> None:
     _LOADED.clear()
 
 
-def loaded_files() -> list[str]:
-    """Files actually read so far, in load order (deduplicated by the lru_caches)."""
-    return list(_LOADED)
-
-
 def load_manifest_line() -> str:
     """One-line summary for the end of a run's log: what was read, from where."""
     return (f"[input] {len(_LOADED)} file(s) read from {config.active_root()}: "
