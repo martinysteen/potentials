@@ -1127,3 +1127,23 @@ row's history); the prior-file archive glob widened to catch both `picks_*.xlsx`
 one-time cleanup of files written under the old scheme) and `picks_*.csv`. Still
 dev-tick only, still never Drive-published — a research/backtesting artifact, not the
 day's advice list, per the 2026-08-13 correction above.
+
+## Correction 2026-09-25 — the production cron cadence recorded above is stale
+
+The 2026-08-13 entry records `--production` as installed at `0 1,11,19 * * *`. That is no
+longer what runs. Verified against `crontab -l` on 2026-09-25:
+
+```
+16 8-23 * * * /home/sm/potentials/strategy_grp2/run_production.sh >> /home/sm/logs/run_production_cron.log 2>&1
+46 8-23 * * * /home/sm/potentials/strategy_grp2/run_production.sh >> /home/sm/logs/run_production_cron.log 2>&1
+```
+
+So the day's advice list is regenerated **twice an hour from 08:16 to 23:46**, not three
+times a day. The 2026-08-13 entry is left as written — it is the record of what was
+installed then — and this entry supersedes it. Root `CLAUDE.md` and `strategy_grp2/CLAUDE.md`
+carried the same stale line and were corrected in the same change.
+
+Nothing about the `D`/`P` split, the board-open stop, or the publish namespace changed; only
+the cadence. Noted because a consumer scheduled around the documented times would have run
+against a list up to eight hours stale, and because `potrank` likewise has **two** hourly
+entries (`:25` and `:55`), not the single `:25` the root doc showed.

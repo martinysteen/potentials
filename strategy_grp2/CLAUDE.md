@@ -66,9 +66,10 @@ real users read as the day's advice, and a development tick is exactly where wil
 live. Both are 2026-08-13 corrections, reversing the 2026-08-12 "every active row ships in one
 invocation" decision in two steps. See DesignVersion2.md's 2026-08-13 corrections.
 
-**Cron'd** (2026-08-13): `run_production.sh` at 01:00/11:00/19:00 runs `conductor.py
+**Cron'd** (2026-08-13, cadence since changed): `run_production.sh` runs `conductor.py
 --production` unattended — this is exactly the scenario the `D`/`P` split above exists for.
-See the root `CLAUDE.md`'s daily-chain diagram.
+Live cadence per `crontab -l` is **`:16` and `:46`, hours 8-23** (twice an hour); the original
+01:00/11:00/19:00 is history. See the root `CLAUDE.md`'s daily-chain diagram.
 
 ## Status
 

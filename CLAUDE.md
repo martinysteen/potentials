@@ -45,22 +45,23 @@ same call, so a consumer sees the output within about a second of publish — no
 `sync_rtbi.sh`'s own next cron tick. Cron on the server (`crontab -l`), hours 0-22:
 
 ```
-longi :15  →  publish ~:17 (Drive + mirror)  →  group_conformity :45  →  publish ~:47 (Drive + mirror)
-                                              →  potrank :25          →  publish ~:26 (Drive + mirror)
+longi :15  →  publish ~:17 (Drive + mirror)  →  group_conformity :45     →  publish ~:47 (Drive + mirror)
+                                              →  potrank :25 and :55    →  publish ~:26 / ~:56 (Drive + mirror)
 ```
 
 `sync_rtbi.sh` still runs at `:07/:37/:55`, now for a narrower job: pulling content that
 actually originates on Drive (`PotDat.csv` from the G Sheet, `yf3`'s `Yfinance/`, a manual Drive
 edit) rather than gating when a registered producer's output becomes visible.
 
-**`potrank` is also user-triggerable**, on top of its `:25` cron tick: `potrank.cmd` on the
+**`potrank` is also user-triggerable**, on top of its `:25`/`:55` cron ticks: `potrank.cmd` on the
 Windows side runs the identical `run_potrank.sh` over SSH, guarded by a `flock` so a manual
 refresh landing near the cron tick is a no-op, not a race — see `potrank/CLAUDE.md`.
 
 **`strategy_grp2`'s production tick is also cron'd**, separately from the hourly chain above:
-`run_production.sh` at 01:00/11:00/19:00 runs `conductor.py --production` — `P`-marked board
-rows only, never `D` rows (see `strategy_grp2/DesignVersion2.md`'s 2026-08-13 corrections).
-It stops itself if `control_board.xlsx` is open in Excel, exactly as a run fired by hand does.
+`run_production.sh` at **`:16` and `:46`, hours 8-23** (twice an hour) runs
+`conductor.py --production` — `P`-marked board rows only, never `D` rows (see
+`strategy_grp2/DesignVersion2.md`'s 2026-08-13 corrections). It stops itself if
+`control_board.xlsx` is open in Excel, exactly as a run fired by hand does.
 
 `~/git_pot.sh` at **03:40** commits and pushes anything left uncommitted in this repo, on the
 branch currently checked out — so uncommitted work does not survive the night as a working tree.
@@ -120,3 +121,49 @@ elevated), **priority** (how survivors are ranked) and **informational** (report
 `group_column`/`group_expression`, which is a **Stamdata column, not an attribute**. Conflating
 them has broken this system before. Confirm the exact name against the project's config before
 editing it.
+
+<!-- code-review-graph MCP tools -->
+## MCP Tools: code-review-graph
+
+**This project has a knowledge graph. Start with the code-review-graph
+MCP tools to narrow scope, then read the source.** The graph is cheaper than scanning files and
+gives you structural context (callers, dependents, test coverage) that file search cannot.
+
+### When to use graph tools FIRST
+
+- **Exploring code**: `semantic_search_nodes_tool` or `query_graph_tool` instead of Grep
+- **Understanding impact**: `get_impact_radius_tool` instead of manually tracing imports
+- **Code review**: `detect_changes_tool` + `get_review_context_tool` instead of reading entire files
+- **Finding relationships**: `query_graph_tool` with callers_of/callees_of/imports_of/tests_for
+- **Architecture questions**: `get_architecture_overview_tool` + `list_communities_tool`
+
+### Verify in the source
+
+- Narrow scope with the graph, then read the source. Do not change code from graph output alone.
+- For any non-trivial change, read the implementation and the relevant tests before concluding.
+- Verify the exact source when touching behavior, database logic, migrations, retries, fallbacks,
+  recovery, or compatibility code.
+- When the graph and the source disagree, the source wins. The graph may be stale or may not
+  model that relationship.
+- An empty graph result can mean "not indexed" or "not statically visible", not "does not exist".
+
+### Key Tools
+
+| Tool | Use when |
+| ------ | ---------- |
+| `detect_changes_tool` | Reviewing code changes — gives risk-scored analysis |
+| `get_review_context_tool` | Need source snippets for review — token-efficient |
+| `get_impact_radius_tool` | Understanding blast radius of a change |
+| `get_affected_flows_tool` | Finding which execution paths are impacted |
+| `query_graph_tool` | Tracing callers, callees, imports, tests, dependencies |
+| `semantic_search_nodes_tool` | Finding functions/classes by name or keyword |
+| `get_architecture_overview_tool` | Understanding high-level codebase structure |
+| `refactor_tool` | Planning renames, finding dead code |
+
+### Workflow
+
+1. The graph auto-updates on file changes (via hooks).
+2. Use `detect_changes_tool` for code review.
+3. Use `get_affected_flows_tool` to understand impact.
+4. Use `query_graph_tool` pattern="tests_for" to check coverage.
+<!-- /code-review-graph MCP tools -->
