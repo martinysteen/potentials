@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "command": "/home/sm/miniconda3/envs/potsystem_env/bin/python3.13",
+      "args": [
+        "-m",
+        "code_review_graph",
+        "serve"
+      ],
+      "cwd": "/home/sm/potentials",
+      "type": "stdio"
+    }
+  }
+}

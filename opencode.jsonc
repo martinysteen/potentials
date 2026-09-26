@@ -1,0 +1,15 @@
+{
+  "mcp": {
+    "code-review-graph": {
+      "type": "local",
+      "command": [
+        "/home/sm/miniconda3/envs/potsystem_env/bin/python3.13",
+        "-m",
+        "code_review_graph",
+        "serve",
+        "--repo",
+        "/home/sm/potentials"
+      ]
+    }
+  }
+}

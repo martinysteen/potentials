@@ -46,3 +46,5 @@ gainsuccess/
 #     despite the blanket *.xlsx rule above (see strategy_grp2/DesignVersion2.md) ---
 !strategy_grp2/app/control/control_board.xlsx
 
+# Added by code-review-graph
+.code-review-graph/
