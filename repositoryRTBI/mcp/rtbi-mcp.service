@@ -1,0 +1,13 @@
+[Unit]
+Description=RTBI MCP server (Potentials data for LLM chats and agents)
+After=network.target
+
+[Service]
+User=sm
+WorkingDirectory=/home/sm/potentials/repositoryRTBI/mcp
+ExecStart=/home/sm/miniconda3/envs/potsystem_env/bin/python server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

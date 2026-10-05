@@ -29,7 +29,7 @@ belongs in that project's own `CLAUDE.md`, which is always the authority for its
 
 | Project | Role | Authority |
 |---|---|---|
-| [repositoryRTBI/](repositoryRTBI/) | **Mirror + API.** Pulls Drive → `data/`, serves it over REST | its `CLAUDE.md` |
+| [repositoryRTBI/](repositoryRTBI/) | **Mirror + API + MCP.** Pulls Drive → `data/`, serves it over REST and as an MCP server for LLM chats/agents (`mcp.innovia.dk/mcp`) | its `CLAUDE.md` |
 | [longi/](longi/) | **Producer.** Per-ticker factor matrices `longi_*.csv`, sector aggregates, forward-gain targets | its `CLAUDE.md` |
 | [group_conformity/](group_conformity/) | **Producer.** Conformity/sector-beta grades | its `README.md` |
 | [yf3/](yf3/) | **Producer.** yFinance fundamentals | its `CLAUDE.md` |

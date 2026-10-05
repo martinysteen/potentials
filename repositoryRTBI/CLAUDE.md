@@ -62,7 +62,7 @@ group_conformity :45 → publish ~:47 (Drive + mirror)`.
 - Ubuntu server: `gandalf` (accessed via SSH on `innovia.dk:2222`)
 - Python: conda environment `potsystem_env` — always use this, never pip/requirements.txt
 - Reverse proxy: Caddy (config at `/etc/caddy/Caddyfile`)
-- API service: systemd unit `rtbi-api.service`
+- API service: systemd unit `rtbi-api.service`; MCP service: `rtbi-mcp.service` (see `mcp/README.md`)
 
 ## Directory structure
 ```
@@ -120,6 +120,15 @@ bash ~/potentials/repositoryRTBI/api/test_api.sh <key>
 | GET | `/rtbi-api/data/{path}` | Query ticker/daynum matrix CSVs as JSON (params: `tickers`, `daynums`) |
 
 All endpoints require header `X-API-Key: <key>`. Key is stored in `api/.env` on the server.
+
+## MCP server (`mcp/`)
+`https://mcp.innovia.dk/mcp` exposes the same data to LLM chats and agent platforms (claude.ai,
+ChatGPT, Cowork, Hermes) as semantic tools: dates rather than daynums, oldest-first, resampling
+done on the server. systemd unit `rtbi-mcp.service`, uvicorn on 127.0.0.1:8766, Caddy site block
+`mcp.innovia.dk`. It uses its own subdomain so OAuth discovery (`/.well-known/...`) sits at the
+root. Auth is Google OAuth plus an email allowlist in `mcp/.env`. Read-only consumer of `data/`.
+Dataset descriptions live in `mcp/catalog.py`: a new `longi_*.csv` appears automatically, but
+add a description pattern for it there. See [mcp/README.md](mcp/README.md).
 
 ## Notes
 - `rclone sync` mirrors source exactly — stale/deleted files are removed automatically, no pre-wipe needed

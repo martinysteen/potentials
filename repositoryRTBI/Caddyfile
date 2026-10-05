@@ -4,3 +4,9 @@ innovia.dk {
         reverse_proxy 127.0.0.1:8765
     }
 }
+
+# MCP server - own subdomain, so OAuth discovery (/.well-known/...) sits at the root
+# where clients look for it. *.innovia.dk already resolves here; Caddy gets the cert.
+mcp.innovia.dk {
+    reverse_proxy 127.0.0.1:8766
+}
