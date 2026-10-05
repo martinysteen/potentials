@@ -36,7 +36,7 @@ belongs in that project's own `CLAUDE.md`, which is always the authority for its
 | [potrank/](potrank/) | **Producer.** The PotRank wide snapshot, `potrank2.csv` — one row per ticker, replaces the PotRank Google Sheet's own calculations | its `CLAUDE.md` |
 | [strategy_grp2/](strategy_grp2/) | **The consumer — current work.** One Excel control board drives steps 0-4 | [DesignVersion2.md](strategy_grp2/DesignVersion2.md) |
 | [shared/](shared/) | `app/code/repository.py` — the one publish/fetch registry every family uses | the module docstring |
-| [_archive/](_archive/) | Retired projects (`strategy/`, `strategy_grp/`), frozen | — |
+| [_archive/](_archive/) | Retired projects (`strategy/`, `strategy_grp/`, `strategy_target/`), frozen | — |
 
 ## The daily chain
 
