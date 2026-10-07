@@ -57,7 +57,7 @@ MODULES: Dict[str, Module] = {
     "rank": Module(
         name="Average Rank Across Periods",
         script="longi_rank.py",
-        depends_on=["performance"],  # Depends on all 7 performance files
+        depends_on=["provisional"],  # All 7 performance files, after the provisional carry
     ),
     "medians": Module(
         name="Rolling Medians (10d/20d/50d/100d)",
@@ -137,7 +137,7 @@ MODULES: Dict[str, Module] = {
     "grp_performance": Module(
         name="Sector-Aggregated Performance (GICS + Sector2 x seven-pack)",
         script="longi_grp_performance.py",
-        depends_on=["performance"],  # Depends on all 7 longi_per*.csv files
+        depends_on=["provisional"],  # All 7 longi_per*.csv files, after the provisional carry
     ),
     "coreindex": Module(
         name="CoreIndex Price per Ticker",
@@ -208,7 +208,12 @@ MODULES: Dict[str, Module] = {
     "across": Module(
         name="Cross-sectional Data Extraction",
         script="longi_across.py",
-        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "quot1020", "quot2050", "sh3m", "sh6m", "sh1yr", "coreindex", "coreindexRSI", "beta", "trump", "iran", "regression"],  # Depends on ALL modules - must run last
+        depends_on=["rsi", "macd", "macd_Z", "performance", "rank", "medians", "stepup", "spr100d", "spr250d", "vola20d", "vola100d", "ma10", "ma20", "ma50", "ma200", "PdivMA20", "PdivMA50", "PdivMA200", "quot1020", "quot2050", "sh3m", "sh6m", "sh1yr", "coreindex", "coreindexRSI", "beta", "trump", "iran", "regression", "provisional"],  # Depends on ALL modules - must run last
+    ),
+    "provisional": Module(
+        name="Provisional newest column (carry readings, not copied prices)",
+        script="longi_provisional.py",
+        depends_on=[],  # Filled in below: every module not in AFTER_PROVISIONAL
     ),
     # Add more modules here:
     # "module_name": Module(
@@ -217,6 +222,13 @@ MODULES: Dict[str, Module] = {
     #     depends_on=["rsi"],  # or [] for independent, or ["rsi", "macd"] for multiple deps
     # ),
 }
+
+# longi_provisional.py rewrites finished outputs in place, so it must run after every
+# per-ticker module and before everything cross-sectional that reads them. A new module
+# lands on the "before" side by default (its output gets carried); a new cross-sectional
+# one must be added here, or its dependency on rank/... makes a cycle that fails loudly.
+AFTER_PROVISIONAL = {"provisional", "rank", "medians", "stepup", "grp_performance", "across"}
+MODULES["provisional"].depends_on = [m for m in MODULES if m not in AFTER_PROVISIONAL]
 
 
 class ModuleExecutor:

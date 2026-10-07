@@ -57,6 +57,9 @@ Potentials data - conventions
 - Gains in this system are additive when chained (sum of lot gains), not compounded.
 - Prices are in each ticker's own currency (Stamdata column Valuta).
 - Data refreshes hourly 0-22 CET; get_series reports the newest date it saw.
+- The newest day can be PROVISIONAL for a ticker whose market has not traded yet that day
+  (or is closed): its price is the previous close copied, its longi readings are the
+  previous day's carried. get_series lists such tickers in "provisional_newest".
 """
 
 INSTRUCTIONS = ("Read-only access to the Potentials stock-analysis repository: daily prices "
@@ -262,6 +265,8 @@ def get_series(
         "dates": [d.strftime("%Y-%m-%d") for d in sub.index],
         "series": {t: [_round(v) for v in sub[t].tolist()] for t in sub.columns},
         "last_period_partial": sub.attrs["partial_last"],   # True = latest W/M point is to-date, not complete
+        # tickers whose newest value is a carried copy (market not traded yet / closed)
+        "provisional_newest": catalog.carried_newest(ds, list(sub.columns)),
     }
 
 

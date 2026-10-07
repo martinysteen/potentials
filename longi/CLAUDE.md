@@ -390,6 +390,36 @@ Main orchestrator that manages all processing modules with intelligent execution
   - Accepts optional daynum and --target-folder parameters when run as script
 - **Dependencies**: Must run last (depends on all other modules)
 
+#### longi_provisional.py - Provisional Newest Column ✓ IMPLEMENTED (2026-10-07)
+When Asia opens, PotDatC opens column D with every price **copied** from D-1 until each
+market trades. Read as real prices, those copies are a fake 0 % day: per1d = 0, per10d is
+really per9d, rank-today = rank-yesterday. The same happens all day for a market on holiday.
+The **PotDat gatekeeper** (`shared/app/code/potdat_gatekeeper.py::carry_for`; SM 2026-10-07:
+every PotDat read goes through it) surveys the file itself and names the still-copied groups.
+Upstream only stamps the top-left cell with its creation date-time; an explicit
+`(2250) carry=.L,.DE` after the stamp overrides the survey (empty `carry=` forces none).
+Groups are Yahoo **suffixes** (`.US` = no suffix) plus indices by name — not Stamdata `Zone`,
+because holidays differ inside a zone (.L vs .DE, .HK vs .T) and between US and Canada. Rule:
+a suffix is carried when > 50 % of its tickers have D == D-1; an index when its own D == D-1.
+Hand-supplemented data (Oslo, Tokyo, ^BTC, ~30 US/CAN mispriced by Google Finance; added
+nightly 22:30) is open but stale in between: Oslo/Tokyo/^BTC fall out of the rule as carried
+until 22:30. The ~30 single tickers need a list (`singles`, judged one by one) — how SM
+supplies it is open; until then they show 0 % until 22:30. `python3 potdat_gatekeeper.py
+survey <PotDat.csv>` shows the verdict per group. For carried tickers this module rewrites
+the finished outputs in place:
+- **carry** (D := D-1) every per-ticker trailing table. Exact: a trailing reading at D-1 uses
+  only data up to D-1. `coreindex*` follow whether the CoreIndex is carried; `beta*` carry if
+  the ticker **or** its CoreIndex is carried
+- **blank** the one cell of each `longi_future_*` table whose window reaches D (index N+1)
+- **leave** `longi_price` and the cross-sectional `rank`/`median_*`/`stepup*`/`grp_*`, which
+  run **after** it (`AFTER_PROVISIONAL` in longi.py) and are recomputed from carried inputs
+- Nothing carried → nothing touched (byte-identical to the pre-2026-10-07 pipeline, verified)
+
+Known inexactness: `longi_macd_*` are normalised by each row's max |value| over the **whole
+history**, so when D (or the copied D) holds a row's extreme the carry is off by a scale factor
+(7/1228 rows in the test). The same whole-row normalisation means historical MACD values change
+when a new extreme arrives — a pre-existing look-ahead, not introduced here.
+
 #### Future longi_*.py Modules
 Follow the same pattern:
 - Read from input/ or output/ (if depends on another module)
@@ -402,7 +432,7 @@ Follow the same pattern:
 - ✓ Pipeline orchestrator (longi.py) fully implemented
   - Dependency management working
   - Parallel execution capability ready
-  - 34 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_performance, coreindex, coreindexRSI, beta, regression, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_performance, future_minaggr, across
+  - 35 modules registered: price, rsi, macd, performance, rank, medians, stepup, spr100d, spr250d, vola20d, vola100d, ma10, ma20, ma50, ma200, PdivMA20, PdivMA50, PdivMA200, quot1020, quot2050, grp_performance, coreindex, coreindexRSI, beta, regression, trump, iran, macd_Z, sh3m, sh6m, sh1yr, future_performance, future_minaggr, across, provisional
     (`future_gain20d`/`future_gain50d` were retired 2026-07-31 — one `future_performance`
     module now emits the whole `longi_future_per*` "seven-pack" ladder — 1d/5d/10d/20d/50d/100d/200d,
     replacing the earlier six-entry semantic ladder the same day. The 14 `grp_{GICS,Sector2}_per*`
@@ -412,7 +442,9 @@ Follow the same pattern:
     all five beta scripts (`beta1m/2m/3m/6m/1yr`) were consolidated into a single `beta` module —
     `longi_beta.py`, looping a `PERIODS` list — mirroring the `grp_performance` and
     `future_performance` precedents; the five one-window scripts moved to `_not_used/`. Net effect
-    of both changes: 35 → 33. `regression` was added 2026-08-18, bringing the count to 34.)
+    of both changes: 35 → 33. `regression` was added 2026-08-18, bringing the count to 34.
+    `provisional` was added 2026-10-07, bringing the count to 35 — see "Provisional newest
+    column" below.)
 - ✓ longi_price.py fully implemented
   - Outputs: longi_price.csv (byte-exact copy of PotDat.csv via shutil.copyfile, no reformatting)
   - Purpose: (a) reference raw price data under the longi_ naming convention, (b) record the exact PotDat.csv snapshot used to derive all longi_*.csv outputs for this run, since PotDat.csv is updated asynchronously relative to them
@@ -526,6 +558,12 @@ MODULES: Dict[str, Module] = {
 - **Independent modules** (depends_on=[]): Run in parallel with other independent modules
 - **Dependent modules** (depends_on=["rsi"]): Run after dependencies complete
 - **Multiple dependencies** (depends_on=["rsi", "macd"]): Run after all dependencies complete
+
+**Provisional carry:** `provisional`'s `depends_on` is computed — every module not in
+`AFTER_PROVISIONAL` (longi.py). A new per-ticker trailing module therefore needs nothing: its
+output is carried automatically. A new **cross-sectional** module (ranks or averages across
+tickers) must be added to `AFTER_PROVISIONAL` and depend on `provisional`; if it reads `rank`
+and you forget, the dependency cycle check fails loudly.
 
 ### 4. Register the new OUTPUT FILE — four lists, all of them, or it does not travel
 

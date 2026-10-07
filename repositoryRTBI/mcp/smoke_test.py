@@ -7,7 +7,9 @@ no auth), and check the monthly gain against a hand computation from PotDat.csv.
 import asyncio
 import os
 
-os.environ.pop("GOOGLE_CLIENT_ID", None)   # in-memory: test the tools, not the auth
+# In-memory: test the tools, not the auth. Set empty rather than pop: server.py's
+# load_dotenv() never overrides an existing variable, but would re-add a popped one from .env.
+os.environ["GOOGLE_CLIENT_ID"] = ""
 
 import pandas as pd
 from fastmcp import Client
@@ -67,6 +69,17 @@ async def main():
         r = (await c.call_tool("get_series", {"dataset": "longi_price.csv", "tickers": ["NVDA"],
                                               "start": "2026-09"})).data
         check("get_series daily + start", r["dates"][0] >= "2026-09-01", f"{len(r['dates'])} days")
+
+        # provisional_newest must equal the PotDat gatekeeper's own verdict on the same file
+        import potdat_gatekeeper as gatekeeper
+        idx = list(catalog.load(catalog.get("PotDat")).index)
+        probe = ["MSFT", "^GSPC"] + [next(t for t in idx if t.endswith(s)) for s in (".OL", ".HK", ".T")]
+        verdict = gatekeeper.admit(catalog.DATA / "PotDat.csv").carry
+        r = (await c.call_tool("get_series", {"dataset": "PotDat", "tickers": probe,
+                                              "start": "2026-09"})).data
+        expect = [t for t in probe if verdict.carried(t)]
+        check("provisional_newest == gatekeeper", r["provisional_newest"] == expect,
+              f"{r['provisional_newest']} (carry groups: {','.join(sorted(verdict.groups)) or '-'})")
 
         r = (await c.call_tool("get_series", {"dataset": "longi_macd_Z", "tickers": ["^AEX"],
                                               "start": "2026-08"})).data

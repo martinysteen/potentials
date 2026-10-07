@@ -109,6 +109,17 @@ Adding a *producer* output is a four-list job on the producer side; the checklis
 - **Entry is signal+1.** The signal day's close is what the decision is made on, so it is not
   tradeable. Everything measured before the 2026-07-31 cutover assumed same-day entry and is
   **not comparable** to anything after it.
+- **PotDat.csv's newest column can be provisional.** From the Asian open, column D holds prices
+  copied from D-1 until each market trades (all day on its holidays). **Every PotDat read goes
+  through the PotDat gatekeeper**, `shared/app/code/potdat_gatekeeper.py` (SM, 2026-10-07): its
+  `carry_for()` surveys the file (a suffix group is carried when > 50 % of its prices are
+  unchanged) and longi carries *readings* for those tickers (`longi_provisional.py`), so
+  consumers of `longi_*` need do nothing. Upstream stamps the top-left cell with its creation
+  date-time; an explicit `(daynum) carry=…` there overrides the survey. Its `admit()` (intact →
+  stamp → carry) is called at every entry point — repository fetch, yf3's Drive download, the
+  three `datacheck.py` preflights, the MCP server — and its `looks_intact()` is the ONE copy of
+  the mid-write guard for every CSV. A new PotDat reader goes through `admit()`; no private
+  checks. The entry-point list lives in the module docstring.
 - **Returns are additive**, not compounded — a chain's return is the sum of its lot gains, and
   the "annual" figures are that sum ÷ span-years, not a CAGR.
 - **`longi_grp_*` and `longi_future_*` are not per-ticker features.** The former are sector

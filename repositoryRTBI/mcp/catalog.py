@@ -21,7 +21,8 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared" / "app" / "code"))
-import repository  # noqa: E402  - stdlib-only; reused for MIRROR_ROOT + mid-write guard
+import repository  # noqa: E402  - stdlib-only; reused for MIRROR_ROOT
+import potdat_gatekeeper as gatekeeper  # noqa: E402  - every PotDat read goes through it
 
 DATA = repository.MIRROR_ROOT
 
@@ -145,7 +146,8 @@ def load(ds: Dataset) -> pd.DataFrame:
     hit = _cache.get(ds.path)
     if hit and hit[0] == mtime:
         return hit[1]
-    problem = repository._looks_intact(ds.path)
+    problem = (gatekeeper.admit(ds.path).problem if ds.name == "PotDat"
+               else gatekeeper.looks_intact(ds.path))
     if problem:
         raise DataError(f"{problem} - the file is probably being rewritten right now; retry in a minute.")
     df = pd.read_csv(ds.path, sep=";", decimal=",", index_col=0, encoding="utf-8-sig",
@@ -155,6 +157,32 @@ def load(ds: Dataset) -> pd.DataFrame:
         df.columns = [str(c) for c in df.columns]
     _cache[ds.path] = (mtime, df)
     return df
+
+
+_carry_cache: dict[Path, tuple[float, gatekeeper.CarryMarker]] = {}
+
+
+def carried_newest(ds: Dataset, tickers: list[str]) -> list[str]:
+    """Which of `tickers` have a PROVISIONAL newest value in `ds`: their market had not
+    traded on that day yet (or is closed), so the price is the previous close copied and
+    longi's readings are the previous day's carried. Judged by the PotDat gatekeeper on
+    the price file the dataset was built from - PotDat itself, or longi_price.csv (longi's
+    exact PotDat snapshot) for the longi_* tables. Sector and forward tables don't apply."""
+    if ds.kind != "matrix" or ds.name.startswith(("longi_grp_", "longi_future_")):
+        return []
+    ref = ds.path if ds.name == "PotDat" else DATA / "Longi" / "longi_price.csv"
+    try:
+        mtime = ref.stat().st_mtime
+        hit = _carry_cache.get(ref)
+        if not (hit and hit[0] == mtime):
+            adm = gatekeeper.admit(ref)
+            if not adm.ok:
+                return []
+            hit = (mtime, adm.carry)
+            _carry_cache[ref] = hit
+    except OSError:
+        return []
+    return [t for t in tickers if hit[1].carried(t)]
 
 
 def calendar() -> pd.Series:

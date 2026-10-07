@@ -97,6 +97,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+sys.path.append(str(Path(__file__).resolve().parent))
+import potdat_gatekeeper as gatekeeper  # noqa: E402  - same folder, stdlib-only
+
 POTENTIALS = Path("/home/sm/potentials")
 DRIVE_ROOT = "GoogleDrive:PotSystem/repositoryRTBI"
 MIRROR_ROOT = POTENTIALS / "repositoryRTBI" / "data"
@@ -347,31 +350,17 @@ def require_fresh_mirror(max_age_min: int = DEFAULT_MAX_AGE_MIN,
 # fetch (mirror -> family input)                                              #
 # --------------------------------------------------------------------------- #
 
-def _looks_intact(path: Path) -> Optional[str]:
-    """Cheap structural sanity check on a mirror file, run before it is copied
-    into a family's input_dir. Catches a source caught mid-write - e.g. a Sheet
-    -> Drive CSV export still in flight when sync_rtbi.sh pulled it, or a fetch
-    that happened to race that same window - before it silently cascades
-    through however many downstream modules read it as if it were valid.
-
-    Deliberately not a schema check: just "this is not an empty or truncated
-    stub." Every file these owners declare in `needs` is this repository's
-    European-CSV convention (';'-delimited, header + data rows), so the check
-    is generic rather than per-owner.
-    """
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            header = f.readline()
-            first_data_row = f.readline()
-    except OSError as exc:
-        return f"cannot read {path.name}: {exc}"
-    if not header.strip():
-        return f"{path.name} is empty"
-    if header.count(";") < 1:
-        return f"{path.name} header has no ';' fields, looks truncated ({header[:60]!r})"
-    if not first_data_row.strip():
-        return f"{path.name} has a header but no data rows"
-    return None
+def _admit(path: Path) -> Optional[str]:
+    """Run before a mirror file is copied into a family's input_dir: catches a source
+    caught mid-write (a Sheet -> Drive export still in flight when sync_rtbi.sh pulled
+    it) before it silently cascades through every module that reads it. PotDat.csv goes
+    through the PotDat gatekeeper's full admission; every other file through its generic
+    structural check - one copy of that check, in potdat_gatekeeper.py."""
+    if path.name == "PotDat.csv":
+        adm = gatekeeper.admit(path)
+        print(f"PotDat gatekeeper: {adm.summary()}")
+        return adm.problem
+    return gatekeeper.looks_intact(path)
 
 
 def fetch(owner: Owner, max_age_min: int = DEFAULT_MAX_AGE_MIN,
@@ -392,7 +381,7 @@ def fetch(owner: Owner, max_age_min: int = DEFAULT_MAX_AGE_MIN,
 
     # Validate every source before touching input_dir - a refused fetch must
     # leave the previous (good) input files in place, not a half-replaced mix.
-    problems = [p for p in (_looks_intact(MIRROR_ROOT / rel) for rel in owner.needs) if p]
+    problems = [p for p in (_admit(MIRROR_ROOT / rel) for rel in owner.needs) if p]
     if problems:
         for p in problems:
             print(f"ERROR: {p}")

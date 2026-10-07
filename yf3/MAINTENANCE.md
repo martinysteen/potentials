@@ -13,7 +13,8 @@ then parsed 0 tickers, and since 0-expected == 0-fetched, `yf3.py` reported
 
 **Change:** `download_file()` now downloads into `<file>.download_tmp`, runs a
 structural sanity check (non-empty, ';'-delimited header, at least one data row --
-same convention `repository.py`'s `_looks_intact` uses for the mirror) before touching
+since 2026-10-07 the one shared copy, `shared/app/code/potdat_gatekeeper.py::looks_intact`,
+also used by `repository.py`'s fetch and the MCP server) before touching
 the real file, and only replaces the existing copy if the check passes. On failure it
 prints `ERROR: ... -- keeping previous copy of <file>` to `start_yf3.log` and leaves
 the prior file in place, so `yf3.py` fetches against yesterday's (still valid) ticker

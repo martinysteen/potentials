@@ -59,6 +59,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,6 +67,11 @@ from pathlib import Path
 import pandas as pd
 
 from shared import config
+
+# Every PotDat read goes through the PotDat gatekeeper (root shared/, stdlib-only).
+# Appended, not inserted, so that folder cannot shadow this project's own modules.
+sys.path.append(str(Path(__file__).resolve().parents[4] / "shared" / "app" / "code"))
+import potdat_gatekeeper as gatekeeper  # noqa: E402
 
 
 class DataUnavailable(FileNotFoundError):
@@ -110,6 +116,7 @@ class FileStat:
     newest_daynum: int | None = None
     is_matrix: bool = False
     error: str = ""               # non-empty => this file is unusable
+    gate: str = ""                # PotDat.csv only: the PotDat gatekeeper's admission summary
 
     @property
     def ok(self) -> bool:
@@ -147,6 +154,12 @@ def inspect_file(root: Path, rel: str, required: bool) -> FileStat:
     if st.size == 0:
         st.error = "empty (0 bytes)"
         return st
+    if rel == "PotDat.csv":
+        adm = gatekeeper.admit(st.path)
+        if not adm.ok:
+            st.error = f"refused by PotDat gatekeeper: {adm.problem}"
+            return st
+        st.gate = adm.summary()
     try:
         header = pd.read_csv(st.path, sep=";", decimal=",", index_col=0, nrows=0)
     except Exception as exc:                      # noqa: BLE001 - report, never propagate
@@ -350,6 +363,7 @@ def build_snapshot(stats: list[FileStat], daynum: int | None,
         "source": str(source),
         "files": copied,
         "rows": rows,
+        "potdat_gate": next((st.gate for st in stats if st.gate), None),
     }
     (staging / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
@@ -388,6 +402,10 @@ def ensure_data(required: list[str], optional: list[str] | None = None, *,
     verdict = evaluate(stats, prior=read_manifest(), source=source)
 
     if verdict.ok:
+        if verbose:
+            for st in stats:
+                if st.gate:
+                    print(f"[input] PotDat gatekeeper: {st.gate}")
         if mode == "live":
             config.use_data_root(source)
             if verbose:

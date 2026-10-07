@@ -5,6 +5,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 import os
 import io
+import sys
 from googleapiclient.http import MediaIoBaseDownload
 
 SOURCE_FOLDER_ID = '1V9RIu1r2DM9k1wStl8HA4qOQm4vUnbHM'     # PotSystem/repositoryRTBI
@@ -16,6 +17,9 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 YF3_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))  # Go up from code/ to app/ to yf3/
 SHARED_CREDS_DIR = os.path.join(os.path.dirname(YF3_ROOT), 'shared', 'app', 'creds')
 CREDENTIALS_PATH = os.path.join(SHARED_CREDS_DIR, 'gd_creds.json')
+
+sys.path.append(os.path.join(os.path.dirname(YF3_ROOT), 'shared', 'app', 'code'))
+import potdat_gatekeeper as gatekeeper  # noqa: E402  - the PotDat gatekeeper, stdlib-only
 
 def authenticate_google_drive():
     """Shows basic usage of the Drive v3 API."""
@@ -38,25 +42,10 @@ def authenticate_google_drive():
     return creds
 
 def _looks_intact(file_path):
-    """Cheap structural sanity check: not empty, not truncated to a stub.
-    Every file in this Drive folder is this repository's European-CSV
-    convention (';'-delimited, header + data rows), so the check is generic.
-    Mirrors repository.py's _looks_intact, kept as its own copy here since
-    yf3 downloads straight from Drive rather than through the shared mirror.
-    """
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            header = f.readline()
-            first_data_row = f.readline()
-    except OSError as exc:
-        return f"cannot read {os.path.basename(file_path)}: {exc}"
-    if not header.strip():
-        return f"{os.path.basename(file_path)} is empty"
-    if header.count(";") < 1:
-        return f"{os.path.basename(file_path)} header has no ';' fields, looks truncated ({header[:60]!r})"
-    if not first_data_row.strip():
-        return f"{os.path.basename(file_path)} has a header but no data rows"
-    return None
+    """Structural sanity check from the PotDat gatekeeper (the one copy, shared with
+    repository.py's fetch and the MCP server). yf3 still downloads straight from Drive
+    rather than through the shared mirror - only the check is shared."""
+    return gatekeeper.looks_intact(file_path)
 
 
 def download_file(service, file_id, file_name, folder_path):

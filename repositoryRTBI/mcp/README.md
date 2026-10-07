@@ -41,7 +41,7 @@ Refused users and every tool call (with email) are logged: `sudo journalctl -u r
 ```bash
 sudo systemctl status rtbi-mcp          # service, port 127.0.0.1:8766
 sudo systemctl restart rtbi-mcp         # after editing .env or code
-cd ~/potentials/repositoryRTBI/mcp && python smoke_test.py   # 23 checks, in-memory, no auth
+cd ~/potentials/repositoryRTBI/mcp && python smoke_test.py   # 24 checks, in-memory, no auth
 ```
 Without `GOOGLE_CLIENT_ID` in `.env` the server refuses to start. It never serves unauthenticated
 by accident. OAuth client registrations persist under `~/.fastmcp/`, so restarts don't log
@@ -49,8 +49,9 @@ clients out. Changing `RTBI_MCP_JWT_KEY` does.
 
 ## Files
 - `server.py` — tools, auth, allowlist middleware, HTTP entry point
-- `catalog.py` — dataset discovery, descriptions, cached loading with the mid-write guard
-  from `shared/app/code/repository.py`
+- `catalog.py` — dataset discovery, descriptions, cached loading through the PotDat
+  gatekeeper (`shared/app/code/potdat_gatekeeper.py`: `admit()` for PotDat, `looks_intact()`
+  for the rest), and `carried_newest()` behind get_series' `provisional_newest` field
 - `smoke_test.py` — every tool + error paths + allowlist; monthly gain checked against a hand
   computation from PotDat.csv
 - `rtbi-mcp.service` — systemd unit (deployed to `/etc/systemd/system/`)
