@@ -9,6 +9,9 @@
       "Read(///Gandalf/sm-home//**)"
     ]
   },
+  "enabledPlugins": {
+    "github@claude-plugins-official": false
+  },
   "hooks": {
     "PostToolUse": [
       {
@@ -16,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat >/dev/null || true; command -v code-review-graph >/dev/null 2>&1 || exit 0; git rev-parse --git-dir >/dev/null 2>&1 && code-review-graph update --skip-flows --repo \"$(git rev-parse --show-toplevel 2>/dev/null)\" || true",
+            "command": "cat >/dev/null || true; ssh -p 2222 -o BatchMode=yes -o ConnectTimeout=5 sm@innovia.dk 'cd /home/sm/potentials && /home/sm/miniconda3/envs/potsystem_env/bin/code-review-graph update --skip-flows' >/dev/null 2>&1 || true",
             "timeout": 30
           }
         ]
@@ -28,8 +31,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat >/dev/null || true; command -v code-review-graph >/dev/null 2>&1 || exit 0; git rev-parse --git-dir >/dev/null 2>&1 && code-review-graph status --repo \"$(git rev-parse --show-toplevel 2>/dev/null)\" || echo 'Not a git repo, skipping'",
-            "timeout": 10
+            "command": "cat >/dev/null || true; ssh -p 2222 -o BatchMode=yes -o ConnectTimeout=5 sm@innovia.dk 'cd /home/sm/potentials && /home/sm/miniconda3/envs/potsystem_env/bin/code-review-graph update --skip-flows 2>&1 | tail -1' || echo 'code-review-graph: server unreachable, graph not updated'",
+            "timeout": 60
           }
         ]
       }

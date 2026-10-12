@@ -1,13 +1,15 @@
 {
   "mcpServers": {
     "code-review-graph": {
-      "command": "/home/sm/miniconda3/envs/potsystem_env/bin/python3.13",
+      "command": "ssh",
       "args": [
-        "-m",
-        "code_review_graph",
-        "serve"
+        "-p",
+        "2222",
+        "-o",
+        "BatchMode=yes",
+        "sm@innovia.dk",
+        "cd /home/sm/potentials && exec /home/sm/miniconda3/envs/potsystem_env/bin/python3.13 -m code_review_graph serve"
       ],
-      "cwd": "/home/sm/potentials",
       "type": "stdio"
     }
   }
