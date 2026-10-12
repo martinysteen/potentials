@@ -216,6 +216,21 @@ OWNERS: dict[str, Owner] = {
             "_archive/**",
         ),
     ),
+    "tunnel": Owner(
+        name="tunnel",
+        # Only the nightly all-universe run is published (run_tunnel.sh). The sibling
+        # output folders (FastStrategy/, Rank_top100/, ...) are SM's manual runs and stay
+        # local - they sit outside `source`, so nothing here can see them.
+        source=POTENTIALS / "tunnel" / "app" / "output" / "all",
+        input_dir=POTENTIALS / "tunnel" / "app" / "data" / "input",
+        subdir="Tunnel/all",
+        owns=(
+            "/tunnels_*.csv",
+            "/tunnels_*.pdf",
+            "/tunnels_*.png",
+        ),
+        # needs=() deliberately: tunnel reads through its own preflight.py snapshot.
+    ),
 }
 
 

@@ -2,7 +2,14 @@
 
 For each ticker: the **longest log-linear tunnel (parallel trend channel) that ends at the
 newest close**, drawn into an A4 PDF (3 × 6 panels) and tabulated in a European CSV.
-Diagnostic only — no scoring, ranking or signals. Manual runs; no cron; publishes nothing.
+Diagnostic only — no scoring, ranking or signals.
+
+**Nightly publish (2026-10-12):** `tunnel/run_tunnel.sh` (cron `0 0 * * *`, also the manual
+entry point, flock-guarded) rebuilds `app/output/all/` — every ticker, LB100 **and** LB250 — into
+`all.new/`, swaps it in only if both runs succeed, then publishes via `repository.py publish tunnel`
+to Drive + mirror `repositoryRTBI/data/Tunnel/all/`. `all/` holds only the newest run, so the
+scoped sync retires yesterday’s dated files on Drive too (older days: rerun with `--asof`). ~2½ min.
+Log `~/logs/run_tunnel.log`. Other `app/output/<subdir>/` folders are manual runs, never published.
 
 - Spec: [handoff/HANDOFF_tunnel_plots.md](handoff/HANDOFF_tunnel_plots.md) (definitions, CSV
   columns, plot layout). `handoff/tunnel_diag.py` is the original prototype, kept for reference.
