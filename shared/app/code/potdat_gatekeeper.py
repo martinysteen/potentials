@@ -39,13 +39,15 @@ The rule (survey)
 A suffix group is carried when a strict majority (> 50 %) of its tickers with a price
 in both D and D-1 have D == D-1. An index is carried when its own D == D-1.
 
-Supplemented data (SM, 2026-10-07): Google Finance does not cover Oslo, Tokyo or ^BTC,
-and misprices ~30 US/CAN stocks; those prices are added by hand once a night (22:30).
-They are open but stale in between, which the rule already handles: Oslo/Tokyo are
-whole suffix groups (100 % flat until 22:30 -> carried), ^BTC is judged on its own. The
-~30 single tickers are a minority inside .US/.TO, so the majority cannot see them; passed
-as `singles`, each is judged on its own D == D-1 like an index. How SM supplies that
-list is still open (2026-10-07) - until then `singles` is empty and those ~30 show 0 %.
+Manually imported tickers (SM, 2026-10-07/12): Google Finance does not cover Oslo, Tokyo
+or ^BTC and misprices a few others; those prices are added by hand once a night (22:30)
+and are open but stale in between. SM marks them `ManualImport` = true in Stamdata.csv,
+which the gatekeeper reads itself (manual_tickers) - callers pass nothing. A manual
+ticker in a MIXED group (TEVA in .US, SEC0.DE in .DE) is a minority the majority cannot
+see, so it is judged on its own D == D-1 like an index. A group that is ENTIRELY manual
+(.OL, .T) stays on the group rule: it goes flat as a whole until 22:30 anyway, and judged
+one by one its genuinely flat closes would be carried too (measured over 130 days: .OL
+5.4 % of days by group vs 6.9 % ticker-days one by one, .T 4.6 % vs 6.7 %).
 Checked against 130 days of history (2026-04..10): real closures sit at 84-100 %,
 normal days at <= 33 % for groups of 6+; 1-3 ticker groups are noisy (illiquid names
 at exactly 50 % do not trip the strict majority).
@@ -60,8 +62,9 @@ Entry points (every PotDat read goes through one of them)
 Standard library only, so any project can import it (append, not insert, the folder to
 sys.path, so it cannot shadow a project's own modules).
 
-CLI:  python3 potdat_gatekeeper.py survey <PotDat.csv> [SINGLE ...]   -> per-group counts + verdict
-      python3 potdat_gatekeeper.py admit  <PotDat.csv> [SINGLE ...]   -> one-line admission, exit 1 if refused
+CLI:  python3 potdat_gatekeeper.py survey <PotDat.csv> [MANUAL ...]   -> per-group counts + verdict
+      python3 potdat_gatekeeper.py admit  <PotDat.csv> [MANUAL ...]   -> one-line admission, exit 1 if refused
+      (no MANUAL tickers given -> read from Stamdata.csv as in production)
 """
 
 import csv
@@ -75,6 +78,10 @@ from typing import Dict, FrozenSet, List, Optional, Tuple
 MARKER_RE = re.compile(r"\((\d+)\)\s*carry=([^\s;]*)")
 NO_SUFFIX = ".US"
 MAJORITY = 0.5
+MANUAL_COLUMN = "ManualImport"
+# Stamdata.csv is looked for next to the PotDat being judged (longi's input/, the mirror,
+# a preflight snapshot), else in the mirror - e.g. for the MCP server's longi_price.csv.
+MIRROR_STAMDATA = Path(__file__).resolve().parents[3] / "repositoryRTBI" / "data" / "Stamdata.csv"
 
 
 def group_key(ticker: str) -> str:
@@ -116,37 +123,63 @@ def read_carry_marker(potdat_path: Path) -> Tuple[Optional[CarryMarker], str]:
     return parse_marker(header[0], header[1])
 
 
-def survey(potdat_path: Path, singles: FrozenSet[str] = frozenset()
+def manual_tickers(potdat_path: Path) -> Tuple[FrozenSet[str], str]:
+    """(tickers with ManualImport = true in Stamdata.csv, where they came from). Never
+    raises: without a readable Stamdata the survey still runs, just with no singles."""
+    for path in (Path(potdat_path).parent / "Stamdata.csv", MIRROR_STAMDATA):
+        if path.exists():
+            break
+    else:
+        return frozenset(), "WARNING: no Stamdata.csv found - no manual tickers"
+    try:
+        cols = load_stamdata_columns(path, MANUAL_COLUMN)
+    except (OSError, ValueError, IndexError) as exc:
+        return frozenset(), f"WARNING: {MANUAL_COLUMN} unreadable in {path} ({exc}) - no manual tickers"
+    return (frozenset(t for t, (v,) in cols.items() if v.strip().lower() == "true"),
+            f"{MANUAL_COLUMN} from {path}")
+
+
+def survey(potdat_path: Path, manual: FrozenSet[str] = frozenset()
            ) -> Tuple[str, List[str], Dict[str, Tuple[int, int]]]:
     """Reference rule: (newest daynum, carried groups, {group: (identical, compared)}).
-    `singles` (the hand-supplemented tickers) are judged one by one, outside their suffix."""
-    stats: Dict[str, List[int]] = defaultdict(lambda: [0, 0])
+    A `manual` ticker is judged on its own, outside its suffix - unless every ticker of
+    that suffix is manual, in which case the group rule judges them together."""
+    rows: List[Tuple[str, bool]] = []
     with open(potdat_path, "r", encoding="utf-8") as f:
         daynum = f.readline().rstrip("\r\n").split(";")[1]
         for line in f:
             p = line.rstrip("\r\n").split(";", 3)
             if len(p) < 3 or not p[1].strip() or not p[2].strip():
                 continue
-            s = stats[p[0] if p[0] in singles else group_key(p[0])]
-            s[0] += p[1].strip() == p[2].strip()
-            s[1] += 1
+            rows.append((p[0], p[1].strip() == p[2].strip()))
+    mixed = {group_key(t) for t, _ in rows if t not in manual}
+    stats: Dict[str, List[int]] = defaultdict(lambda: [0, 0])
+    for t, same in rows:
+        s = stats[t if t in manual and group_key(t) in mixed else group_key(t)]
+        s[0] += same
+        s[1] += 1
     carried = sorted(g for g, (same, n) in stats.items() if same / n > MAJORITY)
     return daynum, carried, {g: (s[0], s[1]) for g, s in stats.items()}
 
 
-def carry_for(potdat_path: Path, singles: FrozenSet[str] = frozenset()
+def carry_for(potdat_path: Path, manual: Optional[FrozenSet[str]] = None
               ) -> Tuple[CarryMarker, str]:
     """The gatekeeper's verdict on the newest column: an explicit carry= override in the
-    first cell if valid, else the survey. Always returns a marker (possibly empty)."""
+    first cell if valid, else the survey. Always returns a marker (possibly empty).
+    `manual` None = read ManualImport from Stamdata.csv (production)."""
     override, msg = read_carry_marker(potdat_path)
     if override is not None:
         return override, f"explicit override {msg}"
     with open(potdat_path, "r", encoding="utf-8") as f:
         stamp = f.readline().split(";", 1)[0].strip()
-    daynum, carried, _ = survey(potdat_path, singles)
+    manual_msg = "manual tickers given"
+    if manual is None:
+        manual, manual_msg = manual_tickers(potdat_path)
+    daynum, carried, _ = survey(potdat_path, manual)
     note = f" ({msg})" if msg.startswith("ERROR") else ""
+    warn = f" ({manual_msg})" if manual_msg.startswith("WARNING") else ""
     return (CarryMarker(int(daynum), frozenset(carried), stamp),
-            f"survey of {daynum} (stamp {stamp!r}): carry={','.join(carried)}{note}")
+            f"survey of {daynum} (stamp {stamp!r}): carry={','.join(carried)}{note}{warn}")
 
 
 def looks_intact(path: Path) -> Optional[str]:
@@ -192,7 +225,7 @@ class Admission:
                 f"carry {n} group(s): {','.join(sorted(self.carry.groups)) if n else '-'}")
 
 
-def admit(potdat_path: Path, singles: FrozenSet[str] = frozenset()) -> Admission:
+def admit(potdat_path: Path, manual: Optional[FrozenSet[str]] = None) -> Admission:
     """The entry every PotDat read goes through: intact? -> stamp + newest daynum -> carry
     verdict. Never raises; a refused file comes back with `.problem` set. Readers that only
     need raw prices ignore `.carry`; readers that compute readings must honour it."""
@@ -206,7 +239,7 @@ def admit(potdat_path: Path, singles: FrozenSet[str] = frozenset()) -> Admission
         newest = int(header[1].strip())
     except (IndexError, ValueError):
         return Admission(f"{potdat_path.name} header has no daynum columns ({header[:2]!r})")
-    carry, msg = carry_for(potdat_path, singles)
+    carry, msg = carry_for(potdat_path, manual)
     return Admission(None, header[0].strip(), newest, carry, msg)
 
 
@@ -221,12 +254,16 @@ def load_stamdata_columns(stamdata_path: Path, *columns: str) -> Dict[str, Tuple
 
 if __name__ == "__main__":
     if len(sys.argv) < 3 or sys.argv[1] not in ("survey", "admit"):
-        sys.exit("usage: potdat_gatekeeper.py {survey|admit} <PotDat.csv> [SUPPLEMENTED_TICKER ...]")
+        sys.exit("usage: potdat_gatekeeper.py {survey|admit} <PotDat.csv> [MANUAL_TICKER ...]")
+    manual_arg = frozenset(sys.argv[3:]) or None
     if sys.argv[1] == "admit":
-        adm = admit(Path(sys.argv[2]), frozenset(sys.argv[3:]))
+        adm = admit(Path(sys.argv[2]), manual_arg)
         print(adm.summary())
         sys.exit(0 if adm.ok else 1)
-    daynum, carried, stats = survey(Path(sys.argv[2]), frozenset(sys.argv[3:]))
+    if manual_arg is None:
+        manual_arg, manual_msg = manual_tickers(Path(sys.argv[2]))
+        print(f"{len(manual_arg)} manual tickers ({manual_msg})")
+    daynum, carried, stats = survey(Path(sys.argv[2]), manual_arg)
     for g in sorted(stats, key=lambda g: (g.startswith("^"), not g.startswith("."), g)):
         same, n = stats[g]
         print(f"  {g:10s} {same:4d}/{n:<4d} {'CARRY' if g in carried else ''}")
