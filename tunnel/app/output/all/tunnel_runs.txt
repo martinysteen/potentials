@@ -1,0 +1,3 @@
+# nightly: every ticker
+--universe all --param lookback=100
+--universe all --param lookback=250

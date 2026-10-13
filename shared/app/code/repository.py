@@ -67,7 +67,8 @@ because these are handed straight to rclone as `--filter` rules and must mean th
 same thing here as they do there:
 
     /name-glob      a file at the top level, e.g. "/longi_per*.csv"
-    /dirname/**     that subtree entire,      e.g. "/QA/**"
+    /dirname/**     that subtree entire,      e.g. "/QA/**"; dirname may be a glob,
+                    "/*/**" = every top-level subfolder (tunnel's output/<selection>/)
 
 Unanchored patterns are rejected: rclone matches a bare `longi_x.csv` at ANY
 depth, which would quietly pull subfolder files into a namespace.
@@ -218,16 +219,15 @@ OWNERS: dict[str, Owner] = {
     ),
     "tunnel": Owner(
         name="tunnel",
-        # Only the nightly all-universe run is published (run_tunnel.sh). The sibling
-        # output folders (FastStrategy/, Rank_top100/, ...) are SM's manual runs and stay
-        # local - they sit outside `source`, so nothing here can see them.
-        source=POTENTIALS / "tunnel" / "app" / "output" / "all",
+        # Every selection folder is published (SM, 2026-10-13): output/<sel>/ -> Tunnel/<sel>/.
+        # run_tunnel.sh rebuilds them all together nightly (each from its tunnel_runs.txt)
+        # and then publishes. A folder deleted locally is deleted on Drive too (scoped sync).
+        # Loose files directly in output/ are unclaimed and fail the publish.
+        source=POTENTIALS / "tunnel" / "app" / "output",
         input_dir=POTENTIALS / "tunnel" / "app" / "data" / "input",
-        subdir="Tunnel/all",
+        subdir="Tunnel",
         owns=(
-            "/tunnels_*.csv",
-            "/tunnels_*.pdf",
-            "/tunnels_*.png",
+            "/*/**",
         ),
         # needs=() deliberately: tunnel reads through its own preflight.py snapshot.
     ),
@@ -255,7 +255,11 @@ def matches(pattern: str, rel: str) -> bool:
     _check_pattern(pattern)
     body = pattern[1:]
     if body.endswith("/**"):
-        return rel.startswith(body[:-2])
+        # each directory component is a glob, matched like rclone does: '*' never
+        # crosses a '/', so "/*/**" is every top-level subfolder, entire
+        dirs, parts = body[:-3].split("/"), rel.split("/")
+        return len(parts) > len(dirs) and all(
+            fnmatch.fnmatchcase(p, d) for p, d in zip(parts, dirs))
     return "/" not in rel and fnmatch.fnmatch(rel, body)
 
 

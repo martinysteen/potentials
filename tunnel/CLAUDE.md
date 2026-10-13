@@ -4,12 +4,28 @@ For each ticker: the **longest log-linear tunnel (parallel trend channel) that e
 newest close**, drawn into an A4 PDF (3 × 6 panels) and tabulated in a European CSV.
 Diagnostic only — no scoring, ranking or signals.
 
-**Nightly publish (2026-10-12):** `tunnel/run_tunnel.sh` (cron `0 0 * * *`, also the manual
-entry point, flock-guarded) rebuilds `app/output/all/` — every ticker, LB100 **and** LB250 — into
-`all.new/`, swaps it in only if both runs succeed, then publishes via `repository.py publish tunnel`
-to Drive + mirror `repositoryRTBI/data/Tunnel/all/`. `all/` holds only the newest run, so the
-scoped sync retires yesterday’s dated files on Drive too (older days: rerun with `--asof`). ~2½ min.
-Log `~/logs/run_tunnel.log`. Other `app/output/<subdir>/` folders are manual runs, never published.
+**Nightly refresh + publish works on all of `app/output/` (SM, 2026-10-13).** Every subfolder is
+a selection; they are rebuilt together and published together. `tunnel/run_tunnel.sh` (cron
+`0 0 * * *`, also the manual entry point, flock-guarded) runs each folder's **recipe**
+`app/output/<folder>/tunnel_runs.txt` (one line of `tunnel_diag.py` args per run, `#` comments)
+into `app/output.new/<folder>/`, swaps `output.new/` in for `output/` only if every run of every
+folder succeeded, then `repository.py publish tunnel` → Drive + mirror `repositoryRTBI/data/Tunnel/<folder>/`
+(owner pattern `/*/**`). ~1 min. Log `~/logs/run_tunnel.log`.
+
+- **New selection** = new folder + `tunnel_runs.txt`; no script edit. A folder without a recipe is
+  carried over unchanged (log WARNING), published but never refreshed.
+- Recipes are the only git-tracked files under `app/output/` (`.gitignore` exception).
+- `output/` holds only the newest runs, so the scoped sync retires yesterday's dated files on Drive
+  too (older days: rerun with `--asof`). Deleting a folder locally deletes it on Drive.
+- Loose files directly in `app/output/` are dropped by the nightly swap and fail an ad-hoc publish
+  (unclaimed). Scratch runs: `--out /tmp/...`. Immediate refresh: just run `run_tunnel.sh`.
+
+| Folder | Recipe |
+|---|---|
+| `all/` | `--universe all`, LB100 + LB250 |
+| `FastStrategy/` | `--universe strategic`, LB100 |
+| `Rank_top100/` | `--universe top --top 100`, LB100 + LB250 |
+| `topGrowth/` | `--universe growth --sigma 2`, LB100 + LB250 |
 
 - Spec: [handoff/HANDOFF_tunnel_plots.md](handoff/HANDOFF_tunnel_plots.md) (definitions, CSV
   columns, plot layout). `handoff/tunnel_diag.py` is the original prototype, kept for reference.

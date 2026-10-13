@@ -1,0 +1,3 @@
+# tunnels with S >= mean(S) + 2s of all tickers
+--universe growth --sigma 2 --param lookback=100
+--universe growth --sigma 2 --param lookback=250

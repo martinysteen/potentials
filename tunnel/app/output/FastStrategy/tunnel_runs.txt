@@ -1,0 +1,2 @@
+# the newest StrategicStocks_<daynum>.csv
+--universe strategic --param lookback=100

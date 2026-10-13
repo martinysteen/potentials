@@ -1,18 +1,27 @@
 #!/bin/bash
-# Nightly tunnel run: rebuild app/output/all/ (all tickers, LB100 + LB250) and publish it to
-# repositoryRTBI/Tunnel/all (Drive + local mirror, repository.py's default target="both").
+# Nightly tunnel run: rebuild ALL of app/output/ - every selection folder - and publish it to
+# repositoryRTBI/Tunnel/<folder>/ (Drive + local mirror, repository.py's default target="both").
 # The ONE entry point for both cron (00:00) and a manual refresh - same script, so the two
 # can never drift apart. Model: ~/potentials/potrank/run_potrank.sh
 #
-# The build goes into a fresh all.new/ and replaces all/ only when every run succeeded, so a
-# failed night leaves yesterday's files in place (and published) instead of a half set. The
-# swap is also what retires the previous day's dated files: all/ only ever holds the newest
-# run, and the scoped `rclone sync` in repository.py then deletes the old ones on Drive too.
-# Older days are regenerable with tunnel_diag.py --asof <daynum>.
+# Each folder says how it is built: app/output/<folder>/tunnel_runs.txt holds one line of
+# tunnel_diag.py arguments per run ('#' comments and blank lines ignored), e.g.
+#     --universe all --param lookback=100
+#     --universe all --param lookback=250
+# A new selection = a new folder with a tunnel_runs.txt; no edit here. A folder WITHOUT one is
+# carried over unchanged (with a WARNING), so a hand-made folder is never lost - but it is not
+# refreshed either.
+#
+# The whole set is built into a fresh app/output.new/ and replaces app/output/ only when every
+# run of every folder succeeded, so a failed night leaves yesterday's set in place (and
+# published) instead of a half set. The swap is also what retires the previous day's dated
+# files: output/ only ever holds the newest runs, and the scoped `rclone sync` in repository.py
+# then deletes the old ones on Drive too. Older days are regenerable with --asof <daynum>.
 #
 # Extra arguments are passed to every tunnel_diag.py call, e.g. ./run_tunnel.sh --stale-ok
 
 LOGFILE=~/logs/run_tunnel.log
+RECIPE=tunnel_runs.txt
 
 # Ignore SIGHUP so SSH disconnect does not kill the run
 trap '' HUP
@@ -24,7 +33,7 @@ echo "=== run_tunnel.sh START: $(date) ==="
 echo "Log file: $LOGFILE"
 
 # A manual run landing on top of the cron run (or vice versa) is a no-op, not a race into
-# the same all.new/.
+# the same output.new/.
 LOCKFILE=/tmp/tunnel.lock
 exec 200>"$LOCKFILE"
 if ! flock -n 200; then
@@ -34,8 +43,8 @@ if ! flock -n 200; then
 fi
 
 CODE_DIR=/home/sm/potentials/tunnel/app/code
-OUT_DIR=/home/sm/potentials/tunnel/app/output/all
-NEW_DIR="$OUT_DIR.new"
+OUT_DIR=/home/sm/potentials/tunnel/app/output
+NEW_DIR="$OUT_DIR.new"      # siblings of output/, so never inside the published namespace
 OLD_DIR="$OUT_DIR.old"
 
 cd "$CODE_DIR" || {
@@ -57,20 +66,38 @@ conda activate potsystem_env || {
 }
 echo "Using Python: $(which python3)"
 
+fail() {
+    echo "ERROR: $1 - keeping the previous $OUT_DIR, no publish"
+    rm -rf "$NEW_DIR"
+    echo "=== run_tunnel.sh END: $(date) ==="
+    exit "${2:-1}"
+}
+
 rm -rf "$NEW_DIR"
 mkdir -p "$NEW_DIR"
 
-for LB in 100 250; do
-    echo ""
-    echo "--- tunnel_diag.py --universe all, lookback=$LB ---"
-    python3 tunnel_diag.py --universe all --param lookback=$LB --out "$NEW_DIR" "$@"
-    RC=$?
-    if [ $RC -ne 0 ]; then
-        echo "ERROR: tunnel_diag.py (lookback=$LB) exited $RC - keeping the previous $OUT_DIR, no publish"
-        rm -rf "$NEW_DIR"
-        echo "=== run_tunnel.sh END: $(date) ==="
-        exit $RC
+for SRC in "$OUT_DIR"/*/; do
+    [ -d "$SRC" ] || continue
+    NAME=$(basename "$SRC")
+    DST="$NEW_DIR/$NAME"
+    if [ ! -f "$SRC/$RECIPE" ]; then
+        echo ""
+        echo "WARNING: $NAME/ has no $RECIPE - carried over unchanged, not refreshed"
+        cp -a "$SRC" "$DST" || fail "copying $NAME/ failed"
+        continue
     fi
+    mkdir -p "$DST"
+    cp -a "$SRC/$RECIPE" "$DST/"
+    mapfile -t RUNS < <(grep -v '^[[:space:]]*\(#\|$\)' "$SRC/$RECIPE")
+    [ ${#RUNS[@]} -gt 0 ] || fail "$NAME/$RECIPE lists no runs"
+    for LINE in "${RUNS[@]}"; do
+        read -ra ARGS <<< "$LINE"
+        echo ""
+        echo "--- $NAME: tunnel_diag.py ${ARGS[*]} ---"
+        python3 tunnel_diag.py "${ARGS[@]}" --out "$DST" "$@" < /dev/null
+        RC=$?
+        [ $RC -eq 0 ] || fail "$NAME: tunnel_diag.py ${ARGS[*]} exited $RC" $RC
+    done
 done
 
 # Swap the new set in
@@ -79,10 +106,10 @@ rm -rf "$OLD_DIR"
 mv "$NEW_DIR" "$OUT_DIR" && rm -rf "$OLD_DIR"
 echo ""
 echo "New contents of $OUT_DIR:"
-ls -l "$OUT_DIR"
+ls -lR "$OUT_DIR"
 
 echo ""
-echo "--- Publishing to repositoryRTBI/Tunnel/all ---"
+echo "--- Publishing app/output/ to repositoryRTBI/Tunnel/ ---"
 python3 /home/sm/potentials/shared/app/code/repository.py publish tunnel
 PUB_RC=$?
 [ $PUB_RC -ne 0 ] && echo "ERROR: publish failed with exit code $PUB_RC"

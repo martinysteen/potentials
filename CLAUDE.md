@@ -34,7 +34,7 @@ belongs in that project's own `CLAUDE.md`, which is always the authority for its
 | [group_conformity/](group_conformity/) | **Producer.** Conformity/sector-beta grades | its `README.md` |
 | [yf3/](yf3/) | **Producer.** yFinance fundamentals | its `CLAUDE.md` |
 | [potrank/](potrank/) | **Producer.** The PotRank wide snapshot, `potrank2.csv` — one row per ticker, replaces the PotRank Google Sheet's own calculations | its `CLAUDE.md` |
-| [tunnel/](tunnel/) | **Consumer + producer, diagnostic only.** Longest log-linear price tunnel ending today per ticker → PDF of plots + CSV. Nightly `run_tunnel.sh` (00:00) publishes the all-ticker LB100/LB250 set to `Tunnel/all/`; other runs manual | its `CLAUDE.md` |
+| [tunnel/](tunnel/) | **Consumer + producer, diagnostic only.** Longest log-linear price tunnel ending today per ticker → PDF of plots + CSV. Nightly `run_tunnel.sh` (00:00) rebuilds every `app/output/<folder>/` selection from its recipe and publishes them together to `Tunnel/<folder>/` | its `CLAUDE.md` |
 | [strategy_grp2/](strategy_grp2/) | **The consumer — current work.** One Excel control board drives steps 0-4 | [DesignVersion2.md](strategy_grp2/DesignVersion2.md) |
 | [shared/](shared/) | `app/code/repository.py` — the one publish/fetch registry every family uses | the module docstring |
 | [_archive/](_archive/) | Retired projects (`strategy/`, `strategy_grp/`, `strategy_target/`), frozen | — |
@@ -64,7 +64,7 @@ refresh landing near the cron tick is a no-op, not a race — see `potrank/CLAUD
 `strategy_grp2/DesignVersion2.md`'s 2026-08-13 corrections). It stops itself if
 `control_board.xlsx` is open in Excel, exactly as a run fired by hand does.
 
-**`tunnel` runs once a night**, at **00:00** (`tunnel/run_tunnel.sh`, also the manual entry point): all tickers, lookback 100 and 250, published to `Tunnel/all/` (Drive + mirror). It reads longi_price as left by longi's 22:15 run.
+**`tunnel` runs once a night**, at **00:00** (`tunnel/run_tunnel.sh`, also the manual entry point): every selection folder of `tunnel/app/output/` (all, FastStrategy, Rank_top100, topGrowth, … — each built from its own `tunnel_runs.txt` recipe) is rebuilt together and published together to `Tunnel/<folder>/` (Drive + mirror). It reads longi_price as left by longi's 22:15 run, and StrategicStocks from strategy_grp2's last tick.
 
 `~/git_pot.sh` at **03:40** commits and pushes anything left uncommitted in this repo, on the
 branch currently checked out — so uncommitted work does not survive the night as a working tree.
