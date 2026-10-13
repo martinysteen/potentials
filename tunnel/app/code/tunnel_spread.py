@@ -4,7 +4,8 @@ S relates to the width W (width_pct). Tunnel rows only; read from the run's own 
 
     tunnels_<tag>_hist.png   S in 8 buckets centred on mean(S): <-3s, -3s..-2s, ... , >+3s
                              (s = standard deviation of S; the end buckets are the outliers)
-    tunnels_<tag>_SW.png     S (x) against W (y), every tunnel; the outliers are labelled
+    tunnels_<tag>_SW.png     S (x) against W (y), every tunnel. Labelled: the outliers; with
+                             < 250 tunnels everything beyond ±2s, < 150 beyond ±1s, < 50 every dot
 
 tunnel_diag.py calls write_spread() after each run. By hand, for runs already on disk:
     python tunnel_spread.py                    # every tunnels_*.csv in app/output/all/
@@ -76,11 +77,17 @@ def write_spread(csv_path):
                    ls='-' if kk == 0 else '--', zorder=0)
         ax.text(e, 1.005, 'mean' if kk == 0 else f'{kk:+d}s', transform=ax.get_xaxis_transform(),
                 ha='center', va='bottom', fontsize=6, color='0.4')
-    ax.scatter(S[~out], W[~out], s=6, color=C_DOT, alpha=0.45, lw=0)
+    small = len(t) < 150                        # few dots: draw them bigger and darker
+    ax.scatter(S[~out], W[~out], s=14 if small else 6, color=C_DOT, alpha=0.8 if small else 0.45, lw=0)
     ax.scatter(S[out], W[out], s=14, color=C_OUT, lw=0, zorder=3)
-    for i, r in enumerate(t[out].sort_values('slope20_pct').itertuples()):
+    # small selections get more labels: < 50 tunnels all, < 150 beyond ±1s, < 250 beyond ±2s,
+    # else the outliers (beyond ±3s)
+    beyond = next(b for lim, b in ((50, 0), (150, 1), (250, 2), (np.inf, 3)) if len(t) < lim)
+    lab = (k <= 3 - beyond) | (k >= 4 + beyond)
+    for i, r in enumerate(t[lab].sort_values('slope20_pct').itertuples()):
+        o = r.slope20_pct < edges[0] or r.slope20_pct >= edges[-1]
         ax.annotate(r.ticker, (r.slope20_pct, r.width_pct), xytext=(3, 3 if i % 2 else -8),
-                    textcoords='offset points', fontsize=6, color=C_OUT)
+                    textcoords='offset points', fontsize=6, color=C_OUT if o else '0.25')
     ax.set_xlabel('S = slope20_pct (% per 20 trading days)', fontsize=8)
     ax.set_ylabel('W = width_pct (% lower → upper line)', fontsize=8)
     ax.set_title(title, fontsize=8, loc='left', pad=14)

@@ -20,7 +20,7 @@ Log `~/logs/run_tunnel.log`. Other `app/output/<subdir>/` folders are manual run
   Not tracked in git (regenerable).
 - Selection-wide plots (2026-10-13): [app/code/tunnel_spread.py](app/code/tunnel_spread.py) adds
   `_hist.png` (S in 8 buckets of s around mean(S), ends = outliers beyond ±3s) and `_SW.png`
-  (S vs W, outliers labelled) next to each run's CSV; tunnel rows only, s = std of S incl. outliers.
+  (S vs W; labels the outliers; below 250 tunnels everything beyond ±2s, below 150 beyond ±1s, below 50 every dot) next to each run's CSV; tunnel rows only, s = std of S incl. outliers.
   Called by every `tunnel_diag.py` run except `--ticker`; `python tunnel_spread.py [dir|csv …]`
   backfills (default `output/all`). They match `tunnels_*.png`, so the nightly publish carries them.
 
