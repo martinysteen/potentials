@@ -54,7 +54,7 @@ DEFAULTS = dict(
     min_supports=2,       # supports required on EACH line
     min_span=0.50,        # first->last support on each line must span this share of the length
     slope_method='minwidth',  # 'minwidth' (narrowest band) or 'ols' (least squares)
-    w_max=1.0,            # widest accepted tunnel (1.0 = 100 % lower->upper); 0 = no cap
+    w_max=0.5,            # widest accepted tunnel (0.5 = 50 % lower->upper); 0 = no cap
 )
 
 

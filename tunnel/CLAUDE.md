@@ -36,15 +36,15 @@ python tunnel_diag.py --universe all --param lookback=250
 | `slope_method` | `ols` | **`minwidth`** | SM's standard: hugs the extremes, longer tunnels |
 | `lookback` | (full history) | **100** | only the recent N closes are searched; 250 ≈ 1 year as an override |
 | `l_min` | 40 | **20** | |
-| `w_max` | 0.40 | **1.0** (0 = no cap) | was removed entirely, then reinstated at 100 % after the 250-d run produced 205–358 % "tunnels" |
+| `w_max` | 0.40 | **0.5** (0 = no cap) | removed, then 100 % after the 250-d run produced 205–358 % "tunnels"; **50 % since 2026-10-13** (SM): drops the few very wide extreme-slope names (PACB +83 %/20d), S skew 1.4–2.0 → 0.3–0.45. Still not Gaussian (peaked centre, ±3s tails ~5–8× normal) |
 | universe | all | **StrategicStocks** (+ `top`, `all`) | |
 
 So the handoff's regression numbers (783/446/0, the MSFT/MU/^AEX rows) do **not** apply to the
 current defaults.
 
-Reference results, daynum 2249 (2026-10-06), current defaults:
-all/LB100 → 998 tunnel / 231 no_tunnel; all/LB250 → 1,167 / 62; top100/LB100 → 78 / 22;
-top100/LB250 → 91 / 9.
+Reference results, daynum 2253 (2026-10-12), current defaults (w_max 0.5):
+all/LB100 → 1,033 tunnel / 194 no_tunnel; all/LB250 → 1,161 / 66.
+(Before 2026-10-13, at w_max 1.0, daynum 2249: all/LB100 998/231, all/LB250 1,167/62.)
 
 ## Open
 
