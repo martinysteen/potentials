@@ -28,6 +28,7 @@ Outputs in --out (default app/output/):
 """
 import argparse, os, sys, time
 from dataclasses import dataclass, asdict
+from datetime import datetime
 from multiprocessing import Pool
 from pathlib import Path
 
@@ -59,6 +60,9 @@ DEFAULTS = dict(
     slope_method='minwidth',  # 'minwidth' (narrowest band) or 'ols' (least squares)
     w_max=0.5,            # widest accepted tunnel (0.5 = 50 % lower->upper); 0 = no cap
 )
+
+
+STAMP_FMT = '%d-%m-%Y %H-%M'    # CSV top-left cell, as in PotDat.csv / longi_*.csv
 
 
 @dataclass
@@ -389,6 +393,9 @@ def main():
     tab.insert(9, 'start_date', [dates[list(dn).index(d)].strftime('%Y-%m-%d') if pd.notna(d) else '' for d in tab.start_daynum])
     tab.insert(10, 'end_date', [dates[list(dn).index(d)].strftime('%Y-%m-%d') if pd.notna(d) else '' for d in tab.end_daynum])
     tab[['start_daynum', 'end_daynum']] = tab[['start_daynum', 'end_daynum']].astype('Int64')
+    # creation stamp in the top-left cell, the system-wide convention (PotDat, longi_*): it
+    # survives an import into Sheets where file metadata does not
+    tab = tab.rename(columns={'ticker': datetime.now().strftime(STAMP_FMT)})
     tab.to_csv(os.path.join(a.out, f'tunnels_{tag}.csv'), sep=';', decimal=',', index=False)
     if not a.ticker:                            # selection-wide S histogram + S/W scatter
         tunnel_spread.write_spread(os.path.join(a.out, f'tunnels_{tag}.csv'))
@@ -399,7 +406,8 @@ def main():
     header = (f'Tunnels ending {dates[-1]:%Y-%m-%d}  –  {sum(r.status == "tunnel" for r in results)} of '
               f'{len(results)} tickers ({universe})  –  {ptxt}')
     write_pdf(os.path.join(a.out, f'tunnels_{tag}.pdf'), drawn, prices, dates, header, p, a.rows,
-              png_first=os.path.join(a.out, f'tunnels_{tag}_p1.png'),
+              # page-1 PNG preview, off since 2026-10-13 (SM: nothing uses it); uncomment to reinstate
+              # png_first=os.path.join(a.out, f'tunnels_{tag}_p1.png'),
               common=universe != 'all')         # all: each panel its own scale (SM, 2026-10-13)
     if a.ticker:
         for r in results:

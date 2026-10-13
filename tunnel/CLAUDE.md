@@ -32,8 +32,10 @@ folder succeeded, then `repository.py publish tunnel` → Drive + mirror `reposi
 - Code: [app/code/tunnel_diag.py](app/code/tunnel_diag.py) (fit + plot + CLI, `find_tunnel()`
   is the public function), [app/code/preflight.py](app/code/preflight.py) (input list +
   snapshot, same mechanics as potrank/strategy_grp2 via `shared/datacheck.py`).
-- Output: `app/output/tunnels_<date>_LB<lookback>[_strat|_topN].{csv,pdf}` + `_p1.png`.
-  Not tracked in git (regenerable).
+- Output: `app/output/<folder>/tunnels_<date>_LB<lookback>[_strat|_topN|_growthNs].{csv,pdf}`. (The
+  page-1 preview `_p1.png` is commented out since 2026-10-13 — one line in `main()` to reinstate.)
+  Not tracked in git (regenerable). CSV top-left cell (header of the ticker column) = creation
+  stamp `dd-mm-yyyy hh-mm` (2026-10-13), as in PotDat/longi_*; readers rename column 0 to `ticker`.
 - PDF panels of the specialised selections (strategic, top, growth — NOT `all`, SM's choice,
   where each panel fits its own data) share ONE scale per file (2026-10-13, `common_scale()`): same trading days across
   (1.25 × lookback, all ending today) and same log span up (fits the file's tallest tunnel, each

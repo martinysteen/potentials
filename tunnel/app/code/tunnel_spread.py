@@ -48,6 +48,7 @@ def write_spread(csv_path):
     or [] when there are too few tunnels."""
     csv_path = Path(csv_path)
     tab = pd.read_csv(csv_path, sep=';', decimal=',')
+    tab = tab.rename(columns={tab.columns[0]: 'ticker'})   # top-left cell = creation stamp
     t = tab[tab.status == 'tunnel']
     if len(t) < 3:
         return []
