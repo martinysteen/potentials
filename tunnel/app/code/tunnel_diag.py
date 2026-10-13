@@ -23,6 +23,7 @@ Usage:
 Outputs in --out (default app/output/):
     tunnels_<date>_LB<lookback>[_strat|_topN].pdf   A4 portrait pages, 3 across x 6 down
     tunnels_<date>_LB<lookback>[_strat|_topN].csv   one row per ticker, ';' separated, ',' decimal
+    tunnels_<...>_hist.png / _SW.png                S histogram + S/W scatter (tunnel_spread.py)
 """
 import argparse, os, sys, time
 from dataclasses import dataclass, asdict
@@ -42,6 +43,7 @@ from matplotlib import ticker as mticker
 from shared import config, data_loader
 from shared.datacheck import DataUnavailable
 import preflight
+import tunnel_spread
 
 # --------------------------------------------------------------------------------------
 # Parameters
@@ -355,6 +357,8 @@ def main():
     tab.insert(10, 'end_date', [dates[list(dn).index(d)].strftime('%Y-%m-%d') if pd.notna(d) else '' for d in tab.end_daynum])
     tab[['start_daynum', 'end_daynum']] = tab[['start_daynum', 'end_daynum']].astype('Int64')
     tab.to_csv(os.path.join(a.out, f'tunnels_{tag}.csv'), sep=';', decimal=',', index=False)
+    if not a.ticker:                            # selection-wide S histogram + S/W scatter
+        tunnel_spread.write_spread(os.path.join(a.out, f'tunnels_{tag}.csv'))
 
     # PDF: tunnels only (or all), alphabetical by ticker
     drawn = sorted([r for r in results if a.plot_all or r.status == 'tunnel'], key=lambda r: r.ticker)
