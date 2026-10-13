@@ -14,6 +14,7 @@ Usage:
     python tunnel_diag.py --param lookback=50           # only the last 50 closes (default 100)
     python tunnel_diag.py --universe top [--top 100]    # best N of longi_rank.csv
     python tunnel_diag.py --universe all                # every longi_price ticker
+    python tunnel_diag.py --universe growth [--sigma 2] # tunnels with S >= mean + 2s of all tickers
     python tunnel_diag.py --ticker MSFT MU              # single/few tickers (+ PNG each)
     python tunnel_diag.py --plot-all                    # also draw tickers without tunnel
     python tunnel_diag.py --param touch_tol=0.05 --param min_supports=3
@@ -21,8 +22,8 @@ Usage:
     python tunnel_diag.py --stale-ok | --live           # input-guard modes, see preflight.py
 
 Outputs in --out (default app/output/):
-    tunnels_<date>_LB<lookback>[_strat|_topN].pdf   A4 portrait pages, 3 across x 6 down
-    tunnels_<date>_LB<lookback>[_strat|_topN].csv   one row per ticker, ';' separated, ',' decimal
+    tunnels_<date>_LB<lookback>[_strat|_topN|_growthNs].pdf   A4 portrait, 3 across x 6 down
+    tunnels_<date>_LB<lookback>[_strat|_topN|_growthNs].csv   one row per ticker, ';' / ','
     tunnels_<...>_hist.png / _SW.png                S histogram + S/W scatter (tunnel_spread.py)
 """
 import argparse, os, sys, time
@@ -188,19 +189,36 @@ COLS, ROWS, A4 = 3, 6, (8.27, 11.69)
 C_PRICE, C_CTX, C_LINE, C_MID, C_SUP = '#1f3b57', '0.70', '#2e8b57', '#c0392b', '#e67e22'
 
 
-def draw_panel(ax, res, closes, dates, p=None):
-    """closes: full price row (oldest->newest); dates: matching DatetimeIndex."""
+def common_scale(results, p):
+    """One scale for every panel of a PDF, so widths and slopes compare by eye: the same
+    log span vertically (fits the tallest tunnel, + 10 % margin) and the same number of
+    trading days horizontally (1.25 x lookback, or x the longest tunnel). Returns
+    (log_span, days) or None if nothing has a tunnel."""
+    t = [r for r in results if r.status == 'tunnel']
+    if not t:
+        return None
+    span = max(np.log(max(r.upper_start, r.upper_end) / min(r.lower_start, r.lower_end)) for r in t)
+    return 1.1 * span, int(np.ceil(1.25 * (p['lookback'] or max(r.length_td for r in t))))
+
+
+def draw_panel(ax, res, closes, dates, p=None, scale=None):
+    """closes: full price row (oldest->newest); dates: matching DatetimeIndex.
+    scale: (log_span, days) from common_scale(), or None to fit the panel to its own data."""
     p = {**DEFAULTS, **(p or {})}
     x = np.arange(closes.size)                  # trading-day axis: straight lines stay straight
+    closes = np.where(closes > 0, closes, np.nan)   # a 0 would plunge the log axis to its floor
     ok = np.isfinite(closes)
     ax.set_yscale('log')
+    if scale:
+        ax.set_xlim(closes.size - scale[1] - 0.5, closes.size - 0.5)
     if res.status != 'tunnel':
-        ax.plot(x[ok], closes[ok], color='0.55', lw=0.6)
+        w = slice(-scale[1], None) if scale else slice(None)
+        ax.plot(x[w][ok[w]], closes[w][ok[w]], color='0.55', lw=0.6)
         ax.set_title(f'{res.ticker}  –  {res.status.replace("_", " ")}', fontsize=7, loc='left', color='0.4')
     else:
         L = res.length_td
         s = closes.size - L
-        ctx = max(0, s - max(60, L // 2))       # some history before the tunnel, in grey
+        ctx = max(0, closes.size - scale[1] if scale else s - max(60, L // 2))  # history, in grey
         t = np.arange(L)
         b = np.log(res.lower_end / res.lower_start) / (L - 1)
         lower = np.log(res.lower_start) + b * t
@@ -222,6 +240,9 @@ def draw_panel(ax, res, closes, dates, p=None):
                 f'L {L} d   W {res.width_pct:.0f}%   S {res.slope20_pct:+.1f}%/20d   '
                 f'sup {res.supports_upper}/{res.supports_lower}',
                 transform=ax.transAxes, ha='right', va='bottom', fontsize=5.6, color='0.25')
+        if scale:                               # tunnel centred, same log span in every panel
+            mid = (max(upper[0], upper[-1]) + min(lower[0], lower[-1])) / 2
+            ax.set_ylim(np.exp(mid - scale[0] / 2), np.exp(mid + scale[0] / 2))
     # y axis: readable price labels on a log scale
     lo_, hi_ = ax.get_ylim()
     ax.yaxis.set_major_locator(mticker.MaxNLocator(5) if hi_ / lo_ < 3 else mticker.LogLocator(subs=(1, 2, 5)))
@@ -243,18 +264,23 @@ def draw_panel(ax, res, closes, dates, p=None):
     ax.grid(alpha=0.25, lw=0.4)
 
 
-def write_pdf(path, results, prices, dates, header, p=None, rows=ROWS, png_first=None):
+def write_pdf(path, results, prices, dates, header, p=None, rows=ROWS, png_first=None, common=True):
+    """common: one scale for every panel (see common_scale); False fits each panel to its data."""
     per = COLS * rows
     pages = [results[i:i + per] for i in range(0, len(results), per)] or [[]]
+    scale = common_scale(results, {**DEFAULTS, **(p or {})}) if common else None
+    stxt = (f'same scale in every panel: {scale[1]} trading days wide, '
+            f'bottom → top = +{100 * (np.exp(scale[0]) - 1):.0f} %') if scale else ''
     with PdfPages(path) as pdf:
         for pi, chunk in enumerate(pages, 1):
             fig, axes = plt.subplots(rows, COLS, figsize=A4)
-            fig.subplots_adjust(left=0.06, right=0.98, top=0.95, bottom=0.03, hspace=0.55, wspace=0.28)
+            fig.subplots_adjust(left=0.06, right=0.98, top=0.94, bottom=0.03, hspace=0.55, wspace=0.28)
             for ax in axes.flat[len(chunk):]:
                 ax.axis('off')
             for ax, res in zip(axes.flat, chunk):
-                draw_panel(ax, res, prices.loc[res.ticker].to_numpy(float), dates, p)
-            fig.suptitle(f'{header}   –   page {pi}/{len(pages)}', fontsize=8, x=0.06, ha='left', y=0.985)
+                draw_panel(ax, res, prices.loc[res.ticker].to_numpy(float), dates, p, scale)
+            fig.suptitle(f'{header}   –   page {pi}/{len(pages)}', fontsize=8, x=0.06, ha='left', y=0.99)
+            fig.text(0.06, 0.972, stxt, fontsize=6.5, ha='left', va='top', color='0.35')
             pdf.savefig(fig)
             if png_first and pi == 1:
                 fig.savefig(png_first, dpi=110)
@@ -303,11 +329,13 @@ def main():
     ap.add_argument('--out', default=str(config.OUTPUT_ROOT))
     ap.add_argument('--live', action='store_true', help='read the live repository, no snapshot')
     ap.add_argument('--stale-ok', action='store_true', help='fall back to the previous snapshot')
-    ap.add_argument('--universe', choices=('strategic', 'top', 'all'), default='strategic',
+    ap.add_argument('--universe', choices=('strategic', 'top', 'all', 'growth'), default='strategic',
                     help='strategic = tickers of the newest StrategicStocks_<daynum>.csv (default); '
                          'top = the --top best of longi_rank.csv on the as-of day; '
-                         'all = every longi_price ticker')
+                         'all = every longi_price ticker; '
+                         'growth = the tunnels of all tickers with S >= mean(S) + --sigma s')
     ap.add_argument('--top', type=int, default=100, help='size of --universe top (default 100)')
+    ap.add_argument('--sigma', type=float, default=2.0, help='threshold of --universe growth (default 2)')
     ap.add_argument('--ticker', nargs='*', help='explicit tickers, overrides --universe')
     ap.add_argument('--plot-all', action='store_true', help='also draw tickers without a tunnel')
     ap.add_argument('--rows', type=int, default=ROWS, help='plots down each A4 page (5 or 6)')
@@ -342,7 +370,7 @@ def main():
         prices = prices.loc[[t for t in wanted if t in prices.index]]
     os.makedirs(a.out, exist_ok=True)
     tag = (dates[-1].strftime('%Y-%m-%d') + f'_LB{p["lookback"] or "all"}'
-           + {'strategic': '_strat', 'top': f'_top{a.top}'}.get(universe, ''))
+           + {'strategic': '_strat', 'top': f'_top{a.top}', 'growth': f'_growth{a.sigma:g}s'}.get(universe, ''))
 
     t0 = time.time()
     X, dn, tk = prices.to_numpy(float), prices.columns.to_numpy(), list(prices.index)
@@ -350,6 +378,11 @@ def main():
         results = pool.map(_one, range(len(tk)), chunksize=8)
     print(f'{len(results)} tickers in {time.time() - t0:.0f}s:',
           pd.Series([r.status for r in results]).value_counts().to_dict())
+    if universe == 'growth':                    # same mean/s as the all-ticker histogram
+        S = pd.Series([r.slope20_pct for r in results if r.status == 'tunnel'])
+        cut = S.mean() + a.sigma * S.std()
+        results = [r for r in results if r.status == 'tunnel' and r.slope20_pct >= cut]
+        print(f'growth: S >= {S.mean():.2f} + {a.sigma:g} x {S.std():.2f} = {cut:.2f} %/20d -> {len(results)} tickers')
 
     # CSV: every ticker, European format like the rest of PotSystem
     tab = pd.DataFrame([asdict(r) for r in results])
@@ -366,7 +399,8 @@ def main():
     header = (f'Tunnels ending {dates[-1]:%Y-%m-%d}  –  {sum(r.status == "tunnel" for r in results)} of '
               f'{len(results)} tickers ({universe})  –  {ptxt}')
     write_pdf(os.path.join(a.out, f'tunnels_{tag}.pdf'), drawn, prices, dates, header, p, a.rows,
-              png_first=os.path.join(a.out, f'tunnels_{tag}_p1.png'))
+              png_first=os.path.join(a.out, f'tunnels_{tag}_p1.png'),
+              common=universe != 'all')         # all: each panel its own scale (SM, 2026-10-13)
     if a.ticker:
         for r in results:
             write_single_png(os.path.join(a.out, f'tunnel_{r.ticker}_{tag}.png'), r,

@@ -35,7 +35,7 @@ def strategic_file(root: Path | None = None) -> str | None:
 
 
 def required_files(universe: str = "strategic") -> list[str]:
-    if universe == "all":
+    if universe in ("all", "growth"):            # growth = a filter on the all-ticker run
         return list(REQUIRED)
     if universe == "top":
         return REQUIRED + [f"Longi/{RANK_FILE}"]

@@ -18,8 +18,14 @@ Log `~/logs/run_tunnel.log`. Other `app/output/<subdir>/` folders are manual run
   snapshot, same mechanics as potrank/strategy_grp2 via `shared/datacheck.py`).
 - Output: `app/output/tunnels_<date>_LB<lookback>[_strat|_topN].{csv,pdf}` + `_p1.png`.
   Not tracked in git (regenerable).
+- PDF panels of the specialised selections (strategic, top, growth — NOT `all`, SM's choice,
+  where each panel fits its own data) share ONE scale per file (2026-10-13, `common_scale()`): same trading days across
+  (1.25 × lookback, all ending today) and same log span up (fits the file's tallest tunnel, each
+  tunnel centred), so W and S compare by eye. Stated in the page header. Single-ticker PNGs fit
+  their own data.
 - Selection-wide plots (2026-10-13): [app/code/tunnel_spread.py](app/code/tunnel_spread.py) adds
-  `_hist.png` (S in 8 buckets of s around mean(S), ends = outliers beyond ±3s) and `_SW.png`
+  `_hist.png` (S in 8 buckets of s around mean(S), ends = outliers beyond ±3s; `all` runs only,
+  SM: of little use on specialised selections) and `_SW.png`
   (S vs W; labels the outliers; below 250 tunnels everything beyond ±2s, below 150 beyond ±1s, below 50 every dot) next to each run's CSV; tunnel rows only, s = std of S incl. outliers.
   Called by every `tunnel_diag.py` run except `--ticker`; `python tunnel_spread.py [dir|csv …]`
   backfills (default `output/all`). They match `tunnels_*.png`, so the nightly publish carries them.
@@ -32,6 +38,7 @@ python tunnel_diag.py                                   # newest StrategicStocks
 python tunnel_diag.py --universe top --top 100          # best 100 of longi_rank.csv (rank 1 = best)
 python tunnel_diag.py --universe all                    # all ~1,229 longi_price tickers
 python tunnel_diag.py --universe all --param lookback=250
+python tunnel_diag.py --universe growth --out ../output/topGrowth   # S >= mean+2s of all (--sigma)
 ```
 
 ## Where the port deliberately differs from the handoff (2026-10-06)
