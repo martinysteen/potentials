@@ -34,6 +34,9 @@ folder succeeded, then `repository.py publish tunnel` → Drive + mirror `reposi
   snapshot, same mechanics as potrank/strategy_grp2 via `shared/datacheck.py`).
 - Output: `app/output/<folder>/tunnels_<date>_LB<lookback>[_strat|_topN|_growthNs].{csv,pdf}`. (The
   page-1 preview `_p1.png` is commented out since 2026-10-13 — one line in `main()` to reinstate.)
+  **Page-1 PNG reinstated 2026-10-14 for one-page selections only** (≤ 18 plotted tickers, e.g.
+  FastStrategy): `tunnels_LB100_strat_latest.png` — deliberately UNDATED so a viewer-free link in a
+  Google Sheet stays stable across nights. Bigger selections get no PNG.
   Not tracked in git (regenerable). CSV top-left cell (header of the ticker column) = creation
   stamp `dd-mm-yyyy hh-mm` (2026-10-13), as in PotDat/longi_*; readers rename column 0 to `ticker`.
 - PDF panels of the specialised selections (strategic, top, growth — NOT `all`, SM's choice,

@@ -405,9 +405,12 @@ def main():
     ptxt = '  '.join(f'{k}={v}' for k, v in p.items() if v != DEFAULTS[k]) or 'default parameters'
     header = (f'Tunnels ending {dates[-1]:%Y-%m-%d}  –  {sum(r.status == "tunnel" for r in results)} of '
               f'{len(results)} tickers ({universe})  –  {ptxt}')
+    # One-page selections (<= COLS x rows tickers, e.g. FastStrategy) also get the page as a PNG,
+    # viewer-free for a Sheet link. Undated name (tag minus the date) so the link stays stable.
+    onepage = len(drawn) <= COLS * a.rows and not a.ticker
+    png1 = os.path.join(a.out, 'tunnels_' + tag[len(dates[-1].strftime('%Y-%m-%d')) + 1:] + '_latest.png') if onepage else None
     write_pdf(os.path.join(a.out, f'tunnels_{tag}.pdf'), drawn, prices, dates, header, p, a.rows,
-              # page-1 PNG preview, off since 2026-10-13 (SM: nothing uses it); uncomment to reinstate
-              # png_first=os.path.join(a.out, f'tunnels_{tag}_p1.png'),
+              png_first=png1,
               common=universe != 'all')         # all: each panel its own scale (SM, 2026-10-13)
     if a.ticker:
         for r in results:
