@@ -268,8 +268,12 @@ def draw_panel(ax, res, closes, dates, p=None, scale=None):
     ax.grid(alpha=0.25, lw=0.4)
 
 
-def write_pdf(path, results, prices, dates, header, p=None, rows=ROWS, png_first=None, common=True):
-    """common: one scale for every panel (see common_scale); False fits each panel to its data."""
+def write_pdf(path, results, prices, dates, header, p=None, rows=ROWS, png_all=None, common=True):
+    """common: one scale for every panel (see common_scale); False fits each panel to its data.
+    png_all: also write every page stacked top to bottom as ONE tall PNG (viewer-free reading)."""
+    import io
+    from PIL import Image
+    strips = []
     per = COLS * rows
     pages = [results[i:i + per] for i in range(0, len(results), per)] or [[]]
     scale = common_scale(results, {**DEFAULTS, **(p or {})}) if common else None
@@ -286,9 +290,18 @@ def write_pdf(path, results, prices, dates, header, p=None, rows=ROWS, png_first
             fig.suptitle(f'{header}   –   page {pi}/{len(pages)}', fontsize=8, x=0.06, ha='left', y=0.99)
             fig.text(0.06, 0.972, stxt, fontsize=6.5, ha='left', va='top', color='0.35')
             pdf.savefig(fig)
-            if png_first and pi == 1:
-                fig.savefig(png_first, dpi=110)
+            if png_all:
+                buf = io.BytesIO()
+                fig.savefig(buf, dpi=110, format='png')
+                strips.append(Image.open(buf).convert('RGB'))
             plt.close(fig)
+    if strips:
+        tall = Image.new('RGB', (strips[0].width, sum(s.height for s in strips)), 'white')
+        y = 0
+        for s in strips:
+            tall.paste(s, (0, y))
+            y += s.height
+        tall.save(png_all, optimize=True)
 
 
 def write_single_png(path, res, closes, dates, p=None):
@@ -405,12 +418,12 @@ def main():
     ptxt = '  '.join(f'{k}={v}' for k, v in p.items() if v != DEFAULTS[k]) or 'default parameters'
     header = (f'Tunnels ending {dates[-1]:%Y-%m-%d}  –  {sum(r.status == "tunnel" for r in results)} of '
               f'{len(results)} tickers ({universe})  –  {ptxt}')
-    # One-page selections (<= COLS x rows tickers, e.g. FastStrategy) also get the page as a PNG,
-    # viewer-free for a Sheet link. Undated name (tag minus the date) so the link stays stable.
-    onepage = len(drawn) <= COLS * a.rows and not a.ticker
-    png1 = os.path.join(a.out, 'tunnels_' + tag[len(dates[-1].strftime('%Y-%m-%d')) + 1:] + '_latest.png') if onepage else None
+    # Specialised selections (everything but `all`) also get all pages as ONE tall PNG, viewer-free
+    # for a Sheet link. Undated name (tag minus the date) so the link stays stable.
+    tallpng = universe != 'all' and not a.ticker
+    png1 = os.path.join(a.out, 'tunnels_' + tag[len(dates[-1].strftime('%Y-%m-%d')) + 1:] + '_latest.png') if tallpng else None
     write_pdf(os.path.join(a.out, f'tunnels_{tag}.pdf'), drawn, prices, dates, header, p, a.rows,
-              png_first=png1,
+              png_all=png1,
               common=universe != 'all')         # all: each panel its own scale (SM, 2026-10-13)
     if a.ticker:
         for r in results:
