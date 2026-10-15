@@ -22,10 +22,34 @@ folder succeeded, then `repository.py publish tunnel` → Drive + mirror `reposi
 
 | Folder | Recipe |
 |---|---|
-| `all/` | `--universe all`, LB100 + LB250 |
+| `all/` | `--universe all`, LB100, **4 × 7** panels per page |
+| `all_GICS/` | `--universe gics`, LB100, 4 × 7: PDF grouped GICS > Sector2 (below) |
 | `FastStrategy/` | `--universe strategic`, LB100 |
-| `Rank_top100/` | `--universe top --top 100`, LB100 + LB250 |
-| `topGrowth/` | `--universe growth --sigma 2`, LB100 + LB250 |
+| `topGrowth/` | `--universe growth --sigma 2`, LB100 |
+| `ZOP/` | `--universe zop`, LB100: tickers marked `ZOP` in `longi_macd_Z` on the newest day |
+| `personal/SM/` | `--universe flag --flag SM_ejet`, LB100: SM's own holdings (Stamdata flag, indices left out) |
+
+2026-10-15 (SM): LB250 dropped from the standard recipes (add `--param lookback=250` to a recipe
+to bring it back); `Rank_top100/` erased (`--universe top` still exists). Specialised selections
+stay 3 × 6; `--cols/--rows` set per recipe line. **A group folder** (`personal/`) holds selections
+one level down, each with its own recipe; `run_tunnel.sh` handles it, `.gitignore` tracks the
+nested recipe. `personal/SM/` is **published like every folder** (SM's decision, to be discussed
+with the inner circle; if they object, make it private by narrowing `OWNERS["tunnel"].owns`).
+Ownership by folder placement is a stopgap, a better way to say whose report it is comes later.
+
+**`all_GICS` PDF** (`write_pdf_grouped`): page 1 is an index (every GICS and Sector2 a clickable
+link with page numbers), the PDF bookmark tree is GICS > Sector2 (collapsed; written by a
+`PdfFile` subclass swapped in by `pdf_with_outline`, relies on matplotlib 3.10 internals, no
+PDF library installed). Each GICS opens with a divider page (name only); Sector2s flow on within
+it, each opened by a dark banner. Own-scale panels. PNGs: one tall PNG per GICS in `png_GICS/`.
+Hist/S-W: ONE file each with a panel per GICS (`tunnel_spread.write_spread_grouped`). CSV gains
+`GICS`, `Sector2`.
+
+**Panel label / CSV (2026-10-15):** spec line `W 12%  S20d +1.5%  closePos 0.37`, company name
+(Stamdata `Name`) above it, same font; the PDF/PNG header and the CSV top-left cell carry the same
+creation stamp. CSV decimals fixed: width, slope20 1; line prices, last_close, close_pos 2.
+`close_pos = (last_close - lower_end)/(upper_end - lower_end)`, last CSV column (before GICS/Sector2).
+Stamdata.csv is a standing input of every run.
 
 - Spec: [handoff/HANDOFF_tunnel_plots.md](handoff/HANDOFF_tunnel_plots.md) (definitions, CSV
   columns, plot layout). `handoff/tunnel_diag.py` is the original prototype, kept for reference.

@@ -64,7 +64,7 @@ refresh landing near the cron tick is a no-op, not a race — see `potrank/CLAUD
 `strategy_grp2/DesignVersion2.md`'s 2026-08-13 corrections). It stops itself if
 `control_board.xlsx` is open in Excel, exactly as a run fired by hand does.
 
-**`tunnel` runs once a night**, at **00:00** (`tunnel/run_tunnel.sh`, also the manual entry point): every selection folder of `tunnel/app/output/` (all, FastStrategy, Rank_top100, topGrowth, … — each built from its own `tunnel_runs.txt` recipe) is rebuilt together and published together to `Tunnel/<folder>/` (Drive + mirror). It reads longi_price as left by longi's 22:15 run, and StrategicStocks from strategy_grp2's last tick.
+**`tunnel` runs once a night**, at **00:00** (`tunnel/run_tunnel.sh`, also the manual entry point): every selection folder of `tunnel/app/output/` (all, all_GICS, FastStrategy, topGrowth, ZOP, personal/SM, … — each built from its own `tunnel_runs.txt` recipe) is rebuilt together and published together to `Tunnel/<folder>/` (Drive + mirror). It reads longi_price as left by longi's 22:15 run, and StrategicStocks from strategy_grp2's last tick.
 
 `~/git_pot.sh` at **03:40** commits and pushes anything left uncommitted in this repo, on the
 branch currently checked out — so uncommitted work does not survive the night as a working tree.
