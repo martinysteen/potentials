@@ -82,6 +82,12 @@ class Tunnel:
     upper_end: float = np.nan
     last_close: float = np.nan
 
+    @property
+    def close_pos(self):
+        """Where the last close sits between the lines: 0 = lower, 1 = upper (NaN if no tunnel)."""
+        h = self.upper_end - self.lower_end
+        return (self.last_close - self.lower_end) / h if h > 0 else np.nan
+
 
 # --------------------------------------------------------------------------------------
 # Fitting
@@ -242,7 +248,7 @@ def draw_panel(ax, res, closes, dates, p=None, scale=None):
         ax.set_title(res.ticker, fontsize=7.5, loc='left', fontweight='bold')
         ax.text(0.99, 1.02,
                 f'L {L} d   W {res.width_pct:.0f}%   S {res.slope20_pct:+.1f}%/20d   '
-                f'sup {res.supports_upper}/{res.supports_lower}',
+                f'pos {res.close_pos:.2f}',
                 transform=ax.transAxes, ha='right', va='bottom', fontsize=5.6, color='0.25')
         if scale:                               # tunnel centred, same log span in every panel
             mid = (max(upper[0], upper[-1]) + min(lower[0], lower[-1])) / 2
@@ -403,12 +409,19 @@ def main():
 
     # CSV: every ticker, European format like the rest of PotSystem
     tab = pd.DataFrame([asdict(r) for r in results])
+    tab['close_pos'] = [r.close_pos for r in results]      # from the unrounded values
     tab.insert(9, 'start_date', [dates[list(dn).index(d)].strftime('%Y-%m-%d') if pd.notna(d) else '' for d in tab.start_daynum])
     tab.insert(10, 'end_date', [dates[list(dn).index(d)].strftime('%Y-%m-%d') if pd.notna(d) else '' for d in tab.end_daynum])
     tab[['start_daynum', 'end_daynum']] = tab[['start_daynum', 'end_daynum']].astype('Int64')
     # creation stamp in the top-left cell, the system-wide convention (PotDat, longi_*): it
     # survives an import into Sheets where file metadata does not
-    tab = tab.rename(columns={'ticker': datetime.now().strftime(STAMP_FMT)})
+    # fixed decimals in the CSV only (SM, 2026-10-15): the plots are drawn from the unrounded results
+    for cols, nd in ((['width_pct', 'slope20_pct'], 1),
+                     (['lower_start', 'upper_start', 'lower_end', 'upper_end', 'last_close', 'close_pos'], 2)):
+        for c in cols:
+            tab[c] = tab[c].map(lambda v, nd=nd: '' if pd.isna(v) else f'{v:.{nd}f}'.replace('.', ','))
+    stamp = datetime.now().strftime(STAMP_FMT)   # same stamp in the CSV cell and the PDF/PNG header
+    tab = tab.rename(columns={'ticker': stamp})
     tab.to_csv(os.path.join(a.out, f'tunnels_{tag}.csv'), sep=';', decimal=',', index=False)
     if not a.ticker:                            # selection-wide S histogram + S/W scatter
         tunnel_spread.write_spread(os.path.join(a.out, f'tunnels_{tag}.csv'))
@@ -416,7 +429,7 @@ def main():
     # PDF: tunnels only (or all), alphabetical by ticker
     drawn = sorted([r for r in results if a.plot_all or r.status == 'tunnel'], key=lambda r: r.ticker)
     ptxt = '  '.join(f'{k}={v}' for k, v in p.items() if v != DEFAULTS[k]) or 'default parameters'
-    header = (f'Tunnels ending {dates[-1]:%Y-%m-%d}  –  {sum(r.status == "tunnel" for r in results)} of '
+    header = (f'Tunnels ending {dates[-1]:%Y-%m-%d}  –  created {stamp}  –  {sum(r.status == "tunnel" for r in results)} of '
               f'{len(results)} tickers ({universe})  –  {ptxt}')
     # Specialised selections (everything but `all`) also get all pages as ONE tall PNG, viewer-free
     # for a Sheet link. Undated name (tag minus the date) so the link stays stable.
