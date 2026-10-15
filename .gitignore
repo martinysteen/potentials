@@ -53,6 +53,10 @@ gainsuccess/
 # ... except each selection folder's recipe (tunnel_runs.txt), which is config, not product
 tunnel/app/output/*/*
 !tunnel/app/output/*/tunnel_runs.txt
+# ... also one level down, in group folders (output/personal/SM/tunnel_runs.txt)
+!tunnel/app/output/*/*/
+tunnel/app/output/*/*/*
+!tunnel/app/output/*/*/tunnel_runs.txt
 tunnel/app/output.new/
 tunnel/app/output.old/
 tunnel/handoff/*.pdf

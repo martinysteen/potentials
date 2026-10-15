@@ -560,15 +560,17 @@ def main():
     ap.add_argument('--out', default=str(config.OUTPUT_ROOT))
     ap.add_argument('--live', action='store_true', help='read the live repository, no snapshot')
     ap.add_argument('--stale-ok', action='store_true', help='fall back to the previous snapshot')
-    ap.add_argument('--universe', choices=('strategic', 'top', 'all', 'growth', 'zop', 'gics'), default='strategic',
+    ap.add_argument('--universe', choices=('strategic', 'top', 'all', 'growth', 'zop', 'gics', 'flag'), default='strategic',
                     help='strategic = tickers of the newest StrategicStocks_<daynum>.csv (default); '
                          'top = the --top best of longi_rank.csv on the as-of day; '
                          'all = every longi_price ticker; '
                          'zop = tickers marked ZOP in longi_macd_Z on the as-of day; '
+                         'flag = tickers whose Stamdata column --flag is true, indices left out; '
                          'gics = all, but the PDF/PNG/spread plots grouped by Stamdata GICS > Sector2; '
                          'growth = the tunnels of all tickers with S >= mean(S) + --sigma s')
     ap.add_argument('--top', type=int, default=100, help='size of --universe top (default 100)')
     ap.add_argument('--sigma', type=float, default=2.0, help='threshold of --universe growth (default 2)')
+    ap.add_argument('--flag', default='SM_ejet', help='Stamdata column of --universe flag (default SM_ejet)')
     ap.add_argument('--ticker', nargs='*', help='explicit tickers, overrides --universe')
     ap.add_argument('--plot-all', action='store_true', help='also draw tickers without a tunnel')
     ap.add_argument('--rows', type=int, default=ROWS, help='plots down each A4 page (default 6)')
@@ -596,6 +598,12 @@ def main():
         elif universe == 'zop':
             z = data_loader.load_longi(preflight.MACD_Z_FILE)[str(prices.columns[-1])]
             wanted = list(z.index[z == 'ZOP'])
+        elif universe == 'flag':
+            sd = data_loader.load_stamdata()
+            if a.flag not in sd.columns:
+                raise DataUnavailable(f'Stamdata.csv has no column {a.flag!r}')
+            on = sd[a.flag].fillna('').str.strip().str.lower() == 'true'
+            wanted = [t for t in sd.index[on] if not str(t).startswith('^') and sd.at[t, 'GICS'] != 'Index']
         else:
             wanted = None
     except DataUnavailable as exc:
@@ -608,7 +616,7 @@ def main():
         prices = prices.loc[[t for t in wanted if t in prices.index]]
     os.makedirs(a.out, exist_ok=True)
     tag = (dates[-1].strftime('%Y-%m-%d') + f'_LB{p["lookback"] or "all"}'
-           + {'strategic': '_strat', 'top': f'_top{a.top}', 'zop': '_zop', 'gics': '_gics', 'growth': f'_growth{a.sigma:g}s'}.get(universe, ''))
+           + {'strategic': '_strat', 'top': f'_top{a.top}', 'zop': '_zop', 'gics': '_gics', 'flag': f'_{a.flag}', 'growth': f'_growth{a.sigma:g}s'}.get(universe, ''))
 
     t0 = time.time()
     X, dn, tk = prices.to_numpy(float), prices.columns.to_numpy(), list(prices.index)

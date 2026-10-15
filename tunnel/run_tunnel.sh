@@ -76,15 +76,17 @@ fail() {
 rm -rf "$NEW_DIR"
 mkdir -p "$NEW_DIR"
 
-for SRC in "$OUT_DIR"/*/; do
-    [ -d "$SRC" ] || continue
-    NAME=$(basename "$SRC")
-    DST="$NEW_DIR/$NAME"
+# One selection = a folder holding a tunnel_runs.txt. Selections sit directly in output/ or one
+# level down in a group folder (output/personal/SM/); a folder with neither is carried over.
+build_selection() {
+    local SRC=$1 NAME=$2 DST="$NEW_DIR/$2" LINE RC
+    shift 2                                   # what is left is run_tunnel.sh's own extra arguments
     if [ ! -f "$SRC/$RECIPE" ]; then
         echo ""
         echo "WARNING: $NAME/ has no $RECIPE - carried over unchanged, not refreshed"
+        mkdir -p "$(dirname "$DST")"
         cp -a "$SRC" "$DST" || fail "copying $NAME/ failed"
-        continue
+        return
     fi
     mkdir -p "$DST"
     cp -a "$SRC/$RECIPE" "$DST/"
@@ -98,6 +100,18 @@ for SRC in "$OUT_DIR"/*/; do
         RC=$?
         [ $RC -eq 0 ] || fail "$NAME: tunnel_diag.py ${ARGS[*]} exited $RC" $RC
     done
+}
+
+for TOP in "$OUT_DIR"/*/; do
+    [ -d "$TOP" ] || continue
+    TOPNAME=$(basename "$TOP")
+    if [ ! -f "$TOP/$RECIPE" ] && compgen -G "$TOP*/$RECIPE" > /dev/null; then
+        for SUB in "$TOP"*/; do                       # a group folder: its subfolders are the selections
+            [ -d "$SUB" ] && build_selection "${SUB%/}" "$TOPNAME/$(basename "$SUB")" "$@"
+        done
+    else
+        build_selection "${TOP%/}" "$TOPNAME" "$@"
+    fi
 done
 
 # Swap the new set in
