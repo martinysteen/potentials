@@ -63,12 +63,21 @@ def load_strategic(rel: str) -> list[str]:
     return list(dict.fromkeys(df["ticker"].dropna().astype(str)))
 
 
+@lru_cache(maxsize=None)
+def load_stamdata() -> pd.DataFrame:
+    """Stamdata.csv as strings, indexed by ticker (its first column, whose header is a
+    timestamp, not a label)."""
+    df = _read(config.active_stamdata(), "Stamdata.csv", dtype=str)
+    return df.set_index(df.columns[0])
+
+
 def reset_cache() -> None:
     """Drop every cached frame — called by config.use_data_root() when the root changes,
     so a snapshot can never be served frames read from the live repository."""
     load_longi.cache_clear()
     load_cal.cache_clear()
     load_strategic.cache_clear()
+    load_stamdata.cache_clear()
     _LOADED.clear()
 
 

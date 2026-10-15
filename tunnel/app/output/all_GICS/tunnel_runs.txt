@@ -1,0 +1,2 @@
+# all tickers, grouped GICS > Sector2 (PDF with divider pages, PNG per Sector2, hist/SW per GICS)
+--universe gics --param lookback=100 --cols 4 --rows 7

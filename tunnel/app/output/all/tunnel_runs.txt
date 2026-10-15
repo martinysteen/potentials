@@ -1,3 +1,2 @@
 # nightly: every ticker
---universe all --param lookback=100
---universe all --param lookback=250
+--universe all --param lookback=100 --cols 4 --rows 7

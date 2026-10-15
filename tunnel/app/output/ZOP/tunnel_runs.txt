@@ -1,0 +1,2 @@
+# tickers marked ZOP in longi_macd_Z on the newest day, 100-day lookback only
+--universe zop --param lookback=100

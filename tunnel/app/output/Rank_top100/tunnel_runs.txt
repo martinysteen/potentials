@@ -1,3 +1,0 @@
-# the 100 best of longi_rank.csv (rank 1 = best)
---universe top --top 100 --param lookback=100
---universe top --top 100 --param lookback=250

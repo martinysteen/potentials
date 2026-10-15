@@ -46,3 +46,7 @@ def active_longi() -> Path:
 
 def active_cal() -> Path:
     return _active / "Cal.csv"
+
+
+def active_stamdata() -> Path:
+    return _active / "Stamdata.csv"

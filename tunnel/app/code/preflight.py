@@ -22,7 +22,8 @@ from shared.datacheck import DataUnavailable          # re-exported for callers
 
 PRICES_FILE = "longi_price.csv"
 RANK_FILE = "longi_rank.csv"          # --universe top: rank 1 = best (see longi_rank.py)
-REQUIRED: list[str] = [f"Longi/{PRICES_FILE}", "Cal.csv"]
+MACD_Z_FILE = "longi_macd_Z.csv"      # --universe zop: 'ZOP' = MACD histogram crossed up that day
+REQUIRED: list[str] = [f"Longi/{PRICES_FILE}", "Cal.csv", "Stamdata.csv"]   # Stamdata: company names, GICS
 OPTIONAL: list[str] = []
 
 
@@ -35,10 +36,12 @@ def strategic_file(root: Path | None = None) -> str | None:
 
 
 def required_files(universe: str = "strategic") -> list[str]:
-    if universe in ("all", "growth"):            # growth = a filter on the all-ticker run
+    if universe in ("all", "growth", "gics"):    # growth = a filter on the all-ticker run; gics = all, grouped
         return list(REQUIRED)
     if universe == "top":
         return REQUIRED + [f"Longi/{RANK_FILE}"]
+    if universe == "zop":                        # tickers marked ZOP in longi_macd_Z today
+        return REQUIRED + [f"Longi/{MACD_Z_FILE}"]
     ss = strategic_file()
     if ss is None:
         raise DataUnavailable(f"No Strategy/StrategicStocks_*.csv under {config.DATA_ROOT}")
