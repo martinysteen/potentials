@@ -1,3 +1,0 @@
-Failed to fetch data for 1 stocks:
-
-BIT.TO: Insufficient data returned for ticker BIT.TO
