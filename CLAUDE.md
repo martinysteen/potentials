@@ -36,7 +36,7 @@ belongs in that project's own `CLAUDE.md`, which is always the authority for its
 | [potrank/](potrank/) | **Producer.** The PotRank wide snapshot, `potrank2.csv` — one row per ticker, replaces the PotRank Google Sheet's own calculations | its `CLAUDE.md` |
 | [tunnel/](tunnel/) | **Consumer + producer, diagnostic only.** Longest log-linear price tunnel ending today per ticker → PDF of plots + CSV. Nightly `run_tunnel.sh` (00:00) rebuilds every `app/output/<folder>/` selection from its recipe and publishes them together to `Tunnel/<folder>/` | its `CLAUDE.md` |
 | [strategy_grp2/](strategy_grp2/) | **The consumer — current work.** One Excel control board drives steps 0-4 | [DesignVersion2.md](strategy_grp2/DesignVersion2.md) |
-| [shared/](shared/) | `app/code/repository.py` — the one publish/fetch registry every family uses | the module docstring |
+| [shared/](shared/) | `app/code/repository.py` — the one publish/fetch registry every family uses; `watchdog.py` — hourly health mail. Proposal only: [DESIGN_conductor.md](shared/DESIGN_conductor.md) (event-driven chain instead of cron minutes, not started) | the module docstring |
 | [_archive/](_archive/) | Retired projects (`strategy/`, `strategy_grp/`, `strategy_target/`), frozen | — |
 
 ## The daily chain
