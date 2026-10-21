@@ -442,7 +442,10 @@ def _sync(owner: Owner, target: str, dry_run: bool) -> int:
     for deletion.
     """
     dest = destination(owner, target)
-    cmd = ["rclone", "sync", str(owner.source), dest, "--verbose", "--drive-skip-gdocs"]
+    cmd = ["rclone", "sync", str(owner.source), dest, "--verbose", "--drive-skip-gdocs",
+           # A Drive connection that goes idle must fail and retry within a minute, not rclone's
+           # default 5 min: the mirror leg waits for the Drive leg (2026-10-21, 6 min stall).
+           "--timeout", "60s", "--contimeout", "30s", "--low-level-retries", "3"]
     for pattern in owner.owns:
         cmd += ["--filter", f"+ {pattern}"]
     cmd += ["--filter", "- **"]

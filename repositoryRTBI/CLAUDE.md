@@ -51,7 +51,10 @@ stamp certifies the last Drive-originated pull, not "everything in `data/` is cu
 regardless of producer activity.
 
 ### Cron
-`:07`, `:37`, `:55` — three ticks, now a safety net rather than the path producer output takes
+`:07`, `:14`, `:37`, `:55` — four ticks. `:14` (added 2026-10-21) exists so longi's `:15` run sees the
+`PotDat.csv` that upstream's Apps Script writes at ~`:11` (on Drive by ~`:13:50`); before it, longi
+always read the previous hour's file and one failed upstream run left US rows carried for 2 h.
+The others are now a safety net rather than the path producer output takes
 to reach the mirror (that happens inline with each publish, in about a second). The ticks still
 matter: they catch a mirror-leg publish failure, a manual edit made directly on Drive, and
 `yf3`'s bespoke `rclone copy` (which never registers with `repository.py` and so never writes

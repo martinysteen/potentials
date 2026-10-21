@@ -50,9 +50,10 @@ longi :15  →  publish ~:17 (Drive + mirror)  →  group_conformity :45     →
                                               →  potrank :25 and :55    →  publish ~:26 / ~:56 (Drive + mirror)
 ```
 
-`sync_rtbi.sh` still runs at `:07/:37/:55`, now for a narrower job: pulling content that
+`sync_rtbi.sh` still runs at `:07/:14/:37/:55`, now for a narrower job: pulling content that
 actually originates on Drive (`PotDat.csv` from the G Sheet, `yf3`'s `Yfinance/`, a manual Drive
-edit) rather than gating when a registered producer's output becomes visible.
+edit) rather than gating when a registered producer's output becomes visible. The `:14` tick
+(2026-10-21) is timed so longi's `:15` run reads the PotDat that upstream writes at ~`:11`.
 
 **`potrank` is also user-triggerable**, on top of its `:25`/`:55` cron ticks: `potrank.cmd` on the
 Windows side runs the identical `run_potrank.sh` over SSH, guarded by a `flock` so a manual
