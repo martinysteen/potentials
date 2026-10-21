@@ -67,6 +67,11 @@ refresh landing near the cron tick is a no-op, not a race — see `potrank/CLAUD
 
 **`tunnel` runs once a night**, at **00:00** (`tunnel/run_tunnel.sh`, also the manual entry point): every selection folder of `tunnel/app/output/` (all, all_GICS, FastStrategy, topGrowth, ZOP, personal/SM, … — each built from its own `tunnel_runs.txt` recipe) is rebuilt together and published together to `Tunnel/<folder>/` (Drive + mirror). It reads longi_price as left by longi's 22:15 run, and StrategicStocks from strategy_grp2's last tick.
 
+**`shared/app/code/watchdog.py` runs at `:50`, hours 0-22** (2026-10-21) and emails on change —
+a new problem, or one that cleared — plus one "all OK" line a day (see its docstring for the
+checks). Log: `~/logs/watchdog.log`. SMTP credentials (a Gmail *app* password) live in
+`~/.config/potentials/smtp.env`, deliberately outside the repo because the 03:40 job pushes it.
+
 `~/git_pot.sh` at **03:40** commits and pushes anything left uncommitted in this repo, on the
 branch currently checked out — so uncommitted work does not survive the night as a working tree.
 
