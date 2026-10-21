@@ -15,6 +15,9 @@ Checks (all skipped outside their hours; see CHECK_HOURS)
   jobs         each cron job's log is fresh, and its LAST run (text after the last START line)
                holds no Traceback / ERROR line / non-zero "exit code"
 
+  logscan      EVERY other *.log in ~/logs (any system on this machine, not only Potentials -
+               the folder is shared): error lines appended since the last look, mailed once
+
 Mail goes out only on a CHANGE (new problem, a problem that cleared) plus one OK line per day
 at DIGEST_HOUR - a problem that persists is not repeated every hour. State: ~/.local/state/
 potentials/watchdog.json. Credentials: ~/.config/potentials/smtp.env (NOT in the repo - the
@@ -176,6 +179,45 @@ def check_jobs(now):
     return found
 
 
+ERR_RE = re.compile(r"Traceback \(most recent call last\)|\bERROR\b|\bCRITICAL\b|\bFATAL\b")
+# The chain jobs' own logs get the stricter last-run check above; these cron logs only repeat
+# the same output, so scanning them would mail every error twice.
+SCAN_SKIP = {j[1] for j in JOBS} | {"longi_cron.log", "run_potrank_cron.log", "run_conf_cron.log",
+                                    "run_production_cron.log", "run_tunnel_cron.log", "watchdog.log"}
+MAX_SCAN_BYTES = 2_000_000
+
+
+def scan_logs(offsets: dict):
+    """Every other *.log in ~/logs (any system on this box, not just Potentials): error lines
+    appended since the last look. First sight of a file only records its size (no flood from
+    history); a file that shrank was rotated and is read from the top.
+    Returns (events, new_offsets); events = [(file, line)], de-duplicated across files."""
+    events, new, seen = [], {}, set()
+    for p in sorted(LOGS.glob("*.log")):
+        if p.name in SCAN_SKIP:
+            continue
+        try:
+            size = p.stat().st_size
+            off = offsets.get(p.name)
+            new[p.name] = size
+            if off is None or size == off:
+                continue
+            if size < off:
+                off = 0
+            with open(p, "rb") as f:
+                f.seek(max(off, size - MAX_SCAN_BYTES))
+                chunk = f.read().decode("utf-8", errors="replace")
+        except OSError:
+            continue
+        for ln in chunk.splitlines():
+            if ERR_RE.search(ln):
+                key = re.sub(r"^\S+ \S+ ", "", ln.strip())[:200]  # drop timestamp prefix
+                if key not in seen:
+                    seen.add(key)
+                    events.append((p.name, ln.strip()[:240]))
+    return events, new
+
+
 def run_checks(now):
     problems = {}
     for fn in (check_potdat, check_longi_stamp, check_mirror, check_stall, check_jobs):
@@ -234,11 +276,22 @@ def main() -> int:
     cleared = {k: old[k] for k in old if k not in problems}
     digest = now.hour == DIGEST_HOUR and prev.get("digest_day") != now.strftime("%F")
 
-    print(f"{now:%F %T} problems={len(problems)} new={len(new)} cleared={len(cleared)}")
+    events, offsets = scan_logs(prev.get("offsets", {}))
+
+    print(f"{now:%F %T} problems={len(problems)} new={len(new)} cleared={len(cleared)} "
+          f"log_errors={len(events)}")
     for k, v in sorted(problems.items()):
         print(f"  PROBLEM {k}: {v}")
+    for fn, ln in events[:20]:
+        print(f"  LOG {fn}: {ln}")
 
     mails = []
+    if events:
+        files = sorted({fn for fn, _ in events})
+        shown = "\n".join(f"- {fn}: {ln}" for fn, ln in events[:15])
+        more = f"\n... and {len(events) - 15} more" if len(events) > 15 else ""
+        mails.append((f"[potentials] LOG ERRORS: {len(events)} new in {len(files)} file(s)",
+                      f"New error lines in ~/logs since the last check:\n{shown}{more}"))
     if new:
         mails.append((f"[potentials] PROBLEM: {len(new)} new", "\n".join(f"- {v}" for v in new.values())
                       + ("\n\nStill open:\n" + "\n".join(f"- {v}" for k, v in problems.items() if k not in new)
@@ -262,7 +315,7 @@ def main() -> int:
             print(f"ERROR: mail failed ({e!r}) - state NOT advanced so the next run retries")
             return 1
     STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps({"problems": problems,
+    STATE.write_text(json.dumps({"problems": problems, "offsets": offsets,
                                  "digest_day": now.strftime("%F") if digest else prev.get("digest_day", "")}))
     return 0
 

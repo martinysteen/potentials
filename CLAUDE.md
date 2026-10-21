@@ -69,7 +69,8 @@ refresh landing near the cron tick is a no-op, not a race — see `potrank/CLAUD
 
 **`shared/app/code/watchdog.py` runs at `:50`, hours 0-22** (2026-10-21) and emails on change —
 a new problem, or one that cleared — plus one "all OK" line a day (see its docstring for the
-checks). Log: `~/logs/watchdog.log`. SMTP credentials (a Gmail *app* password) live in
+checks). It also scans **every** `~/logs/*.log` (the folder is shared with non-Potentials jobs)
+for new `ERROR`/`Traceback` lines. Log: `~/logs/watchdog.log`. SMTP credentials (a Gmail *app* password) live in
 `~/.config/potentials/smtp.env`, deliberately outside the repo because the 03:40 job pushes it.
 
 `~/git_pot.sh` at **03:40** commits and pushes anything left uncommitted in this repo, on the
