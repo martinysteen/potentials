@@ -100,6 +100,16 @@ a time (flock). Not under app/output/, so never published to Drive. `--asof-date
 /srv/tunnel-reports`; copy repositoryRTBI/Caddyfile to /etc/caddy/Caddyfile and `sudo systemctl reload caddy`;
 `sudo systemctl restart rtbi-mcp`.
 
+## Which entry point (quick guide)
+
+| I want ... | Use |
+|---|---|
+| the standing daily selections | nothing; `run_tunnel.sh` at 00:00 (`./run_tunnel.sh` to refresh now); results in `app/output/<folder>/` and Drive `Tunnel/` |
+| tunnels for past days, all tickers | `Tunnel/history/tunnels_history_LB100.csv` (rows `[daynum, ticker]`); `python tunnel_history.py --days 250 --out /tmp/h` to experiment |
+| a report for my own ticker list / end date, from a chat | MCP `tunnel_report` ("make a tunnel report for MSFT and MU as of 2026-09-30"); returns links |
+| the same from the shell | `python tunnel_ondemand.py MSFT MU --date 2026-09-30 [--name x]` |
+| anything else, full control | `python tunnel_diag.py ...` (the arguments are listed by `--help`; the ones you normally need: `--universe`, `--ticker`, `--asof` / `--asof-date`, `--out`, `--param key=value`) |
+
 ## Run (on the server, like all python)
 
 ```bash

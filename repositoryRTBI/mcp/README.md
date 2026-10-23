@@ -15,9 +15,21 @@ Example prompt in any connected chat:
 | `get_series` | Time series for tickers, as dates oldest-first; `freq` D/W/M, `transform` level/pct_change |
 | `plot_series` | Same as `get_series`, returns a PNG chart plus the numbers |
 | `get_table` | Rows from Stamdata, potrank2, Google, StrategicStocks, across, Yfinance, StockData2_stacked |
+| `tunnel_report` | Price-tunnel report for 1-200 tickers and an end date: CSV + PDF + PNG in a folder, returns links (valid 7 days) and the table |
 
 Resource `potentials://conventions` explains daynums, seven-pack horizons and trailing vs forward
 gains. Monthly/weekly results flag `last_period_partial` when the newest point is to-date.
+
+### tunnel_report
+Arguments: `tickers` (required), `end_date` (YYYY-MM-DD, default newest day), `name` (optional label
+in the link). Example prompts:
+> Make a tunnel report for MSFT, MU and NVDA.
+> Tunnels for the tickers in semiconductors, as of 2026-09-30.
+
+Reads from the answer: `close_pos` 0 = on the lower line, 1 = on the upper line, outside 0..1 = the
+close has left the tunnel; `slope20_pct` = % gain per 20 trading days along the lines. Nightly
+history of every ticker and day: `Tunnel/history/tunnels_history_LB100.csv` on Drive.
+Details: `tunnel/CLAUDE.md`.
 
 ## Access
 Google sign-in, then an email allowlist (`RTBI_MCP_ALLOWED_EMAILS` in `.env`). To add a person:
