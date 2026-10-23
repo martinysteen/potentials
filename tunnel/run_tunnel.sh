@@ -19,8 +19,17 @@
 # then deletes the old ones on Drive too. Older days are regenerable with --asof <daynum>.
 #
 # Extra arguments are passed to every tunnel_diag.py call, e.g. ./run_tunnel.sh --stale-ok
+#
+# INTRADAY REFRESH: ./run_tunnel.sh --intraday (cron 20 1-22 * * *) does not refit. Every run
+# saves its fitted tunnels to app/data/nightly/<folder>/ (--record-dir); with --intraday
+# tunnel_diag.py takes those saved tunnels instead of fitting, carries their lines on to today
+# and scores/draws them with the newer closes (purple). So: new tunnels once per day (the
+# midnight run), today's price development shown inside last night's tunnel. Same recipes, same
+# swap + publish. No saved tunnels yet (before the first nightly run) = the run fails safe and
+# yesterday's output stays. The midnight run must NOT get --intraday.
 
 LOGFILE=~/logs/run_tunnel.log
+case " $* " in *" --intraday "*) LOGFILE=~/logs/run_tunnel_intraday.log ;; esac
 RECIPE=tunnel_runs.txt
 
 # Ignore SIGHUP so SSH disconnect does not kill the run
@@ -44,6 +53,7 @@ fi
 
 CODE_DIR=/home/sm/potentials/tunnel/app/code
 OUT_DIR=/home/sm/potentials/tunnel/app/output
+REC_DIR=/home/sm/potentials/tunnel/app/data/nightly     # saved tunnels, outside the published namespace
 NEW_DIR="$OUT_DIR.new"      # siblings of output/, so never inside the published namespace
 OLD_DIR="$OUT_DIR.old"
 
@@ -100,7 +110,7 @@ build_selection() {
         read -ra ARGS <<< "$LINE"
         echo ""
         echo "--- $NAME: tunnel_diag.py ${ARGS[*]} ---"
-        python3 tunnel_diag.py "${ARGS[@]}" --out "$DST" "$@" < /dev/null
+        python3 tunnel_diag.py "${ARGS[@]}" --out "$DST" --record-dir "$REC_DIR/$NAME" "$@" < /dev/null
         RC=$?
         [ $RC -eq 0 ] || fail "$NAME: tunnel_diag.py ${ARGS[*]} exited $RC" $RC
     done

@@ -26,8 +26,9 @@ Outputs in --out (default app/output/):
     tunnels_<date>_LB<lookback>[_strat|_topN|_growthNs].csv   one row per ticker, ';' / ','
     tunnels_<...>_hist.png / _SW.png                S histogram + S/W scatter (tunnel_spread.py)
 """
-import argparse, contextlib, os, re, sys, time
-from dataclasses import dataclass, asdict
+import argparse
+import pickle, contextlib, os, re, sys, time
+from dataclasses import replace, dataclass, asdict
 from datetime import datetime
 from multiprocessing import Pool
 from pathlib import Path
@@ -81,6 +82,7 @@ class Tunnel:
     lower_end: float = np.nan
     upper_end: float = np.nan
     last_close: float = np.nan
+    ext: int = 0                 # intraday refresh: days AFTER end_daynum the lines are extended over (not in the CSV)
 
     @property
     def close_pos(self):
@@ -198,6 +200,7 @@ def find_tunnel(ticker, closes, daynums, params=None):
 COLS, ROWS, A4 = 3, 6, (8.27, 11.69)
 MAX_SINGLE_PNG = 6                              # --ticker lists up to this long also get one PNG per ticker
 C_PRICE, C_CTX, C_LINE, C_MID, C_SUP = '#1f3b57', '0.70', '#2e8b57', '#c0392b', '#e67e22'
+C_NEW = '#8e44ad'                               # intraday refresh: closes after the tunnel was fitted
 NAMES = {}                                      # ticker -> company name (Stamdata), set by main()
 SPEC_FS = 5.6                                   # font size of the L/W/S/close_pos line
 NAME_LEN = 38                                   # characters of the name that fit above a panel's spec
@@ -231,25 +234,28 @@ def draw_panel(ax, res, closes, dates, p=None, scale=None):
         ax.plot(x[w][ok[w]], closes[w][ok[w]], color='0.55', lw=0.6)
         ax.set_title(f'{res.ticker}  –  {res.status.replace("_", " ")}', fontsize=7, loc='left', color='0.4')
     else:
-        L = res.length_td
-        s = closes.size - L
+        L = res.length_td                       # the fitted tunnel
+        Lt = L + res.ext                        # + days the lines are extended over (intraday refresh)
+        s = closes.size - Lt
         ctx = max(0, closes.size - scale[1] if scale else s - max(60, L // 2))  # history, in grey
-        t = np.arange(L)
-        b = np.log(res.lower_end / res.lower_start) / (L - 1)
+        t = np.arange(Lt)
+        b = np.log(res.lower_end / res.lower_start) / (Lt - 1)
         lower = np.log(res.lower_start) + b * t
         upper = np.log(res.upper_start) + b * t
         xs = x[s:]
         ax.plot(x[ctx:s + 1], closes[ctx:s + 1], color=C_CTX, lw=0.6)
-        ax.plot(xs, closes[s:], color=C_PRICE, lw=0.7)
+        ax.plot(xs[:L], closes[s:s + L], color=C_PRICE, lw=0.7)
+        if res.ext:                             # the days since the tunnel was fitted
+            ax.plot(xs[L - 1:], closes[s + L - 1:], color=C_NEW, lw=1.0)
         ax.plot(xs, np.exp(upper), color=C_LINE, lw=0.9)
         ax.plot(xs, np.exp(lower), color=C_LINE, lw=0.9)
         ax.plot(xs, np.exp((upper + lower) / 2), color=C_MID, lw=0.7, ls='--')
-        y, h = np.log(closes[s:]), upper[0] - lower[0]
-        for line, pick, side in ((upper, np.argmax, 1), (lower, np.argmin, -1)):
+        y, h = np.log(closes[s:s + L]), upper[0] - lower[0]
+        for line, pick, side in ((upper[:L], np.argmax, 1), (lower[:L], np.argmin, -1)):
             r = y - line                        # one dot per support, at its most extreme close
             cl = supports(side * r >= -p['touch_tol'] * h - 1e-9, p['cluster_gap'])
             k = [c[pick(r[c])] for c in cl]
-            ax.plot(xs[k], closes[s:][k], 'o', ms=2.2, color=C_SUP, mec='none', zorder=5)
+            ax.plot(xs[k], closes[s:s + L][k], 'o', ms=2.2, color=C_SUP, mec='none', zorder=5)
         ax.set_title(res.ticker, fontsize=7.5, loc='left', fontweight='bold')
         ax.text(0.99, 1.02,
                 f'W {res.width_pct:.0f}%   S20d {res.slope20_pct:+.1f}%   closePos {res.close_pos:.2f}',
@@ -549,11 +555,24 @@ def top_ranked(n, daynum):
     return list(rank.sort_values(kind='stable').index[:n])
 
 
+def extend(r, ext, daynum, last_close):
+    """Intraday refresh: the tunnel as fitted at midnight, its lines carried `ext` trading days on
+    at the same slope, and the latest close (so close_pos says where the price is NOW)."""
+    if r.status == 'tunnel' and ext > 0:
+        f = np.exp(np.log(r.lower_end / r.lower_start) / (r.length_td - 1) * ext)
+        r = replace(r, ext=ext, lower_end=r.lower_end * f, upper_end=r.upper_end * f)
+    if ext > 0 and r.status != 'insufficient_data':
+        r = replace(r, end_daynum=int(daynum))
+    if np.isfinite(last_close) and last_close > 0:
+        r = replace(r, last_close=float(last_close))
+    return r
+
+
 def tunnel_table(results, dn, dates):
     """Tunnel records -> the CSV table (European decimals as text, fixed decimals). dn/dates
     are the daynum columns of the price table and their dates, to date start/end."""
     dmap = {int(d): dates[i].strftime('%Y-%m-%d') for i, d in enumerate(dn)}
-    tab = pd.DataFrame([asdict(r) for r in results])
+    tab = pd.DataFrame([asdict(r) for r in results]).drop(columns='ext')
     tab['close_pos'] = [r.close_pos for r in results]      # from the unrounded values
     tab.insert(9, 'start_date', [dmap[int(d)] if pd.notna(d) else '' for d in tab.start_daynum])
     tab.insert(10, 'end_date', [dmap[int(d)] if pd.notna(d) else '' for d in tab.end_daynum])
@@ -595,6 +614,11 @@ def main():
     ap.add_argument('--cols', type=int, default=COLS, help='plots across each A4 page (default 3)')
     ap.add_argument('--asof', type=int, help='treat this daynum as today')
     ap.add_argument('--asof-date', help='treat this date (YYYY-MM-DD) as today; the newest trading day on or before it')
+    ap.add_argument('--record-dir', metavar='DIR',
+                    help='save the fitted tunnels of this run here (<suffix>.pkl), for --intraday')
+    ap.add_argument('--intraday', action='store_true',
+                    help='no fit: take the tunnels the last --record-dir run saved (same other arguments), carry '
+                         'their lines on to today and score/draw them with the newer closes')
     ap.add_argument('--workers', type=int, default=os.cpu_count())
     ap.add_argument('--param', action='append', default=[], help='key=value, overrides DEFAULTS')
     a = ap.parse_args()
@@ -604,6 +628,9 @@ def main():
         k, v = kv.split('=', 1)
         p[k] = type(DEFAULTS[k])(v)
     universe = 'all' if a.ticker else a.universe
+    suffix = (f'_LB{p["lookback"] or "all"}'
+              + {'strategic': '_strat', 'top': f'_top{a.top}', 'zop': '_zop', 'gics': '_gics', 'flag': f'_{a.flag}', 'growth': f'_growth{a.sigma:g}s'}.get(universe, ''))
+    rec_path = os.path.join(a.record_dir or '', 'tunnels' + suffix + '.pkl')
     try:
         preflight.ensure_data(universe, mode=preflight.mode_from_argv())
         if a.asof_date:
@@ -612,9 +639,17 @@ def main():
             if ok.empty:
                 raise DataUnavailable(f'--asof-date {a.asof_date} is before the first trading day')
             a.asof = int(ok.index.max())      # Cal.csv is newest-first
+        if a.intraday:
+            if not a.record_dir or a.asof or a.asof_date:
+                raise DataUnavailable('--intraday needs --record-dir and takes no --asof')
+            if not os.path.exists(rec_path):
+                raise DataUnavailable(f'no saved tunnels at {rec_path}: the nightly run has not made them yet')
+            rec = pickle.load(open(rec_path, 'rb'))
         prices, dates = load_prices(a.asof)
         NAMES.update(data_loader.load_stamdata()['Name'].dropna().astype(str).to_dict())
-        if a.ticker:
+        if a.intraday:
+            wanted = [r.ticker for r in rec['results']]       # the nightly selection, not a new one
+        elif a.ticker:
             wanted = a.ticker
         elif universe == 'strategic':
             wanted = data_loader.load_strategic(preflight.required_files(universe)[-1])
@@ -640,20 +675,34 @@ def main():
             print(f'not in {preflight.PRICES_FILE}, skipped: {" ".join(missing)}')
         prices = prices.loc[[t for t in wanted if t in prices.index]]
     os.makedirs(a.out, exist_ok=True)
-    tag = (dates[-1].strftime('%Y-%m-%d') + f'_LB{p["lookback"] or "all"}'
-           + {'strategic': '_strat', 'top': f'_top{a.top}', 'zop': '_zop', 'gics': '_gics', 'flag': f'_{a.flag}', 'growth': f'_growth{a.sigma:g}s'}.get(universe, ''))
-
     t0 = time.time()
     X, dn, tk = prices.to_numpy(float), prices.columns.to_numpy(), list(prices.index)
-    with Pool(max(1, a.workers), _init, (X, dn, tk, p)) as pool:
-        results = pool.map(_one, range(len(tk)), chunksize=8)
+    if a.intraday:
+        results = rec['results']
+    else:
+        with Pool(max(1, a.workers), _init, (X, dn, tk, p)) as pool:
+            results = pool.map(_one, range(len(tk)), chunksize=8)
     print(f'{len(results)} tickers in {time.time() - t0:.0f}s:',
           pd.Series([r.status for r in results]).value_counts().to_dict())
-    if universe == 'growth':                    # same mean/s as the all-ticker histogram
+    if universe == 'growth' and not a.intraday:                    # same mean/s as the all-ticker histogram
         S = pd.Series([r.slope20_pct for r in results if r.status == 'tunnel'])
         cut = S.mean() + a.sigma * S.std()
         results = [r for r in results if r.status == 'tunnel' and r.slope20_pct >= cut]
         print(f'growth: S >= {S.mean():.2f} + {a.sigma:g} x {S.std():.2f} = {cut:.2f} %/20d -> {len(results)} tickers')
+
+    fit_date = dates[-1]
+    if a.record_dir and not a.intraday:         # what --intraday will start from (full precision)
+        os.makedirs(a.record_dir, exist_ok=True)
+        pickle.dump(dict(results=results, base=int(dn[-1]), fit_date=fit_date), open(rec_path + '.tmp', 'wb'))
+        os.replace(rec_path + '.tmp', rec_path)
+    if a.intraday:                              # later closes go into scoring and plots, never into a fit
+        fit_date = rec['fit_date']
+        ext = int(dn[-1]) - rec['base']
+        if ext < 0:
+            raise SystemExit(f'prices end at daynum {dn[-1]}, before the saved tunnels ({rec["base"]})')
+        results = [extend(r, ext, dn[-1], prices.at[r.ticker, dn[-1]]) for r in results]
+        print(f'intraday: tunnels fitted to {fit_date:%Y-%m-%d}, prices to {dates[-1]:%Y-%m-%d} (+{ext} d)')
+    tag = dates[-1].strftime('%Y-%m-%d') + suffix
 
     # CSV: every ticker, European format like the rest of PotSystem
     tab = tunnel_table(results, dn, dates)
@@ -673,7 +722,8 @@ def main():
     drawn = sorted([r for r in results if a.plot_all or r.status == 'tunnel'], key=lambda r: r.ticker)
     ptxt = '  '.join(f'{k}={v}' for k, v in p.items() if v != DEFAULTS[k]) or 'default parameters'
     header = (f'Tunnels ending {dates[-1]:%Y-%m-%d}  –  created {stamp}  –  {sum(r.status == "tunnel" for r in results)} of '
-              f'{len(results)} tickers ({universe})  –  {ptxt}')
+              f'{len(results)} tickers ({universe})  –  {ptxt}'
+              + (f'  –  tunnels fitted to {fit_date:%Y-%m-%d}, newer closes in purple' if a.intraday and dates[-1] > fit_date else ''))
     # Specialised selections (everything but `all`) also get all pages as ONE tall PNG, viewer-free
     # for a Sheet link. Undated name (tag minus the date) so the link stays stable.
     undated = tag[len(dates[-1].strftime('%Y-%m-%d')) + 1:]

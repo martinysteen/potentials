@@ -100,6 +100,18 @@ a time (flock). Not under app/output/, so never published to Drive. `--asof-date
 /srv/tunnel-reports`; copy repositoryRTBI/Caddyfile to /etc/caddy/Caddyfile and `sudo systemctl reload caddy`;
 `sudo systemctl restart rtbi-mcp`.
 
+**Intraday refresh (2026-10-23, built; cron NOT yet added):** `./run_tunnel.sh --intraday` rebuilds every
+selection WITHOUT refitting. Each normal run saves its fitted tunnels (full precision, pickle) to
+`app/data/nightly/<folder>/tunnels_<suffix>.pkl` (`--record-dir`, outside the published namespace);
+`tunnel_diag.py --intraday --record-dir D` loads them, carries both lines on to the newest day at the same
+slope, and takes today's close for `close_pos` / the plots (purple segment = closes after the fit, header
+says "tunnels fitted to <date>"). Selection, S, W, supports = the midnight ones; CSV schema unchanged,
+`end_date`/`end_daynum` = today. Proposed cron `20 1-22 * * *` (00:xx stays with the nightly build and
+the history job); log `~/logs/run_tunnel_intraday.log`; same lock/swap/publish; no saved tunnels yet = fails
+safe, yesterday's output stays. Never pass `--intraday` to the midnight run. Refitting instead was
+rejected: ~30 % of rows change between midnight and noon (late closes, price corrections), so a refit is
+not "the midnight tunnel".
+
 ## Which entry point (quick guide)
 
 | I want ... | Use |
