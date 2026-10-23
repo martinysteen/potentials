@@ -55,11 +55,4 @@ tunnel/app/output/*/*
 !tunnel/app/output/*/tunnel_runs.txt
 # ... also one level down, in group folders (output/personal/SM/tunnel_runs.txt)
 !tunnel/app/output/*/*/
-tunnel/app/output/*/*/*
-!tunnel/app/output/*/*/tunnel_runs.txt
-tunnel/app/output.new/
-tunnel/app/output.old/
-tunnel/handoff/*.pdf
-
-# --- Mirror copy of tunnel's nightly publish (PDF/PNG, ~10 MB, replaced every night) ---
-repositoryRTBI/data/Tunnel/
+tunnel

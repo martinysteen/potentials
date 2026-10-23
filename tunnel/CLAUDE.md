@@ -4,19 +4,20 @@ For each ticker: the **longest log-linear tunnel (parallel trend channel) that e
 newest close**, drawn into an A4 PDF (3 × 6 panels) and tabulated in a European CSV.
 Diagnostic only — no scoring, ranking or signals.
 
-**Nightly refresh + publish works on all of `app/output/` (SM, 2026-10-13).** Every subfolder is
-a selection; they are rebuilt together and published together. `tunnel/run_tunnel.sh` (cron
-`0 0 * * *`, also the manual entry point, flock-guarded) runs each folder's **recipe**
-`app/output/<folder>/tunnel_runs.txt` (one line of `tunnel_diag.py` args per run, `#` comments)
-into `app/output.new/<folder>/`, swaps `output.new/` in for `output/` only if every run of every
+**Nightly refresh + publish of every selection (SM, 2026-10-13; config split from output 2026-10-23).**
+Each selection is one **recipe file** `recipes/<name>.txt` (config, tracked in git; one line of
+`tunnel_diag.py` args per run, `#` comments; `recipes/personal/SM.txt` -> `output/personal/SM/`).
+`app/output/` is wholly generated and may be wiped at will. `tunnel/run_tunnel.sh` (cron
+`0 0 * * *`, also the manual entry point, flock-guarded) runs every recipe
+into `app/output.new/<name>/`, swaps `output.new/` in for `output/` only if every run of every
 folder succeeded, then `repository.py publish tunnel` → Drive + mirror `repositoryRTBI/data/Tunnel/<folder>/`
 (owner pattern `/*/**`). ~1 min. Log `~/logs/run_tunnel.log`.
 
-- **New selection** = new folder + `tunnel_runs.txt`; no script edit. A folder without a recipe is
-  carried over unchanged (log WARNING), published but never refreshed.
-- Recipes are the only git-tracked files under `app/output/` (`.gitignore` exception).
+- **New selection** = new recipe file; no script edit. **Retiring one** = delete its recipe: the
+  folder is not carried over, so it vanishes locally and on Drive with the next run. Nothing under
+  `app/output/` is tracked or carried over, except `history/` (written by `run_tunnel_history.sh`).
 - `output/` holds only the newest runs, so the scoped sync retires yesterday's dated files on Drive
-  too (older days: rerun with `--asof`). Deleting a folder locally deletes it on Drive.
+  too (older days: rerun with `--asof`).
 - Loose files directly in `app/output/` are dropped by the nightly swap and fail an ad-hoc publish
   (unclaimed). Scratch runs: `--out /tmp/...`. Immediate refresh: just run `run_tunnel.sh`.
 
@@ -32,8 +33,7 @@ folder succeeded, then `repository.py publish tunnel` → Drive + mirror `reposi
 2026-10-15 (SM): LB250 dropped from the standard recipes (add `--param lookback=250` to a recipe
 to bring it back); `Rank_top100/` erased (`--universe top` still exists). Specialised selections
 stay 3 × 6; `--cols/--rows` set per recipe line. **A group folder** (`personal/`) holds selections
-one level down, each with its own recipe; `run_tunnel.sh` handles it, `.gitignore` tracks the
-nested recipe. `personal/SM/` is **published like every folder** (SM's decision, to be discussed
+one level down, each with its own recipe (`recipes/personal/SM.txt`). `personal/SM/` is **published like every folder** (SM's decision, to be discussed
 with the inner circle; if they object, make it private by narrowing `OWNERS["tunnel"].owns`).
 Ownership by folder placement is a stopgap, a better way to say whose report it is comes later.
 
@@ -77,18 +77,17 @@ Stamdata.csv is a standing input of every run.
   Called by every `tunnel_diag.py` run except `--ticker`; `python tunnel_spread.py [dir|csv …]`
   backfills (default `output/all`). They match `tunnels_*.png`, so the nightly publish carries them.
 
-**Historical tunnels (2026-10-23, built, cron NOT yet added):** `app/code/tunnel_history.py` fits all
+**Historical tunnels (2026-10-23):** `app/code/tunnel_history.py` fits all
 tickers for EVERY daynum in longi_price (~720, production; `--days 250` while developing, `--every N`)
 into ONE long CSV `app/output/history/tunnels_history_LB100.csv`, rows `[daynum, ticker]` + all the
 usual columns, no plots. Row (D,T) is identical to `tunnel_diag.py --ticker T --asof D` (checked).
 **Always a full rebuild, never incremental** (SM: PotDat/Stamdata are corrected across the whole
 past). Measured: 250 days = 8 min, 310,000 rows, 29 MB (all ~720 days ~ 25 min, ~85 MB).
 `run_tunnel_history.sh` (shares `/tmp/tunnel.lock`, waits up to 30 min) rebuilds + publishes;
-proposed cron `20 0 * * *`. `run_tunnel.sh` carries `history/` across its nightly swap without a
-WARNING. Plan for on-demand (MCP) and intraday refresh: items 2 and 3 of
+cron `20 0 * * *` (added 2026-10-23). `run_tunnel.sh` carries `history/` across its nightly swap. Plan for on-demand (MCP) and intraday refresh: items 2 and 3 of
 `~/.claude/plans/my-ideas-for-next-synthetic-lobster.md`.
 
-**On-demand report (2026-10-23, built; goes live after the 3 sudo steps below):** MCP tool
+**On-demand report (2026-10-23, live):** MCP tool
 `tunnel_report(tickers, end_date, name)` in repositoryRTBI/mcp/server.py -> `app/code/tunnel_ondemand.py`
 (also usable by hand: `python tunnel_ondemand.py MSFT MU --date 2026-09-30 --name x`). Runs
 `tunnel_diag.py --live --plot-all --ticker ... --asof-date D` (live repository, no snapshot, so it never
@@ -100,7 +99,7 @@ a time (flock). Not under app/output/, so never published to Drive. `--asof-date
 /srv/tunnel-reports`; copy repositoryRTBI/Caddyfile to /etc/caddy/Caddyfile and `sudo systemctl reload caddy`;
 `sudo systemctl restart rtbi-mcp`.
 
-**Intraday refresh (2026-10-23, built; cron NOT yet added):** `./run_tunnel.sh --intraday` rebuilds every
+**Intraday refresh (2026-10-23, cron `20 1-22 * * *` added):** `./run_tunnel.sh --intraday` rebuilds every
 selection WITHOUT refitting. Each normal run saves its fitted tunnels (full precision, pickle) to
 `app/data/nightly/<folder>/tunnels_<suffix>.pkl` (`--record-dir`, outside the published namespace);
 `tunnel_diag.py --intraday --record-dir D` loads them, carries both lines on to the newest day at the same

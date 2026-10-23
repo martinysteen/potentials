@@ -220,7 +220,7 @@ OWNERS: dict[str, Owner] = {
     "tunnel": Owner(
         name="tunnel",
         # Every selection folder is published (SM, 2026-10-13): output/<sel>/ -> Tunnel/<sel>/.
-        # run_tunnel.sh rebuilds them all together nightly (each from its tunnel_runs.txt)
+        # run_tunnel.sh rebuilds them all together nightly (each from its recipes/<name>.txt)
         # and then publishes. A folder deleted locally is deleted on Drive too (scoped sync).
         # Loose files directly in output/ are unclaimed and fail the publish.
         source=POTENTIALS / "tunnel" / "app" / "output",

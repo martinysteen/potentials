@@ -4,13 +4,11 @@
 # The ONE entry point for both cron (00:00) and a manual refresh - same script, so the two
 # can never drift apart. Model: ~/potentials/potrank/run_potrank.sh
 #
-# Each folder says how it is built: app/output/<folder>/tunnel_runs.txt holds one line of
-# tunnel_diag.py arguments per run ('#' comments and blank lines ignored), e.g.
+# Each selection is one recipe file, recipes/<name>.txt: one line of tunnel_diag.py arguments
+# per run ('#' comments and blank lines ignored), e.g.
 #     --universe all --param lookback=100
 #     --universe all --param lookback=250
-# A new selection = a new folder with a tunnel_runs.txt; no edit here. A folder WITHOUT one is
-# carried over unchanged (with a WARNING), so a hand-made folder is never lost - but it is not
-# refreshed either.
+# A new selection = a new recipe file; no edit here. Output is wholly generated into app/output/<name>/.
 #
 # The whole set is built into a fresh app/output.new/ and replaces app/output/ only when every
 # run of every folder succeeded, so a failed night leaves yesterday's set in place (and
@@ -30,7 +28,6 @@
 
 LOGFILE=~/logs/run_tunnel.log
 case " $* " in *" --intraday "*) LOGFILE=~/logs/run_tunnel_intraday.log ;; esac
-RECIPE=tunnel_runs.txt
 
 # Ignore SIGHUP so SSH disconnect does not kill the run
 trap '' HUP
@@ -53,6 +50,7 @@ fi
 
 CODE_DIR=/home/sm/potentials/tunnel/app/code
 OUT_DIR=/home/sm/potentials/tunnel/app/output
+RECIPES=/home/sm/potentials/tunnel/recipes             # one file per selection (config, in git)
 REC_DIR=/home/sm/potentials/tunnel/app/data/nightly     # saved tunnels, outside the published namespace
 NEW_DIR="$OUT_DIR.new"      # siblings of output/, so never inside the published namespace
 OLD_DIR="$OUT_DIR.old"
@@ -86,26 +84,17 @@ fail() {
 rm -rf "$NEW_DIR"
 mkdir -p "$NEW_DIR"
 
-# One selection = a folder holding a tunnel_runs.txt. Selections sit directly in output/ or one
-# level down in a group folder (output/personal/SM/); a folder with neither is carried over.
+# One selection = one recipe file under recipes/ (recipes/all.txt -> output/all/,
+# recipes/personal/SM.txt -> output/personal/SM/). Recipes are CONFIG, tracked in git; output/
+# is wholly generated and may be wiped at will. A folder in output/ without a recipe is not
+# carried over: it is retired (and so is its Drive copy). The one exception is history/,
+# which run_tunnel_history.sh writes into output/ and the swap must carry across.
 build_selection() {
-    local SRC=$1 NAME=$2 DST="$NEW_DIR/$2" LINE RC
+    local RFILE=$1 NAME=$2 DST="$NEW_DIR/$2" LINE RC
     shift 2                                   # what is left is run_tunnel.sh's own extra arguments
-    if [ ! -f "$SRC/$RECIPE" ]; then
-        echo ""
-        if [ "$NAME" = history ]; then      # rebuilt by run_tunnel_history.sh, only carried across the swap
-            echo "history/ carried over unchanged (rebuilt by run_tunnel_history.sh)"
-        else
-            echo "WARNING: $NAME/ has no $RECIPE - carried over unchanged, not refreshed"
-        fi
-        mkdir -p "$(dirname "$DST")"
-        cp -a "$SRC" "$DST" || fail "copying $NAME/ failed"
-        return
-    fi
     mkdir -p "$DST"
-    cp -a "$SRC/$RECIPE" "$DST/"
-    mapfile -t RUNS < <(grep -v '^[[:space:]]*\(#\|$\)' "$SRC/$RECIPE")
-    [ ${#RUNS[@]} -gt 0 ] || fail "$NAME/$RECIPE lists no runs"
+    mapfile -t RUNS < <(grep -v '^[[:space:]]*\(#\|$\)' "$RFILE")
+    [ ${#RUNS[@]} -gt 0 ] || fail "$RFILE lists no runs"
     for LINE in "${RUNS[@]}"; do
         read -ra ARGS <<< "$LINE"
         echo ""
@@ -116,17 +105,18 @@ build_selection() {
     done
 }
 
-for TOP in "$OUT_DIR"/*/; do
-    [ -d "$TOP" ] || continue
-    TOPNAME=$(basename "$TOP")
-    if [ ! -f "$TOP/$RECIPE" ] && compgen -G "$TOP*/$RECIPE" > /dev/null; then
-        for SUB in "$TOP"*/; do                       # a group folder: its subfolders are the selections
-            [ -d "$SUB" ] && build_selection "${SUB%/}" "$TOPNAME/$(basename "$SUB")" "$@"
-        done
-    else
-        build_selection "${TOP%/}" "$TOPNAME" "$@"
-    fi
-done
+N=0
+while IFS= read -r -d '' RFILE; do
+    NAME=${RFILE#"$RECIPES/"}; NAME=${NAME%.txt}
+    [ "$NAME" = history ] && fail "recipes/history.txt: the name 'history' is reserved"
+    build_selection "$RFILE" "$NAME" "$@"
+    N=$((N + 1))
+done < <(find "$RECIPES" -name '*.txt' -print0 | sort -z)
+[ $N -gt 0 ] || fail "no recipes found under $RECIPES"
+
+if [ -d "$OUT_DIR/history" ]; then
+    cp -a "$OUT_DIR/history" "$NEW_DIR/history" || fail "copying history/ failed"
+fi
 
 # Swap the new set in
 rm -rf "$OLD_DIR"
