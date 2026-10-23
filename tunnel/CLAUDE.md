@@ -88,6 +88,18 @@ proposed cron `20 0 * * *`. `run_tunnel.sh` carries `history/` across its nightl
 WARNING. Plan for on-demand (MCP) and intraday refresh: items 2 and 3 of
 `~/.claude/plans/my-ideas-for-next-synthetic-lobster.md`.
 
+**On-demand report (2026-10-23, built; goes live after the 3 sudo steps below):** MCP tool
+`tunnel_report(tickers, end_date, name)` in repositoryRTBI/mcp/server.py -> `app/code/tunnel_ondemand.py`
+(also usable by hand: `python tunnel_ondemand.py MSFT MU --date 2026-09-30 --name x`). Runs
+`tunnel_diag.py --live --plot-all --ticker ... --asof-date D` (live repository, no snapshot, so it never
+collides with the nightly run) into `/srv/tunnel-reports/<name>_<random token>/`: CSV, PDF, one tall
+PNG, a PNG per ticker when <= 6. Served read-only by Caddy at https://innovia.dk/tunnel-reports/<folder>/
+(link = the only access; folders > 7 days old are deleted on the next call). Max 200 tickers, one report at
+a time (flock). Not under app/output/, so never published to Drive. `--asof-date` and the tall PNG for
+`--ticker` runs are new tunnel_diag options. Live steps (sudo): `sudo mkdir /srv/tunnel-reports && sudo chown sm:sm
+/srv/tunnel-reports`; copy repositoryRTBI/Caddyfile to /etc/caddy/Caddyfile and `sudo systemctl reload caddy`;
+`sudo systemctl restart rtbi-mcp`.
+
 ## Run (on the server, like all python)
 
 ```bash

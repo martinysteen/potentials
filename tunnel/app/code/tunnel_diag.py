@@ -196,6 +196,7 @@ def find_tunnel(ticker, closes, daynums, params=None):
 # Plotting (the lines are rebuilt from the Tunnel record only)
 # --------------------------------------------------------------------------------------
 COLS, ROWS, A4 = 3, 6, (8.27, 11.69)
+MAX_SINGLE_PNG = 6                              # --ticker lists up to this long also get one PNG per ticker
 C_PRICE, C_CTX, C_LINE, C_MID, C_SUP = '#1f3b57', '0.70', '#2e8b57', '#c0392b', '#e67e22'
 NAMES = {}                                      # ticker -> company name (Stamdata), set by main()
 SPEC_FS = 5.6                                   # font size of the L/W/S/close_pos line
@@ -593,6 +594,7 @@ def main():
     ap.add_argument('--rows', type=int, default=ROWS, help='plots down each A4 page (default 6)')
     ap.add_argument('--cols', type=int, default=COLS, help='plots across each A4 page (default 3)')
     ap.add_argument('--asof', type=int, help='treat this daynum as today')
+    ap.add_argument('--asof-date', help='treat this date (YYYY-MM-DD) as today; the newest trading day on or before it')
     ap.add_argument('--workers', type=int, default=os.cpu_count())
     ap.add_argument('--param', action='append', default=[], help='key=value, overrides DEFAULTS')
     a = ap.parse_args()
@@ -604,6 +606,12 @@ def main():
     universe = 'all' if a.ticker else a.universe
     try:
         preflight.ensure_data(universe, mode=preflight.mode_from_argv())
+        if a.asof_date:
+            cal = data_loader.load_cal()
+            ok = cal[cal <= pd.Timestamp(a.asof_date)]
+            if ok.empty:
+                raise DataUnavailable(f'--asof-date {a.asof_date} is before the first trading day')
+            a.asof = int(ok.index.max())      # Cal.csv is newest-first
         prices, dates = load_prices(a.asof)
         NAMES.update(data_loader.load_stamdata()['Name'].dropna().astype(str).to_dict())
         if a.ticker:
@@ -683,12 +691,12 @@ def main():
         write_pdf_grouped(pdf_path, groups, prices, dates, header, p, a.rows, png_dir=png_dir, tag=undated,
                           cols=a.cols)
     else:
-        tallpng = universe != 'all' and not a.ticker
+        tallpng = universe != 'all' or bool(a.ticker)      # a ticker list gets the tall PNG too
         png1 = os.path.join(a.out, 'tunnels_' + undated + '_latest.png') if tallpng else None
         write_pdf(pdf_path, drawn, prices, dates, header, p, a.rows,
                   png_all=png1, cols=a.cols,
-                  common=universe != 'all')     # all: each panel its own scale (SM, 2026-10-13)
-    if a.ticker:
+                  common=universe != 'all' or bool(a.ticker))   # all: each panel its own scale (SM, 2026-10-13)
+    if a.ticker and len(results) <= MAX_SINGLE_PNG:     # one PNG per ticker, for short lists only
         for r in results:
             write_single_png(os.path.join(a.out, f'tunnel_{r.ticker}_{tag}.png'), r,
                              prices.loc[r.ticker].to_numpy(float), dates, p)

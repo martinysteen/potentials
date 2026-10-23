@@ -10,6 +10,7 @@ import os
 # In-memory: test the tools, not the auth. Set empty rather than pop: server.py's
 # load_dotenv() never overrides an existing variable, but would re-add a popped one from .env.
 os.environ["GOOGLE_CLIENT_ID"] = ""
+os.environ["TUNNEL_ONDEMAND_ROOT"] = "/tmp/tunnel_ondemand_smoke"   # never the served folder
 
 import pandas as pd
 from fastmcp import Client
@@ -40,7 +41,7 @@ async def main():
     async with Client(mcp) as c:
         tools = {t.name for t in await c.list_tools()}
         check("tools registered", tools == {"list_datasets", "search_tickers", "get_series",
-                                            "plot_series", "get_table"}, str(sorted(tools)))
+                                            "plot_series", "get_table", "tunnel_report"}, str(sorted(tools)))
 
         r = (await c.call_tool("list_datasets", {})).data
         names = {d["name"] for d in r}
@@ -122,6 +123,17 @@ async def main():
             r = await c.call_tool("get_series", args, raise_on_error=False)
             text = r.content[0].text if r.content else ""
             check(f"error: {why}", r.is_error and expect in text, text[:110])
+
+        r = (await c.call_tool("tunnel_report", {"tickers": ["msft", "MU"], "end_date": "2026-09-30",
+                                                 "name": "smoke"})).data
+        got = {x["ticker"]: x for x in r["rows"]}
+        check("tunnel_report rows", set(got) == {"MSFT", "MU"} and got["MSFT"]["end_date"] == "2026-09-30",
+              str(got.get("MSFT")))
+        check("tunnel_report files", any(f.endswith(".pdf") for f in r["files"])
+              and any(f.endswith("_latest.png") for f in r["files"]) and "/smoke_" in r["folder_url"],
+              r["folder_url"])
+        r = await c.call_tool("tunnel_report", {"tickers": ["NOTATICKER"]}, raise_on_error=False)
+        check("error: tunnel_report unknown ticker", r.is_error and "Not found" in r.content[0].text)
 
         res = await c.read_resource("potentials://conventions")
         check("conventions resource", "seven-pack" in res[0].text)

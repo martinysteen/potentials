@@ -3,6 +3,15 @@ innovia.dk {
         uri strip_prefix /rtbi-api
         reverse_proxy 127.0.0.1:8765
     }
+
+    # On-demand tunnel reports (MCP tool tunnel_report): static files, read-only, no directory
+    # listing; the folder names carry a random token, so a link is the only way in.
+    handle /tunnel-reports/* {
+        uri strip_prefix /tunnel-reports
+        root * /srv/tunnel-reports
+        header X-Robots-Tag noindex
+        file_server
+    }
 }
 
 # MCP server - own subdomain, so OAuth discovery (/.well-known/...) sits at the root

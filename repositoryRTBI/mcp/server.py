@@ -17,6 +17,7 @@ from __future__ import annotations
 import io
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -32,6 +33,8 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext  # noqa: E40
 from fastmcp.utilities.types import Image  # noqa: E402
 
 import catalog  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tunnel" / "app" / "code"))
+import tunnel_ondemand  # noqa: E402  (stdlib + pandas only; runs tunnel_diag.py as a subprocess)
 from catalog import DataError  # noqa: E402
 
 load_dotenv(Path(__file__).parent / ".env")
@@ -365,6 +368,42 @@ def get_table(
         "rows_returned": len(df),
         "rows": [{"key": k, **{c: _round(v) for c, v in row.items()}} for k, row in df.iterrows()],
     }
+
+
+@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": False})
+def tunnel_report(
+    tickers: list[str],
+    end_date: Optional[str] = None,
+    name: Optional[str] = None,
+) -> dict:
+    """Price-tunnel report: for each ticker the longest log-linear trend channel ending at
+    end_date (default: newest day). Writes CSV + PDF (A4, 18 panels/page) + one tall PNG
+    (+ one PNG per ticker when 6 or fewer) into a fresh folder and returns download links
+    plus the table. Links work for anyone holding them and expire after 7 days.
+
+    tickers: Yahoo-style, 1-200 (use search_tickers to find them).
+    end_date: YYYY-MM-DD; the newest trading day on or before it is used (tunnels for past
+      dates can also be read from the nightly tunnels_history CSV).
+    name: optional label put in the folder name (letters, digits, _ and -).
+
+    Table columns: status (tunnel/no_tunnel/insufficient_data), length_td (trading days),
+    width_pct (lower->upper line), slope20_pct (% gain per 20 trading days along the lines),
+    supports_upper/lower, close_pos (0 = on lower line, 1 = on upper line; outside 0..1 =
+    the close has left the tunnel).
+    """
+    try:
+        df = catalog.load(catalog.get("Stamdata"))
+        resolved = catalog.resolve_rows(df, tickers)
+    except DataError as exc:
+        _fail(exc)
+    try:
+        out = tunnel_ondemand.make_report(resolved, end_date, name)
+    except RuntimeError as exc:
+        raise ToolError(f"Tunnel report failed: {exc}") from exc
+    keep = ["ticker", "status", "length_td", "width_pct", "slope20_pct", "supports_upper",
+            "supports_lower", "start_date", "end_date", "last_close", "close_pos"]
+    return {"folder_url": out["url"], "files": out["links"],
+            "rows": [{k: r.get(k, "") for k in keep} for r in out["rows"]]}
 
 
 # --------------------------------------------------------------------------- #
