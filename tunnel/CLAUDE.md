@@ -77,6 +77,17 @@ Stamdata.csv is a standing input of every run.
   Called by every `tunnel_diag.py` run except `--ticker`; `python tunnel_spread.py [dir|csv …]`
   backfills (default `output/all`). They match `tunnels_*.png`, so the nightly publish carries them.
 
+**Historical tunnels (2026-10-23, built, cron NOT yet added):** `app/code/tunnel_history.py` fits all
+tickers for EVERY daynum in longi_price (~720, production; `--days 250` while developing, `--every N`)
+into ONE long CSV `app/output/history/tunnels_history_LB100.csv`, rows `[daynum, ticker]` + all the
+usual columns, no plots. Row (D,T) is identical to `tunnel_diag.py --ticker T --asof D` (checked).
+**Always a full rebuild, never incremental** (SM: PotDat/Stamdata are corrected across the whole
+past). Measured: 250 days = 8 min, 310,000 rows, 29 MB (all ~720 days ~ 25 min, ~85 MB).
+`run_tunnel_history.sh` (shares `/tmp/tunnel.lock`, waits up to 30 min) rebuilds + publishes;
+proposed cron `20 0 * * *`. `run_tunnel.sh` carries `history/` across its nightly swap without a
+WARNING. Plan for on-demand (MCP) and intraday refresh: items 2 and 3 of
+`~/.claude/plans/my-ideas-for-next-synthetic-lobster.md`.
+
 ## Run (on the server, like all python)
 
 ```bash

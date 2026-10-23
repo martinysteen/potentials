@@ -548,6 +548,23 @@ def top_ranked(n, daynum):
     return list(rank.sort_values(kind='stable').index[:n])
 
 
+def tunnel_table(results, dn, dates):
+    """Tunnel records -> the CSV table (European decimals as text, fixed decimals). dn/dates
+    are the daynum columns of the price table and their dates, to date start/end."""
+    dmap = {int(d): dates[i].strftime('%Y-%m-%d') for i, d in enumerate(dn)}
+    tab = pd.DataFrame([asdict(r) for r in results])
+    tab['close_pos'] = [r.close_pos for r in results]      # from the unrounded values
+    tab.insert(9, 'start_date', [dmap[int(d)] if pd.notna(d) else '' for d in tab.start_daynum])
+    tab.insert(10, 'end_date', [dmap[int(d)] if pd.notna(d) else '' for d in tab.end_daynum])
+    tab[['start_daynum', 'end_daynum']] = tab[['start_daynum', 'end_daynum']].astype('Int64')
+    # fixed decimals in the CSV only (SM, 2026-10-15): the plots are drawn from the unrounded results
+    for cols, nd in ((['width_pct', 'slope20_pct'], 1),
+                     (['lower_start', 'upper_start', 'lower_end', 'upper_end', 'last_close', 'close_pos'], 2)):
+        for c in cols:
+            tab[c] = tab[c].map(lambda v, nd=nd: '' if pd.isna(v) else f'{v:.{nd}f}'.replace('.', ','))
+    return tab
+
+
 _G = {}
 def _init(X, dn, tk, p):
     _G.update(X=X, dn=dn, tk=tk, p=p)
@@ -631,18 +648,7 @@ def main():
         print(f'growth: S >= {S.mean():.2f} + {a.sigma:g} x {S.std():.2f} = {cut:.2f} %/20d -> {len(results)} tickers')
 
     # CSV: every ticker, European format like the rest of PotSystem
-    tab = pd.DataFrame([asdict(r) for r in results])
-    tab['close_pos'] = [r.close_pos for r in results]      # from the unrounded values
-    tab.insert(9, 'start_date', [dates[list(dn).index(d)].strftime('%Y-%m-%d') if pd.notna(d) else '' for d in tab.start_daynum])
-    tab.insert(10, 'end_date', [dates[list(dn).index(d)].strftime('%Y-%m-%d') if pd.notna(d) else '' for d in tab.end_daynum])
-    tab[['start_daynum', 'end_daynum']] = tab[['start_daynum', 'end_daynum']].astype('Int64')
-    # creation stamp in the top-left cell, the system-wide convention (PotDat, longi_*): it
-    # survives an import into Sheets where file metadata does not
-    # fixed decimals in the CSV only (SM, 2026-10-15): the plots are drawn from the unrounded results
-    for cols, nd in ((['width_pct', 'slope20_pct'], 1),
-                     (['lower_start', 'upper_start', 'lower_end', 'upper_end', 'last_close', 'close_pos'], 2)):
-        for c in cols:
-            tab[c] = tab[c].map(lambda v, nd=nd: '' if pd.isna(v) else f'{v:.{nd}f}'.replace('.', ','))
+    tab = tunnel_table(results, dn, dates)
     if universe == 'gics':                      # the grouping, from Stamdata; blank -> '(none)'
         sd = data_loader.load_stamdata()
         for col in ('GICS', 'Sector2'):

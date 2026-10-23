@@ -83,7 +83,11 @@ build_selection() {
     shift 2                                   # what is left is run_tunnel.sh's own extra arguments
     if [ ! -f "$SRC/$RECIPE" ]; then
         echo ""
-        echo "WARNING: $NAME/ has no $RECIPE - carried over unchanged, not refreshed"
+        if [ "$NAME" = history ]; then      # rebuilt by run_tunnel_history.sh, only carried across the swap
+            echo "history/ carried over unchanged (rebuilt by run_tunnel_history.sh)"
+        else
+            echo "WARNING: $NAME/ has no $RECIPE - carried over unchanged, not refreshed"
+        fi
         mkdir -p "$(dirname "$DST")"
         cp -a "$SRC" "$DST" || fail "copying $NAME/ failed"
         return
