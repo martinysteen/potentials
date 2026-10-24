@@ -1,0 +1,11 @@
+Yes, but only a Google sign-in, and only for people on your allowlist. There is no key, password or token to install.
+
+- **Adding the connector:** a user adds `https://mcp.innovia.dk/mcp` as a custom connector in claude.ai, ChatGPT or Claude Code (steps are in [mcp/README.md](../repositoryRTBI/mcp/README.md)). They enter nothing but the URL.
+- **First connection:** the client opens a Google sign-in window. The user logs in with their Google account and approves.
+- **Who gets through:** their Google email has to be in `RTBI_MCP_ALLOWED_EMAILS` in `repositoryRTBI/mcp/.env`. Anyone else is refused with "Ask sm@innovia.dk to be added", and the refusal is logged.
+- **Google's test mode:** the same email must also be added as a Test user on the Google OAuth consent screen, which is a second step for you per new user.
+- **Applying a change:** run `sudo systemctl restart rtbi-mcp`.
+
+The server refuses to start without sign-in configured, so it is never open to everyone by accident.
+
+The `tunnel_report` links are different. They need no login. Anyone who holds a link can open that report for 7 days, so people shouldn't forward the links.
