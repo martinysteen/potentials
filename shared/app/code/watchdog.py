@@ -9,9 +9,17 @@ leaves behind, never at a producer's internals, so it can be wrong about nothing
 
 Checks (all skipped outside their hours; see CHECK_HOURS)
   potdat       mirror PotDat.csv creation stamp (cell A1) no older than POTDAT_MAX_AGE_MIN
+  potdat_admit mirror PotDat.csv passes the gatekeeper's admit() (not a stub, no `#ERROR!` or
+               other non-numeric cell - the mail names the cells). All hours. Also run alone,
+               `--potdat` at :58, right after the :55 sync brings upstream's ~:44 file, so a bad
+               cell is mailed ~15 min after it appears, before longi's :15 run refuses it
   longi_stamp  longi_price.csv stamp == PotDat.csv stamp (longi saw the newest upstream file)
   mirror       mirror_status.json exit_code 0 and finished recently
   stall        a pipeline process running longer than STALL_SECONDS
+  nas_backup   the newest NAS snapshot (asustor:potentials_snapshot) is from today once 06:00 has passed
+               and holds at least NAS_MIN_FILE_SHARE of ~/potentials' files. 2026-10-24: a clean-up job had
+               been emptying every snapshot for months while each backup run reported success - checking
+               that jobs RAN was not enough, the RESULT is measured now. The daily OK mail carries the summary
   jobs         each cron job's log is fresh, and its LAST run (text after the last START line)
                holds no Traceback / ERROR line / non-zero "exit code"
 
@@ -35,9 +43,12 @@ import smtplib
 import subprocess
 import sys
 import time
-from datetime import datetime
+import os
+from datetime import datetime, timedelta
 from email.message import EmailMessage
 from pathlib import Path
+
+import potdat_gatekeeper  # same folder
 
 HOME = Path.home()
 ROOT = HOME / "potentials"
@@ -98,6 +109,11 @@ def check_potdat(now):
     return {}
 
 
+def check_potdat_admit(now):
+    adm = potdat_gatekeeper.admit(MIRROR / "PotDat.csv")
+    return {} if adm.ok else {"potdat_admit": f"PotDat gatekeeper refuses the mirror's file: {adm.problem}"}
+
+
 def check_longi_stamp(now):
     if now.hour not in CHECK_HOURS:
         return {}
@@ -142,6 +158,40 @@ def check_stall(now):
         what = "; ".join(f"{k.strip()[:70]} for {v // 60} min" for k, v in sorted(found.items()))
         return {"stall": f"running longer than {STALL_SECONDS // 60} min: {what}"}
     return {}
+
+
+NAS_REMOTE = "asustor:potentials_snapshot"   # written by ~/backup_to_asustor.sh at 05:00
+NAS_MIN_FILE_SHARE = 0.9                     # newest snapshot vs ~/potentials now (it grows during the day)
+NAS_SNAP_RE = re.compile(r"potentials_(\d{8})/")
+nas_summary = ""                             # filled by check_nas_backup, shown in the daily OK mail
+
+
+def check_nas_backup(now):
+    global nas_summary
+    r = subprocess.run(["rclone", "lsf", "--dirs-only", NAS_REMOTE],
+                       capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        return {"nas_backup": f"cannot list {NAS_REMOTE}: {r.stderr.strip()[:160]}"}
+    days = sorted(m.group(1) for m in map(NAS_SNAP_RE.fullmatch, r.stdout.splitlines()) if m)
+    if not days:
+        return {"nas_backup": f"no potentials_YYYYMMDD snapshot in {NAS_REMOTE}"}
+    newest = f"potentials_{days[-1]}"
+    r = subprocess.run(["rclone", "size", "--json", f"{NAS_REMOTE}/{newest}"],
+                       capture_output=True, text=True, timeout=300)
+    if r.returncode != 0:
+        return {"nas_backup": f"cannot size {newest}: {r.stderr.strip()[:160]}"}
+    size = json.loads(r.stdout)
+    source = sum(len(files) for _, _, files in os.walk(ROOT))
+    nas_summary = (f"NAS backup: newest {newest}, {size['count']} files / {size['bytes'] / 2**30:.2f} GiB "
+                   f"(~/potentials has {source} files), {len(days)} snapshots kept")
+    # before 06:00 today's 05:00 run may still be going, so yesterday's snapshot is fine
+    expected = now if now.hour >= 6 else now - timedelta(days=1)
+    found = []
+    if days[-1] < f"{expected:%Y%m%d}":
+        found.append(f"no snapshot from {expected:%F}")
+    if size["count"] < NAS_MIN_FILE_SHARE * source:
+        found.append(f"{newest} is incomplete")
+    return {"nas_backup": f"{'; '.join(found)} - {nas_summary}"} if found else {}
 
 
 def last_run_text(text: str) -> str:
@@ -218,9 +268,13 @@ def scan_logs(offsets: dict):
     return events, new
 
 
-def run_checks(now):
+ALL_CHECKS = (check_potdat, check_potdat_admit, check_longi_stamp, check_mirror, check_stall, check_jobs,
+              check_nas_backup)
+
+
+def run_checks(now, checks=ALL_CHECKS):
     problems = {}
-    for fn in (check_potdat, check_longi_stamp, check_mirror, check_stall, check_jobs):
+    for fn in checks:
         try:
             problems.update(fn(now))
         except Exception as e:  # noqa: BLE001 - a broken check is itself a finding
@@ -257,6 +311,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[1])
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--test-mail", action="store_true")
+    ap.add_argument("--potdat", action="store_true",
+                    help="only the potdat_admit check (no log scan, no digest); other problems keep their state")
     a = ap.parse_args()
 
     if a.test_mail:
@@ -265,18 +321,26 @@ def main() -> int:
         return 0
 
     now = datetime.now()
-    problems = run_checks(now)
+    problems = run_checks(now, (check_potdat_admit,) if a.potdat else ALL_CHECKS)
     try:
         prev = json.loads(STATE.read_text())
     except (OSError, ValueError):
         prev = {"problems": {}, "digest_day": ""}
     old = prev.get("problems", {})
+    # --potdat judges only its own key; everything else is carried over untouched
+    kept = {k: v for k, v in old.items() if k != "potdat_admit"} if a.potdat else {}
+    if a.potdat:
+        old = {k: v for k, v in old.items() if k == "potdat_admit"}
 
     new = {k: v for k, v in problems.items() if k not in old}
     cleared = {k: old[k] for k in old if k not in problems}
-    digest = now.hour == DIGEST_HOUR and prev.get("digest_day") != now.strftime("%F")
+    digest = (not a.potdat and now.hour == DIGEST_HOUR
+              and prev.get("digest_day") != now.strftime("%F"))
 
-    events, offsets = scan_logs(prev.get("offsets", {}))
+    if a.potdat:
+        events, offsets = [], prev.get("offsets", {})
+    else:
+        events, offsets = scan_logs(prev.get("offsets", {}))
 
     print(f"{now:%F %T} problems={len(problems)} new={len(new)} cleared={len(cleared)} "
           f"log_errors={len(events)}")
@@ -301,7 +365,8 @@ def main() -> int:
                       "\n".join(f"- {v}" for v in cleared.values())
                       + ("" if problems else "\n\nNothing is open now.")))
     if digest and not problems and not new and not cleared:
-        mails.append(("[potentials] daily: all checks OK", f"All checks passed at {now:%F %H:%M}."))
+        mails.append(("[potentials] daily: all checks OK",
+                      f"All checks passed at {now:%F %H:%M}." + (f"\n\n{nas_summary}" if nas_summary else "")))
 
     if a.dry_run:
         for s, b in mails:
@@ -315,7 +380,7 @@ def main() -> int:
             print(f"ERROR: mail failed ({e!r}) - state NOT advanced so the next run retries")
             return 1
     STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps({"problems": problems, "offsets": offsets,
+    STATE.write_text(json.dumps({"problems": {**kept, **problems}, "offsets": offsets,
                                  "digest_day": now.strftime("%F") if digest else prev.get("digest_day", "")}))
     return 0
 

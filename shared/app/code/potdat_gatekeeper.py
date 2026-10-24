@@ -52,6 +52,13 @@ Checked against 130 days of history (2026-04..10): real closures sit at 84-100 %
 normal days at <= 33 % for groups of 6+; 1-3 ticker groups are noisy (illiquid names
 at exactly 50 % do not trip the strict majority).
 
+Refusals (admit)
+--------
+A file is refused, and the reader keeps its previous one, when it is not intact
+(looks_intact: empty, header-only stub) or when ANY price cell is not a European number or
+empty (bad_cells: `#ERROR!`, `#N/A`, `Loading...`, text). The refusal names the cells
+(`AAPL@2261 '#ERROR!'`); watchdog.py mails it within minutes of the mirror receiving it.
+
 Entry points (every PotDat read goes through one of them)
 ------------
   shared/app/code/repository.py fetch          admit() on PotDat; looks_intact() on the rest
@@ -204,6 +211,38 @@ def looks_intact(path: Path) -> Optional[str]:
     return None
 
 
+# A price cell is a European number or empty - nothing else (SM, 2026-10-24: 24.10 02:44-10:44
+# upstream put `#ERROR!` in AAPL's row, the gatekeeper admitted it, longi copied it 1:1 into
+# longi_price and tunnel crashed on it for 7 hours). Any text - `#ERROR!`, `#N/A`, `#REF!`,
+# `Loading...` - is refused at the door so it is seen at its first appearance.
+NUMBER_RE = re.compile(r"-?\d+(,\d+)?([eE][-+]?\d+)?")
+NON_NUMBER_CHAR_RE = re.compile(r"[^0-9,;eE+\-\r\n]")    # fast pre-filter for a whole row
+TICKER_START_RE = re.compile(r"[\^A-Za-z0-9]")
+
+
+def bad_cells(potdat_path: Path, limit: int = 10) -> Tuple[int, List[str]]:
+    """(number of non-numeric cells, the first `limit` as 'TICKER@daynum 'value''). A ticker
+    cell that cannot be a ticker (`#ERROR!` too) counts as well, reported by its line number."""
+    count, shown = 0, []
+    with open(potdat_path, "r", encoding="utf-8") as f:
+        daynums = f.readline().rstrip("\r\n").split(";")
+        for lineno, line in enumerate(f, start=2):
+            ticker, _, rest = line.rstrip("\r\n").partition(";")
+            bad, label = [], ticker
+            if not TICKER_START_RE.match(ticker):
+                bad.append(f"line {lineno} ticker {ticker!r}")
+                label = f"line {lineno}"
+            if NON_NUMBER_CHAR_RE.search(rest) or ",," in rest:
+                for i, v in enumerate(rest.split(";"), start=1):
+                    v = v.strip()
+                    if v and not NUMBER_RE.fullmatch(v):
+                        day = daynums[i] if i < len(daynums) else f"col{i}"
+                        bad.append(f"{label}@{day} {v[:20]!r}")
+            count += len(bad)
+            shown.extend(bad[:max(0, limit - len(shown))])
+    return count, shown
+
+
 @dataclass(frozen=True)
 class Admission:
     """The gatekeeper's answer to "may I read this PotDat.csv, and what is in it?"."""
@@ -226,9 +265,10 @@ class Admission:
 
 
 def admit(potdat_path: Path, manual: Optional[FrozenSet[str]] = None) -> Admission:
-    """The entry every PotDat read goes through: intact? -> stamp + newest daynum -> carry
-    verdict. Never raises; a refused file comes back with `.problem` set. Readers that only
-    need raw prices ignore `.carry`; readers that compute readings must honour it."""
+    """The entry every PotDat read goes through: intact? -> stamp + newest daynum -> only
+    numbers in it? -> carry verdict. Never raises; a refused file comes back with `.problem`
+    set. Readers that only need raw prices ignore `.carry`; readers that compute readings
+    must honour it."""
     potdat_path = Path(potdat_path)
     problem = looks_intact(potdat_path)
     if problem:
@@ -239,6 +279,10 @@ def admit(potdat_path: Path, manual: Optional[FrozenSet[str]] = None) -> Admissi
         newest = int(header[1].strip())
     except (IndexError, ValueError):
         return Admission(f"{potdat_path.name} header has no daynum columns ({header[:2]!r})")
+    n_bad, shown = bad_cells(potdat_path)
+    if n_bad:
+        return Admission(f"{potdat_path.name} (stamp {header[0].strip()!r}) holds {n_bad} "
+                         f"non-numeric cell(s): {', '.join(shown)}{' ...' if n_bad > len(shown) else ''}")
     carry, msg = carry_for(potdat_path, manual)
     return Admission(None, header[0].strip(), newest, carry, msg)
 

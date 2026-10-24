@@ -65,12 +65,15 @@ refresh landing near the cron tick is a no-op, not a race — see `potrank/CLAUD
 `strategy_grp2/DesignVersion2.md`'s 2026-08-13 corrections). It stops itself if
 `control_board.xlsx` is open in Excel, exactly as a run fired by hand does.
 
-**`tunnel` runs once a night**, at **00:00** (`tunnel/run_tunnel.sh`, also the manual entry point): every selection folder of `tunnel/app/output/` (all, all_GICS, FastStrategy, topGrowth, ZOP, personal/SM, … — each built from its own `tunnel_runs.txt` recipe) is rebuilt together and published together to `Tunnel/<folder>/` (Drive + mirror). It reads longi_price as left by longi's 22:15 run, and StrategicStocks from strategy_grp2's last tick.
+**`tunnel` runs once a night**, at **00:00** (`tunnel/run_tunnel.sh`, also the manual entry point): every selection folder of `tunnel/app/output/` (all, all_GICS, FastStrategy, topGrowth, ZOP, personal/SM, … — each built from its own `tunnel/recipes/<name>.txt` recipe) is rebuilt together and published together to `Tunnel/<folder>/` (Drive + mirror). It reads longi_price as left by longi's 22:15 run, and StrategicStocks from strategy_grp2's last tick.
 
 **`shared/app/code/watchdog.py` runs at `:50`, hours 0-22** (2026-10-21) and emails on change —
 a new problem, or one that cleared — plus one "all OK" line a day (see its docstring for the
-checks). It also scans **every** `~/logs/*.log` (the folder is shared with non-Potentials jobs)
-for new `ERROR`/`Traceback` lines. Log: `~/logs/watchdog.log`. SMTP credentials (a Gmail *app* password) live in
+checks), plus `watchdog.py --potdat` at **`:58`** (2026-10-24): only the mirror PotDat's
+`admit()`, right after the `:55` sync, so a stub or a `#ERROR!`-type cell is mailed, cells
+named, before longi's `:15` run refuses it. It also scans **every** `~/logs/*.log` (the folder is shared with non-Potentials jobs)
+for new `ERROR`/`Traceback` lines, and (2026-10-24) measures the newest NAS snapshot against
+`~/potentials` (from today, >= 90 % of the files; the daily OK mail states it). Log: `~/logs/watchdog.log`. SMTP credentials (a Gmail *app* password) live in
 `~/.config/potentials/smtp.env`, deliberately outside the repo because the 03:40 job pushes it.
 
 `~/git_pot.sh` at **03:40** commits and pushes anything left uncommitted in this repo, on the
@@ -125,7 +128,8 @@ Adding a *producer* output is a four-list job on the producer side; the checklis
   unchanged) and longi carries *readings* for those tickers (`longi_provisional.py`), so
   consumers of `longi_*` need do nothing. Upstream stamps the top-left cell with its creation
   date-time; an explicit `(daynum) carry=…` there overrides the survey. Its `admit()` (intact →
-  stamp → carry) is called at every entry point — repository fetch, yf3's Drive download, the
+  stamp → **only numbers**, 2026-10-24: any `#ERROR!`/`#N/A`/text cell refuses the whole file →
+  carry) is called at every entry point — repository fetch, yf3's Drive download, the
   three `datacheck.py` preflights, the MCP server — and its `looks_intact()` is the ONE copy of
   the mid-write guard for every CSV. A new PotDat reader goes through `admit()`; no private
   checks. The entry-point list lives in the module docstring.
