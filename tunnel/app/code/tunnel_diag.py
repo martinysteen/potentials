@@ -700,7 +700,10 @@ def main():
         ext = int(dn[-1]) - rec['base']
         if ext < 0:
             raise SystemExit(f'prices end at daynum {dn[-1]}, before the saved tunnels ({rec["base"]})')
-        results = [extend(r, ext, dn[-1], prices.at[r.ticker, dn[-1]]) for r in results]
+        gone = [r.ticker for r in results if r.ticker not in prices.index]    # dropped since the midnight fit
+        if gone:
+            print(f'intraday: no longer in {preflight.PRICES_FILE}, dropped: {" ".join(gone)}')
+        results = [extend(r, ext, dn[-1], prices.at[r.ticker, dn[-1]]) for r in results if r.ticker in prices.index]
         print(f'intraday: tunnels fitted to {fit_date:%Y-%m-%d}, prices to {dates[-1]:%Y-%m-%d} (+{ext} d)')
     tag = dates[-1].strftime('%Y-%m-%d') + suffix
 
