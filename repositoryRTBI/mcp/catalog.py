@@ -128,6 +128,9 @@ def get(name: str) -> Dataset:
     for key, ds in all_ds.items():
         if key.lower() == stem.lower():
             return ds
+    if stem.lower().startswith("tunnel"):
+        raise DataError("The tunnel history is not a get_series/get_table dataset - use the "
+                        "tunnel_history tool (filters across all tickers and dates).")
     close = [k for k in all_ds if stem.lower() in k.lower()][:10]
     raise DataError(f"Unknown dataset '{name}'. "
                     + (f"Did you mean: {', '.join(close)}? " if close else "")

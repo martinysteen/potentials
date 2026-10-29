@@ -6,6 +6,7 @@ no auth), and check the monthly gain against a hand computation from PotDat.csv.
 """
 import asyncio
 import os
+from pathlib import Path
 
 # In-memory: test the tools, not the auth. Set empty rather than pop: server.py's
 # load_dotenv() never overrides an existing variable, but would re-add a popped one from .env.
@@ -41,7 +42,8 @@ async def main():
     async with Client(mcp) as c:
         tools = {t.name for t in await c.list_tools()}
         check("tools registered", tools == {"list_datasets", "search_tickers", "get_series",
-                                            "plot_series", "get_table", "tunnel_report"}, str(sorted(tools)))
+                                            "plot_series", "get_table", "tunnel_report",
+                                            "tunnel_history"}, str(sorted(tools)))
 
         r = (await c.call_tool("list_datasets", {})).data
         names = {d["name"] for d in r}
@@ -134,6 +136,50 @@ async def main():
               r["folder_url"])
         r = await c.call_tool("tunnel_report", {"tickers": ["NOTATICKER"]}, raise_on_error=False)
         check("error: tunnel_report unknown ticker", r.is_error and "Not found" in r.content[0].text)
+
+        # tunnel_history: compare against a plain pandas read of the CSV
+        raw = pd.read_csv(catalog.DATA / "Tunnel" / "history" / "tunnels_history_LB100.csv", sep=";",
+                          decimal=",", encoding="utf-8-sig", usecols=[0, 1, 2, 3, 11, 17])
+        raw.columns = ["daynum", "ticker", "status", "length_td", "end_date", "close_pos"]
+        want = int(((raw.status == "tunnel") & (raw.length_td >= 60) & (raw.close_pos >= 0.9)).sum())
+        r = (await c.call_tool("tunnel_history", {"where": ["status = tunnel", "length_td >= 60",
+                                                            "close_pos >= 0.9"], "limit": 5})).data
+        check("tunnel_history cross-history filter", r["rows_matched"] == want
+              and r["rows_returned"] == min(5, want) and ("note" in r) == (want > 5),
+              f"{r['rows_matched']} matched vs {want} by hand")
+        sel = raw[(raw.status == "tunnel") & (raw.length_td >= 60) & (raw.close_pos >= 0.9)]
+        check("tunnel_history truncated = newest rows + full export",
+              r["rows"][-1][0] == sel.end_date.max() and r["rows"][0][0] <= r["rows"][-1][0]
+              and r["download_url"].endswith(f"tunnel_history_{want}rows.csv"), r["download_url"][-60:])
+        exp = Path(os.environ["TUNNEL_ONDEMAND_ROOT"]) / r["download_url"].rsplit("/", 2)[-2] / r["download_url"].rsplit("/", 1)[-1]
+        full = pd.read_csv(exp)
+        check("tunnel_history export is the complete match", len(full) == want and list(full.columns) == r["columns"]
+              and (full.close_pos >= 0.9).all(), f"{len(full)} rows in {exp.name}")
+        r = (await c.call_tool("tunnel_history", {"tickers": ["msft"], "limit": 500})).data
+        n = int((raw.ticker == "MSFT").sum())
+        check("tunnel_history one ticker", r["rows_matched"] == n and r["rows_returned"] == min(n, 500)
+              and r["rows"][0][0] <= r["rows"][-1][0], f"{n} MSFT rows")
+        r = (await c.call_tool("tunnel_history", {"summarize": "month", "where": ["status = tunnel"]})).data
+        by_status = int((raw.status == "tunnel").sum())
+        check("tunnel_history summarize", sum(row[1] for row in r["rows"]) == by_status == r["rows_matched"],
+              f"{r['groups']} months, {by_status} tunnel rows")
+        r = (await c.call_tool("tunnel_history", {"tickers": ["MSFT"], "limit": 2})).data
+        check("tunnel_history core columns", r["columns"] == ["end_date", "ticker", "status", "length_td",
+              "width_pct", "slope20_pct", "close_pos"], str(r["columns"]))
+        r = (await c.call_tool("tunnel_history", {"tickers": ["MSFT"], "limit": 2, "extended": True,
+                                                  "columns": ["end_date", "supports_upper", "last_close"],
+                                                  "where": ["supports_upper >= 2"]})).data
+        check("tunnel_history extended", r["rows_returned"] == 2 and r["columns"][1] == "supports_upper",
+              str(r["rows"]))
+        for args, why, expect in [({"columns": ["last_close"]}, "extended column w/o flag", "extended=true"),
+                                  ({"where": ["supports_upper > 1"]}, "extended filter w/o flag", "extended=true"),
+                                  ({"where": ["nonsense"]}, "bad filter", "Cannot read filter"),
+                                  ({"where": ["foo > 1"]}, "unknown column", "Unknown column"),
+                                  ({"tickers": ["NOTATICKER"]}, "unknown ticker", "Not in the tunnel history"),
+                                  ({"summarize": "date"}, "too many groups", "groups")]:
+            r = await c.call_tool("tunnel_history", args, raise_on_error=False)
+            text = r.content[0].text if r.content else ""
+            check(f"error: tunnel_history {why}", r.is_error and expect in text, text[:110])
 
         res = await c.read_resource("potentials://conventions")
         check("conventions resource", "seven-pack" in res[0].text)

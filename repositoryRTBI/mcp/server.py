@@ -35,6 +35,7 @@ from fastmcp.utilities.types import Image  # noqa: E402
 import catalog  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tunnel" / "app" / "code"))
 import tunnel_ondemand  # noqa: E402  (stdlib + pandas only; runs tunnel_diag.py as a subprocess)
+import tunnel_hist  # noqa: E402
 from catalog import DataError  # noqa: E402
 
 load_dotenv(Path(__file__).parent / ".env")
@@ -214,6 +215,11 @@ def list_datasets(kind: Optional[Literal["matrix", "table"]] = None) -> list[dic
         if kind and ds.kind != kind:
             continue
         out.append({"name": ds.name, "kind": ds.kind, "description": ds.description})
+    if kind is None and tunnel_hist.available():
+        out.append({"name": "tunnel_history", "kind": "search",
+                    "description": "Price tunnel of every ticker for every trading day (status, length, "
+                                   "width, slope, close position). Not for get_series/get_table: "
+                                   "use the tunnel_history tool (filters across all tickers and dates)."})
     return out
 
 
@@ -383,7 +389,7 @@ def tunnel_report(
 
     tickers: Yahoo-style, 1-200 (use search_tickers to find them).
     end_date: YYYY-MM-DD; the newest trading day on or before it is used (tunnels for past
-      dates can also be read from the nightly tunnels_history CSV).
+      dates, and searches across all tickers and dates, are in tunnel_history).
     name: optional label put in the folder name (letters, digits, _ and -).
 
     Table columns: status (tunnel/no_tunnel/insufficient_data), length_td (trading days),
@@ -404,6 +410,57 @@ def tunnel_report(
             "supports_lower", "start_date", "end_date", "last_close", "close_pos"]
     return {"folder_url": out["url"], "files": out["links"],
             "rows": [{k: r.get(k, "") for k in keep} for r in out["rows"]]}
+
+
+@mcp.tool(annotations={"readOnlyHint": True})
+def tunnel_history(
+    tickers: Optional[list[str]] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    where: Optional[list[str]] = None,
+    columns: Optional[list[str]] = None,
+    sort: Optional[str] = None,
+    limit: int = 100,
+    summarize: Optional[Literal["date", "month", "ticker", "status"]] = None,
+    extended: bool = False,
+) -> dict:
+    """Search the full tunnel history: for EVERY trading day since 2024 and every ticker, the
+    longest price tunnel ending that day (the same numbers tunnel_report gives for one date).
+    ~0.9M rows, so ask a narrow question: filter across all tickers and dates, then either read
+    the matching rows (max 500 shown; the full match is offered as a download link) or summarize
+    them. Every answer reports rows_matched.
+
+    tickers:   only these (optional; omit to search all ~1,235).
+    start/end: "YYYY-MM-DD" or "YYYY-MM" (inclusive), on the tunnel's end date.
+    where:     list of filters, all must hold, each 'column operator value' with operators
+               > >= < <= = != , e.g. ["status = tunnel", "length_td >= 60", "close_pos >= 0.9"].
+    columns:   what to return (default = the core columns below).
+    sort:      column name, "-" in front for descending (e.g. "-length_td"). Without it rows are
+               in date order, and when there are more matches than `limit` the NEWEST ones are shown.
+    limit:     rows to show, 1-500. When more rows match, the reply carries download_url: the
+               COMPLETE result as a CSV (standard comma/point) for callers that can fetch files or
+               run code; chat-only callers should narrow the filter or use summarize.
+    summarize: instead of rows, count + mean per date / month / ticker / status (means of
+               `columns`, default length_td, width_pct, slope20_pct, close_pos). Use this for
+               "how many ... per month" style questions.
+    extended:  false (default) = only the core columns exist for columns/where/sort, which is
+               enough for most table analyses. true = also the detail columns: supports_upper,
+               supports_lower (touch clusters per line), daynum, start_date, start_daynum,
+               end_daynum, lower_start, upper_start, lower_end, upper_end (line prices at the
+               tunnel's start/end), last_close.
+
+    Core columns: end_date, ticker, status (tunnel / no_tunnel / insufficient_data = too little
+    price history that day), length_td (tunnel length in trading days), width_pct (lower->upper
+    line %), slope20_pct (% gain per 20 trading days along the lines), close_pos (0 on the lower
+    line, 1 on the upper; always 0..1 because the tunnel contains every close of its window;
+    blank without a tunnel). The first 19 days of the price history are not in the file (no
+    ticker could have a tunnel). Outcomes after a day: use get_series on longi_future_per20d
+    etc. (look-ahead data).
+    """
+    try:
+        return tunnel_hist.query(tickers, start, end, where, columns, sort, limit, summarize, extended)
+    except DataError as exc:
+        _fail(exc)
 
 
 # --------------------------------------------------------------------------- #

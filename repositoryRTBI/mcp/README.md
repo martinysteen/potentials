@@ -16,6 +16,7 @@ Example prompt in any connected chat:
 | `plot_series` | Same as `get_series`, returns a PNG chart plus the numbers |
 | `get_table` | Rows from Stamdata, potrank2, Google, StrategicStocks, across, Yfinance, StockData2_stacked |
 | `tunnel_report` | Price-tunnel report for 1-200 tickers and an end date: CSV + PDF + PNG in a folder, returns links (valid 7 days) and the table |
+| `tunnel_history` | Search the full tunnel history (every trading day x every ticker, ~0.9M rows): filters across all tickers and dates, then up to 500 rows or a count+mean summary per date/month/ticker/status; always reports `rows_matched` |
 
 Resource `potentials://conventions` explains daynums, seven-pack horizons and trailing vs forward
 gains. Monthly/weekly results flag `last_period_partial` when the newest point is to-date.
@@ -28,7 +29,7 @@ in the link). Example prompts:
 
 Reads from the answer: `close_pos` 0 = on the lower line, 1 = on the upper line, outside 0..1 = the
 close has left the tunnel; `slope20_pct` = % gain per 20 trading days along the lines. Nightly
-history of every ticker and day: `Tunnel/history/tunnels_history_LB100.csv` on Drive.
+history of every ticker and day: the `tunnel_history` tool (file `Tunnel/history/tunnels_history_LB100.csv` on Drive).
 Details: `tunnel/CLAUDE.md`.
 
 ## Access
