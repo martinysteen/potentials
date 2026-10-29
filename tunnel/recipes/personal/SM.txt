@@ -1,2 +1,0 @@
-# my own investments: Stamdata SM_ejet flag, indices left out, 100-day lookback
---universe flag --flag SM_ejet --param lookback=100

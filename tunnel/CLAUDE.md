@@ -24,18 +24,16 @@ folder succeeded, then `repository.py publish tunnel` → Drive + mirror `reposi
 | Folder | Recipe |
 |---|---|
 | `all/` | `--universe all`, LB100, **4 × 7** panels per page |
-| `all_GICS/` | `--universe gics`, LB100, 4 × 7: PDF grouped GICS > Sector2 (below) |
-| `FastStrategy/` | `--universe strategic`, LB100 |
-| `topGrowth/` | `--universe growth --sigma 2`, LB100 |
-| `ZOP/` | `--universe zop`, LB100: tickers marked `ZOP` in `longi_macd_Z` on the newest day |
-| `personal/SM/` | `--universe flag --flag SM_ejet`, LB100: SM's own holdings (Stamdata flag, indices left out) |
 
-2026-10-15 (SM): LB250 dropped from the standard recipes (add `--param lookback=250` to a recipe
-to bring it back); `Rank_top100/` erased (`--universe top` still exists). Specialised selections
-stay 3 × 6; `--cols/--rows` set per recipe line. **A group folder** (`personal/`) holds selections
-one level down, each with its own recipe (`recipes/personal/SM.txt`). `personal/SM/` is **published like every folder** (SM's decision, to be discussed
-with the inner circle; if they object, make it private by narrowing `OWNERS["tunnel"].owns`).
-Ownership by folder placement is a stopgap, a better way to say whose report it is comes later.
+**2026-10-29 (SM): only `all/` and `history/` are in use, all other selections REVOKED.** Usage never
+spread beyond those two. Deleted recipes: `all_GICS`, `FastStrategy` (`--universe strategic`),
+`topGrowth` (`--universe growth --sigma 2`), `ZOP` (`--universe zop`), `personal/SM`
+(`--universe flag --flag SM_ejet`); all in git history to restore (`git log -- recipes/`). Their folders
+vanish locally and on Drive/mirror with the next `run_tunnel.sh`. The `tunnel_diag.py` universes
+(`strategic`, `top`, `growth`, `zop`, `flag`, `gics`) and the `write_pdf_grouped` GICS PDF code are
+kept as CLI options for ad-hoc runs, just not scheduled. Text below about those selections is
+history. A group folder (e.g. `personal/`) is still supported by `run_tunnel.sh`, one level down.
+LB250 dropped earlier (2026-10-15): `--param lookback=250` brings it back.
 
 **`all_GICS` PDF** (`write_pdf_grouped`): page 1 is an index (every GICS and Sector2 a clickable
 link with page numbers), the PDF bookmark tree is GICS > Sector2 (collapsed; written by a
