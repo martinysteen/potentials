@@ -74,6 +74,16 @@ def main():
     results = [r for j in ends for r in days[j]]
     tab = td.tunnel_table(results, dn, dates)
     tab.insert(0, 'daynum', [int(dn[j]) for j in ends for _ in tk])
+    # Leading days where EVERY ticker is insufficient_data (the first l_min-1 days of the price
+    # history) carry no information: dropped (SM, 2026-10-29). The cutoff is found from the data
+    # (first day with any non-insufficient row), so it follows the price history if that is ever
+    # prolonged backwards. Later insufficient rows (late-listed tickers) are true and stay.
+    usable = (tab['status'] != 'insufficient_data').groupby(tab['daynum']).any()
+    if usable.any():
+        cut = usable.idxmax()                              # first True, in daynum order
+        n0 = len(tab)
+        tab = tab[tab['daynum'] >= cut]
+        print(f'dropped {n0 - len(tab)} rows of leading all-insufficient daynums; first daynum kept: {cut}')
     tab = tab.rename(columns={'daynum': datetime.now().strftime(td.STAMP_FMT)})   # creation stamp top-left
     print(tab.iloc[:, 2].value_counts().to_dict())          # status counts
 

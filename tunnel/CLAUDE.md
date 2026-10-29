@@ -79,6 +79,10 @@ Stamdata.csv is a standing input of every run.
 tickers for EVERY daynum in longi_price (~720, production; `--days 250` while developing, `--every N`)
 into ONE long CSV `app/output/history/tunnels_history_LB100.csv`, rows `[daynum, ticker]` + all the
 usual columns, no plots. Row (D,T) is identical to `tunnel_diag.py --ticker T --asof D` (checked).
+**Leading all-insufficient daynums are dropped** (SM, 2026-10-29: the first l_min-1 = 19 days, 1543-1561,
+every ticker `insufficient_data`; ~2.6 % of the file). The cutoff is found from the data (first daynum with any
+non-insufficient row), so it moves by itself if the price history is prolonged backwards. Later insufficient rows
+(late-listed tickers, ~45-50 in 2024, 1 now) are true and stay.
 **Always a full rebuild, never incremental** (SM: PotDat/Stamdata are corrected across the whole
 past). Measured: 250 days = 8 min, 310,000 rows, 29 MB (all ~720 days ~ 25 min, ~85 MB).
 `run_tunnel_history.sh` (shares `/tmp/tunnel.lock`, waits up to 30 min) rebuilds + publishes;
