@@ -124,6 +124,13 @@ bash ~/potentials/repositoryRTBI/api/test_api.sh <key>
 
 All endpoints require header `X-API-Key: <key>`. Key is stored in `api/.env` on the server.
 
+**Exception — browser pages, `api/plot.py` (2026-11-02):** `/rtbi-api/plot/tunnel/{ticker}` (page),
+`/plot/tunnel-img/{ticker}` (PNG), `/plot/auth` (Google OAuth callback). Opened from a HYPERLINK in
+PotRank > ALL; Google sign-in, then a 30-day signed cookie (`RTBI_PLOT_SESSION_KEY` in `api/.env`).
+Reuses the MCP's Google OAuth client and **its allowlist** (`mcp/.env` `RTBI_MCP_ALLOWED_EMAILS`, one
+list for both; re-checked per request). The OAuth client's redirect URIs must include
+`https://innovia.dk/rtbi-api/plot/auth`. Serves `tunnel/app/data/thumbs/all/` (see tunnel/CLAUDE.md).
+
 ## MCP server (`mcp/`)
 `https://mcp.innovia.dk/mcp` exposes the same data to LLM chats and agent platforms (claude.ai,
 ChatGPT, Cowork, Hermes) as semantic tools: dates rather than daynums, oldest-first, resampling

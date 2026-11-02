@@ -9,10 +9,13 @@ from fastapi.responses import FileResponse
 
 load_dotenv(Path(__file__).parent / ".env")
 
+import plot  # noqa: E402  (click-to-plot pages for PotRank: Google sign-in, not the API key)
+
 API_KEY = os.environ["RTBI_API_KEY"]
 DATA_DIR = Path("/home/sm/potentials/repositoryRTBI/data").resolve()
 
 app = FastAPI(title="RTBI Data API", root_path="/rtbi-api")
+app.include_router(plot.router)
 
 
 def _require_key(request: Request):

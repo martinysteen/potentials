@@ -25,9 +25,11 @@ Outputs in --out (default app/output/):
     tunnels_<date>_LB<lookback>[_strat|_topN|_growthNs].pdf   A4 portrait, 3 across x 6 down
     tunnels_<date>_LB<lookback>[_strat|_topN|_growthNs].csv   one row per ticker, ';' / ','
     tunnels_<...>_hist.png / _SW.png                S histogram + S/W scatter (tunnel_spread.py)
+Outputs in --png-dir (only when given):
+    <ticker>_<daynum>.svg                           vector thumbnail per ticker, 75 x 45 mm (PotRank click-to-plot)
 """
 import argparse
-import pickle, contextlib, os, re, sys, time
+import pickle, contextlib, os, re, shutil, sys, time
 from dataclasses import replace, dataclass, asdict
 from datetime import datetime
 from multiprocessing import Pool
@@ -533,6 +535,46 @@ def write_single_png(path, res, closes, dates, p=None):
     plt.close(fig)
 
 
+# Per-ticker thumbnails (--png-dir), shown one at a time from a link in the PotRank sheet:
+# one <ticker>_<daynum>.svg per ticker, tunnel or not. Vector, so the page scales it freely;
+# drawn at 75 x 45 mm, the page shows it at 150 x 90 mm (text 2x the panel size of the PDF).
+THUMB_MM = (75, 45)
+THUMB_FMT = 'svg'               # 'png' only to preview a layout (no SVG rasterizer on the server)
+THUMB_DPI = 192                 # png only
+
+_T = {}
+def _thumb_init(results, prices, dates, p, out, daynum, stamp):
+    _T.update(results=results, prices=prices, dates=dates, p=p, out=out, daynum=daynum, stamp=stamp)
+def _thumb_one(i):
+    r = _T['results'][i]
+    fig, ax = plt.subplots(figsize=(THUMB_MM[0] / 25.4, THUMB_MM[1] / 25.4))
+    draw_panel(ax, r, _T['prices'].loc[r.ticker].to_numpy(float), _T['dates'], _T['p'])
+    if r.status != 'tunnel':        # too narrow for 'TICKER – status' beside the name: status goes on the spec line
+        ax.set_title(r.ticker, fontsize=7.5, loc='left', fontweight='bold', color='0.4')
+        ax.text(0.99, 1.02, r.status.replace('_', ' '), transform=ax.transAxes, ha='right', va='bottom',
+                fontsize=SPEC_FS, color='0.25')
+    fig.text(0.995, 0.005, _T['stamp'], ha='right', va='bottom', fontsize=3.5, color='0.55')
+    fig.subplots_adjust(left=0.09, right=0.985, bottom=0.10, top=0.84)
+    fig.savefig(os.path.join(_T['out'], f'{r.ticker}_{_T["daynum"]}.{THUMB_FMT}'), dpi=THUMB_DPI)
+    plt.close(fig)
+
+
+def write_thumbs(png_dir, results, prices, dates, p, daynum, stamp, workers):
+    """One thumbnail per ticker into png_dir, built in png_dir.new/ and swapped in whole, so a
+    reader never sees a half set; the previous set (older daynum) goes with the swap."""
+    png_dir = png_dir.rstrip('/')
+    new, old = png_dir + '.new', png_dir + '.old'
+    shutil.rmtree(new, ignore_errors=True)
+    os.makedirs(new)
+    with Pool(max(1, workers), _thumb_init, (results, prices, dates, p, new, daynum, stamp)) as pool:
+        pool.map(_thumb_one, range(len(results)), chunksize=8)
+    shutil.rmtree(old, ignore_errors=True)
+    if os.path.exists(png_dir):
+        os.rename(png_dir, old)
+    os.rename(new, png_dir)
+    shutil.rmtree(old, ignore_errors=True)
+
+
 # --------------------------------------------------------------------------------------
 # Data + CLI
 # --------------------------------------------------------------------------------------
@@ -619,6 +661,9 @@ def main():
     ap.add_argument('--intraday', action='store_true',
                     help='no fit: take the tunnels the last --record-dir run saved (same other arguments), carry '
                          'their lines on to today and score/draw them with the newer closes')
+    ap.add_argument('--png-dir', metavar='DIR',
+                    help='also draw a vector thumbnail <ticker>_<daynum>.svg per ticker into DIR '
+                         '(replaced whole; for the PotRank click-to-plot page)')
     ap.add_argument('--workers', type=int, default=os.cpu_count())
     ap.add_argument('--param', action='append', default=[], help='key=value, overrides DEFAULTS')
     a = ap.parse_args()
@@ -753,6 +798,12 @@ def main():
         for r in results:
             write_single_png(os.path.join(a.out, f'tunnel_{r.ticker}_{tag}.png'), r,
                              prices.loc[r.ticker].to_numpy(float), dates, p)
+    if a.png_dir:
+        t0 = time.time()
+        thumb_stamp = (f'daynum {dn[-1]}  drawn {datetime.now():%Y-%m-%d %H:%M}'
+                       + (f'  fit {fit_date:%Y-%m-%d}' if a.intraday and dates[-1] > fit_date else ''))
+        write_thumbs(a.png_dir, results, prices, dates, p, int(dn[-1]), thumb_stamp, a.workers)
+        print(f'{len(results)} thumbnails -> {a.png_dir} in {time.time() - t0:.0f}s')
     print(data_loader.load_manifest_line())
     return 0
 

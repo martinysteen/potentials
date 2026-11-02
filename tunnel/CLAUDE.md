@@ -113,6 +113,14 @@ safe, yesterday's output stays. Never pass `--intraday` to the midnight run. Ref
 rejected: ~30 % of rows change between midnight and noon (late closes, price corrections), so a refit is
 not "the midnight tunnel".
 
+**Click-to-plot thumbnails for PotRank (2026-11-02):** every `run_tunnel.sh` run (nightly AND
+intraday) passes `--png-dir app/data/thumbs/<folder>/`: one SVG per ticker (vector, drawn 75 × 45 mm, page shows 150 × 90 mm, click = fit window; tunnel or
+not), `<ticker>_<daynum>.svg`, stamp `daynum D drawn …` in the corner, built in `<dir>.new/` and
+swapped in whole (~15 s, ~1,235 files, ~53 MB). **Not published to Drive** (outside `app/output/`).
+Served by rtbi-api `repositoryRTBI/api/plot.py` at `https://innovia.dk/rtbi-api/plot/tunnel/<ticker>`
+behind Google sign-in + the MCP email allowlist; PotRank users are commenters, so the sheet opens it
+with a `HYPERLINK` column (no Apps Script: bound scripts/menus never run for commenters).
+
 ## Which entry point (quick guide)
 
 | I want ... | Use |

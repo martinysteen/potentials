@@ -52,6 +52,8 @@ CODE_DIR=/home/sm/potentials/tunnel/app/code
 OUT_DIR=/home/sm/potentials/tunnel/app/output
 RECIPES=/home/sm/potentials/tunnel/recipes             # one file per selection (config, in git)
 REC_DIR=/home/sm/potentials/tunnel/app/data/nightly     # saved tunnels, outside the published namespace
+THUMB_DIR=/home/sm/potentials/tunnel/app/data/thumbs    # one PNG per ticker for the PotRank click-to-plot page
+                                                        # (rtbi-api /plot/); NOT published to Drive
 NEW_DIR="$OUT_DIR.new"      # siblings of output/, so never inside the published namespace
 OLD_DIR="$OUT_DIR.old"
 
@@ -99,7 +101,9 @@ build_selection() {
         read -ra ARGS <<< "$LINE"
         echo ""
         echo "--- $NAME: tunnel_diag.py ${ARGS[*]} ---"
-        python3 tunnel_diag.py "${ARGS[@]}" --out "$DST" --record-dir "$REC_DIR/$NAME" "$@" < /dev/null
+        # --png-dir: thumbnails, swapped in whole per run (a recipe with several runs: the last one's set stays)
+        python3 tunnel_diag.py "${ARGS[@]}" --out "$DST" --record-dir "$REC_DIR/$NAME" \
+            --png-dir "$THUMB_DIR/$NAME" "$@" < /dev/null
         RC=$?
         [ $RC -eq 0 ] || fail "$NAME: tunnel_diag.py ${ARGS[*]} exited $RC" $RC
     done
