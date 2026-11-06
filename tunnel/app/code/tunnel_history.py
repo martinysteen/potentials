@@ -72,7 +72,7 @@ def main():
 
     # same table as tunnel_diag's CSV, one block per end date, daynum in front of ticker
     results = [r for j in ends for r in days[j]]
-    tab = td.tunnel_table(results, dn, dates)
+    tab = td.tunnel_table(results, dn, dates).drop(columns='age_td')   # history has no old_tunnel rows: schema unchanged
     tab.insert(0, 'daynum', [int(dn[j]) for j in ends for _ in tk])
     # Leading days where EVERY ticker is insufficient_data (the first l_min-1 days of the price
     # history) carry no information: dropped (SM, 2026-10-29). The cutoff is found from the data

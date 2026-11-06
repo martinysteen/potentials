@@ -43,6 +43,19 @@ it, each opened by a dark banner. Own-scale panels. PNGs: one tall PNG per GICS 
 Hist/S-W: ONE file each with a panel per GICS (`tunnel_spread.write_spread_grouped`). CSV gains
 `GICS`, `Sector2`.
 
+**old_tunnel (SM, 2026-11-06):** a ticker that is `no_tunnel` today gets the newest tunnel that ENDED within
+the last `old_max_age` (50) trading days, found by `find_old_tunnel()` in the nightly run itself (end date
+stepped back one day at a time, each step = `find_tunnel` as `--asof` that day, so identical to a
+`tunnel_history` row; lookback stays 100, so the old tunnel is up to 100 d long and the plot spans up to ~150 d).
+Status `old_tunnel`, the CSV row holds the OLD tunnel's numbers and `end_daynum`, plus a new LAST column
+`age_td` (trading days since it ended; 0 for every other status); `close_pos` is empty (lines are never
+extended to today). Plot: lines stop at their real end, price runs on in purple, spec line ends `ended N d ago`
+(purple) in place of closePos. First full run (live, 2026-11-06): 961 tunnel / 279 old_tunnel / 0 no_tunnel,
+max age 26, +~40 s. Intraday: old tunnels come from the midnight pickle, `age_td` just grows by the days since.
+`old_max_age=0` switches it off. NOT in `tunnel_history` (no old rows, `age_td` column dropped: schema
+unchanged) and not in the spread plots/growth/PDF default (all filter `status == 'tunnel'`; `--plot-all`
+draws them). Break-out data (price vs the old lines) deliberately NOT built, SM wants his experiments first.
+
 **Panel label / CSV (2026-10-15):** spec line `W 12%  S20d +1.5%  closePos 0.37`, company name
 (Stamdata `Name`) above it, same font; the PDF/PNG header and the CSV top-left cell carry the same
 creation stamp. CSV decimals fixed: width, slope20 1; line prices, last_close, close_pos 2.

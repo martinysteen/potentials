@@ -62,6 +62,8 @@ DEFAULTS = dict(
     min_span=0.50,        # first->last support on each line must span this share of the length
     slope_method='minwidth',  # 'minwidth' (narrowest band) or 'ols' (least squares)
     w_max=0.5,            # widest accepted tunnel (0.5 = 50 % lower->upper); 0 = no cap
+    old_max_age=50,       # no_tunnel today: look back up to this many trading days for the newest tunnel
+                          # that ENDED then (status old_tunnel); 0 = off. Only tunnel_diag's own run uses it
 )
 
 
@@ -71,7 +73,7 @@ STAMP_FMT = '%d-%m-%Y %H-%M'    # CSV top-left cell, as in PotDat.csv / longi_*.
 @dataclass
 class Tunnel:
     ticker: str
-    status: str                  # tunnel | no_tunnel | insufficient_data
+    status: str                  # tunnel | old_tunnel | no_tunnel | insufficient_data
     length_td: int = 0           # tunnel length in trading days (number of closes)
     width_pct: float = np.nan    # % gain from lower to upper line
     slope20_pct: float = np.nan  # % gain per 20 trading days along the lines
@@ -85,10 +87,14 @@ class Tunnel:
     upper_end: float = np.nan
     last_close: float = np.nan
     ext: int = 0                 # intraday refresh: days AFTER end_daynum the lines are extended over (not in the CSV)
+    age_td: int = 0              # old_tunnel only: trading days from end_daynum to the newest close (0 otherwise)
 
     @property
     def close_pos(self):
-        """Where the last close sits between the lines: 0 = lower, 1 = upper (NaN if no tunnel)."""
+        """Where the last close sits between the lines: 0 = lower, 1 = upper (NaN unless status
+        'tunnel': an old tunnel's lines end days ago and are never extended, so there is no position)."""
+        if self.status != 'tunnel':
+            return np.nan
         h = self.upper_end - self.lower_end
         return (self.last_close - self.lower_end) / h if h > 0 else np.nan
 
@@ -196,6 +202,23 @@ def find_tunnel(ticker, closes, daynums, params=None):
         last_close=last)
 
 
+def find_old_tunnel(r, closes, daynums, params=None):
+    """r = today's result. If it is no_tunnel, step the end date back one day at a time (up to
+    old_max_age) and take the first day on which find_tunnel finds one: status old_tunnel, the
+    tunnel's own numbers and end_daynum, age_td = days since, last_close = today's. The fit on
+    each earlier day is exactly `--asof` that day (same as a tunnel_history row). Else r unchanged."""
+    p = {**DEFAULTS, **(params or {})}
+    if r.status != 'no_tunnel':
+        return r
+    for k in range(1, p['old_max_age'] + 1):
+        if closes.size - k < p['l_min']:
+            break
+        t = find_tunnel(r.ticker, closes[:-k], daynums[:-k], p)
+        if t.status == 'tunnel':
+            return replace(t, status='old_tunnel', age_td=k, last_close=r.last_close)
+    return r
+
+
 # --------------------------------------------------------------------------------------
 # Plotting (the lines are rebuilt from the Tunnel record only)
 # --------------------------------------------------------------------------------------
@@ -231,24 +254,25 @@ def draw_panel(ax, res, closes, dates, p=None, scale=None):
     ax.set_yscale('log')
     if scale:
         ax.set_xlim(closes.size - scale[1] - 0.5, closes.size - 0.5)
-    if res.status != 'tunnel':
+    if res.status not in ('tunnel', 'old_tunnel'):
         w = slice(-scale[1], None) if scale else slice(None)
         ax.plot(x[w][ok[w]], closes[w][ok[w]], color='0.55', lw=0.6)
         ax.set_title(f'{res.ticker}  –  {res.status.replace("_", " ")}', fontsize=7, loc='left', color='0.4')
     else:
         L = res.length_td                       # the fitted tunnel
         Lt = L + res.ext                        # + days the lines are extended over (intraday refresh)
-        s = closes.size - Lt
+        e = closes.size - res.age_td            # old_tunnel: the lines stop here, the price runs on to today
+        s = e - Lt
         ctx = max(0, closes.size - scale[1] if scale else s - max(60, L // 2))  # history, in grey
         t = np.arange(Lt)
         b = np.log(res.lower_end / res.lower_start) / (Lt - 1)
         lower = np.log(res.lower_start) + b * t
         upper = np.log(res.upper_start) + b * t
-        xs = x[s:]
+        xs = x[s:e]
         ax.plot(x[ctx:s + 1], closes[ctx:s + 1], color=C_CTX, lw=0.6)
         ax.plot(xs[:L], closes[s:s + L], color=C_PRICE, lw=0.7)
-        if res.ext:                             # the days since the tunnel was fitted
-            ax.plot(xs[L - 1:], closes[s + L - 1:], color=C_NEW, lw=1.0)
+        if res.ext or res.age_td:               # the days since the tunnel was fitted / since it ended
+            ax.plot(x[s + L - 1:], closes[s + L - 1:], color=C_NEW, lw=1.0)
         ax.plot(xs, np.exp(upper), color=C_LINE, lw=0.9)
         ax.plot(xs, np.exp(lower), color=C_LINE, lw=0.9)
         ax.plot(xs, np.exp((upper + lower) / 2), color=C_MID, lw=0.7, ls='--')
@@ -259,9 +283,12 @@ def draw_panel(ax, res, closes, dates, p=None, scale=None):
             k = [c[pick(r[c])] for c in cl]
             ax.plot(xs[k], closes[s:s + L][k], 'o', ms=2.2, color=C_SUP, mec='none', zorder=5)
         ax.set_title(res.ticker, fontsize=7.5, loc='left', fontweight='bold')
-        ax.text(0.99, 1.02,
-                f'L {res.length_td} d   W {res.width_pct:.0f}%   S20d {res.slope20_pct:+.1f}%   closePos {res.close_pos:.2f}',
-                transform=ax.transAxes, ha='right', va='bottom', fontsize=SPEC_FS, color='0.25')
+        spec = f'L {res.length_td} d   W {res.width_pct:.0f}%   S20d {res.slope20_pct:+.1f}%   '
+        if res.status == 'old_tunnel':          # no closePos: the lines were not carried to today
+            spec, col = spec + f'ended {res.age_td} d ago', C_NEW
+        else:
+            spec, col = spec + f'closePos {res.close_pos:.2f}', '0.25'
+        ax.text(0.99, 1.02, spec, transform=ax.transAxes, ha='right', va='bottom', fontsize=SPEC_FS, color=col)
         if scale:                               # tunnel centred, same log span in every panel
             mid = (max(upper[0], upper[-1]) + min(lower[0], lower[-1])) / 2
             ax.set_ylim(np.exp(mid - scale[0] / 2), np.exp(mid + scale[0] / 2))
@@ -549,7 +576,7 @@ def _thumb_one(i):
     r = _T['results'][i]
     fig, ax = plt.subplots(figsize=(THUMB_MM[0] / 25.4, THUMB_MM[1] / 25.4))
     draw_panel(ax, r, _T['prices'].loc[r.ticker].to_numpy(float), _T['dates'], _T['p'])
-    if r.status != 'tunnel':        # too narrow for 'TICKER – status' beside the name: status goes on the spec line
+    if r.status not in ('tunnel', 'old_tunnel'):    # too narrow for 'TICKER – status' beside the name: status goes on the spec line
         ax.set_title(r.ticker, fontsize=7.5, loc='left', fontweight='bold', color='0.4')
         ax.text(0.99, 1.02, r.status.replace('_', ' '), transform=ax.transAxes, ha='right', va='bottom',
                 fontsize=SPEC_FS, color='0.25')
@@ -606,7 +633,9 @@ def extend(r, ext, daynum, last_close):
     if r.status == 'tunnel' and ext > 0:
         f = np.exp(np.log(r.lower_end / r.lower_start) / (r.length_td - 1) * ext)
         r = replace(r, ext=ext, lower_end=r.lower_end * f, upper_end=r.upper_end * f)
-    if ext > 0 and r.status != 'insufficient_data':
+    if r.status == 'old_tunnel':    # its end stays where it was; it only gets older
+        r = replace(r, age_td=r.age_td + ext)
+    elif ext > 0 and r.status != 'insufficient_data':
         r = replace(r, end_daynum=int(daynum))
     if np.isfinite(last_close) and last_close > 0:
         r = replace(r, last_close=float(last_close))
@@ -619,6 +648,7 @@ def tunnel_table(results, dn, dates):
     dmap = {int(d): dates[i].strftime('%Y-%m-%d') for i, d in enumerate(dn)}
     tab = pd.DataFrame([asdict(r) for r in results]).drop(columns='ext')
     tab['close_pos'] = [r.close_pos for r in results]      # from the unrounded values
+    tab['age_td'] = tab.pop('age_td')                      # last column (close_pos keeps its place)
     tab.insert(9, 'start_date', [dmap[int(d)] if pd.notna(d) else '' for d in tab.start_daynum])
     tab.insert(10, 'end_date', [dmap[int(d)] if pd.notna(d) else '' for d in tab.end_daynum])
     tab[['start_daynum', 'end_daynum']] = tab[['start_daynum', 'end_daynum']].astype('Int64')
@@ -634,7 +664,8 @@ _G = {}
 def _init(X, dn, tk, p):
     _G.update(X=X, dn=dn, tk=tk, p=p)
 def _one(i):
-    return find_tunnel(_G['tk'][i], _G['X'][i], _G['dn'], _G['p'])
+    r = find_tunnel(_G['tk'][i], _G['X'][i], _G['dn'], _G['p'])
+    return find_old_tunnel(r, _G['X'][i], _G['dn'], _G['p'])
 
 
 def main():

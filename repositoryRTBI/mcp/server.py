@@ -392,10 +392,12 @@ def tunnel_report(
       dates, and searches across all tickers and dates, are in tunnel_history).
     name: optional label put in the folder name (letters, digits, _ and -).
 
-    Table columns: status (tunnel/no_tunnel/insufficient_data), length_td (trading days),
-    width_pct (lower->upper line), slope20_pct (% gain per 20 trading days along the lines),
-    supports_upper/lower, close_pos (0 = on lower line, 1 = on upper line; outside 0..1 =
-    the close has left the tunnel).
+    Table columns: status (tunnel/old_tunnel/no_tunnel/insufficient_data), length_td (trading
+    days), width_pct (lower->upper line), slope20_pct (% gain per 20 trading days along the
+    lines), supports_upper/lower, close_pos (0 = on lower line, 1 = on upper line; outside
+    0..1 = the close has left the tunnel; empty for old_tunnel).
+    old_tunnel = no tunnel ends on the report date, but one ended up to 50 trading days
+    earlier: its numbers and end_date are that old tunnel's, age_td = trading days since.
     """
     try:
         df = catalog.load(catalog.get("Stamdata"))
@@ -407,7 +409,7 @@ def tunnel_report(
     except RuntimeError as exc:
         raise ToolError(f"Tunnel report failed: {exc}") from exc
     keep = ["ticker", "status", "length_td", "width_pct", "slope20_pct", "supports_upper",
-            "supports_lower", "start_date", "end_date", "last_close", "close_pos"]
+            "supports_lower", "start_date", "end_date", "last_close", "close_pos", "age_td"]
     return {"folder_url": out["url"], "files": out["links"],
             "rows": [{k: r.get(k, "") for k in keep} for r in out["rows"]]}
 
