@@ -165,6 +165,11 @@ def tunnel_page(ticker: str, request: Request):
         return HTMLResponse(f"<p>No tunnel plot for {t}.</p>", 404)
     daynum = f.stem.rsplit("_", 1)[1]
     drawn = time.strftime("%Y-%m-%d %H:%M", time.localtime(f.stat().st_mtime))
+    try:
+        fit = (THUMB_DIR / "_fit.txt").read_text().strip()      # written by tunnel_diag --png-dir; '' = fitted today
+    except OSError:
+        fit = ""
+    fit = f" &middot; fit {html.escape(fit)}" if fit else ""
     img = f"{PREFIX}/tunnel-img/{quote(ticker, safe='')}?d={daynum}-{int(f.stat().st_mtime)}"
     return HTMLResponse(f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>{t} tunnel</title>
@@ -174,7 +179,7 @@ img.fit{{width:100%;height:calc(100vh - 70px);object-fit:contain;object-position
 .s{{color:#888;font-size:11px;margin-top:4px}}</style></head>
 <body><img src="{img}" alt="{t} tunnel" title="click: fit the window / back" onclick="this.classList.toggle('fit')">
 <div>{t} &nbsp;{html.escape(_name(ticker))}</div>
-<div class="s">daynum {daynum} &middot; drawn {drawn}</div></body></html>""",
+<div class="s">daynum {daynum} &middot; drawn {drawn}{fit}</div></body></html>""",
                         headers={"Cache-Control": "private, no-cache"})
 
 

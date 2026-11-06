@@ -260,7 +260,7 @@ def draw_panel(ax, res, closes, dates, p=None, scale=None):
             ax.plot(xs[k], closes[s:s + L][k], 'o', ms=2.2, color=C_SUP, mec='none', zorder=5)
         ax.set_title(res.ticker, fontsize=7.5, loc='left', fontweight='bold')
         ax.text(0.99, 1.02,
-                f'W {res.width_pct:.0f}%   S20d {res.slope20_pct:+.1f}%   closePos {res.close_pos:.2f}',
+                f'L {res.length_td} d   W {res.width_pct:.0f}%   S20d {res.slope20_pct:+.1f}%   closePos {res.close_pos:.2f}',
                 transform=ax.transAxes, ha='right', va='bottom', fontsize=SPEC_FS, color='0.25')
         if scale:                               # tunnel centred, same log span in every panel
             mid = (max(upper[0], upper[-1]) + min(lower[0], lower[-1])) / 2
@@ -543,8 +543,8 @@ THUMB_FMT = 'svg'               # 'png' only to preview a layout (no SVG rasteri
 THUMB_DPI = 192                 # png only
 
 _T = {}
-def _thumb_init(results, prices, dates, p, out, daynum, stamp):
-    _T.update(results=results, prices=prices, dates=dates, p=p, out=out, daynum=daynum, stamp=stamp)
+def _thumb_init(results, prices, dates, p, out, daynum):
+    _T.update(results=results, prices=prices, dates=dates, p=p, out=out, daynum=daynum)
 def _thumb_one(i):
     r = _T['results'][i]
     fig, ax = plt.subplots(figsize=(THUMB_MM[0] / 25.4, THUMB_MM[1] / 25.4))
@@ -553,21 +553,24 @@ def _thumb_one(i):
         ax.set_title(r.ticker, fontsize=7.5, loc='left', fontweight='bold', color='0.4')
         ax.text(0.99, 1.02, r.status.replace('_', ' '), transform=ax.transAxes, ha='right', va='bottom',
                 fontsize=SPEC_FS, color='0.25')
-    fig.text(0.995, 0.005, _T['stamp'], ha='right', va='bottom', fontsize=3.5, color='0.55')
     fig.subplots_adjust(left=0.09, right=0.985, bottom=0.10, top=0.84)
     fig.savefig(os.path.join(_T['out'], f'{r.ticker}_{_T["daynum"]}.{THUMB_FMT}'), dpi=THUMB_DPI)
     plt.close(fig)
 
 
-def write_thumbs(png_dir, results, prices, dates, p, daynum, stamp, workers):
+def write_thumbs(png_dir, results, prices, dates, p, daynum, fit, workers):
     """One thumbnail per ticker into png_dir, built in png_dir.new/ and swapped in whole, so a
-    reader never sees a half set; the previous set (older daynum) goes with the swap."""
+    reader never sees a half set; the previous set (older daynum) goes with the swap.
+    `fit` = date the tunnels were fitted when that is older than the newest day (intraday), else ''.
+    It goes to `_fit.txt` beside the SVGs; the page (rtbi-api plot.py) shows it in its bottom line."""
     png_dir = png_dir.rstrip('/')
     new, old = png_dir + '.new', png_dir + '.old'
     shutil.rmtree(new, ignore_errors=True)
     os.makedirs(new)
-    with Pool(max(1, workers), _thumb_init, (results, prices, dates, p, new, daynum, stamp)) as pool:
+    with Pool(max(1, workers), _thumb_init, (results, prices, dates, p, new, daynum)) as pool:
         pool.map(_thumb_one, range(len(results)), chunksize=8)
+    with open(os.path.join(new, '_fit.txt'), 'w') as fh:
+        fh.write(fit)
     shutil.rmtree(old, ignore_errors=True)
     if os.path.exists(png_dir):
         os.rename(png_dir, old)
@@ -800,9 +803,8 @@ def main():
                              prices.loc[r.ticker].to_numpy(float), dates, p)
     if a.png_dir:
         t0 = time.time()
-        thumb_stamp = (f'daynum {dn[-1]}  drawn {datetime.now():%Y-%m-%d %H:%M}'
-                       + (f'  fit {fit_date:%Y-%m-%d}' if a.intraday and dates[-1] > fit_date else ''))
-        write_thumbs(a.png_dir, results, prices, dates, p, int(dn[-1]), thumb_stamp, a.workers)
+        thumb_fit = f'{fit_date:%Y-%m-%d}' if a.intraday and dates[-1] > fit_date else ''
+        write_thumbs(a.png_dir, results, prices, dates, p, int(dn[-1]), thumb_fit, a.workers)
         print(f'{len(results)} thumbnails -> {a.png_dir} in {time.time() - t0:.0f}s')
     print(data_loader.load_manifest_line())
     return 0
