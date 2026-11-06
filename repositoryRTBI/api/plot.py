@@ -166,7 +166,7 @@ def tunnel_page(ticker: str, request: Request):
     daynum = f.stem.rsplit("_", 1)[1]
     drawn = time.strftime("%Y-%m-%d %H:%M", time.localtime(f.stat().st_mtime))
     try:
-        fit = (THUMB_DIR / "_fit.txt").read_text().strip()      # written by tunnel_diag --png-dir; '' = fitted today
+        fit = (THUMB_DIR / "_fit.txt").read_text().strip()      # written by tunnel_diag --png-dir
     except OSError:
         fit = ""
     fit = f" &middot; fit {html.escape(fit)}" if fit else ""

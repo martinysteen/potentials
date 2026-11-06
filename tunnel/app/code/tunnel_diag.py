@@ -588,7 +588,7 @@ def _thumb_one(i):
 def write_thumbs(png_dir, results, prices, dates, p, daynum, fit, workers):
     """One thumbnail per ticker into png_dir, built in png_dir.new/ and swapped in whole, so a
     reader never sees a half set; the previous set (older daynum) goes with the swap.
-    `fit` = date the tunnels were fitted when that is older than the newest day (intraday), else ''.
+    `fit` = date the tunnels were fitted (the newest day for a nightly run, older in intraday runs).
     It goes to `_fit.txt` beside the SVGs; the page (rtbi-api plot.py) shows it in its bottom line."""
     png_dir = png_dir.rstrip('/')
     new, old = png_dir + '.new', png_dir + '.old'
@@ -834,7 +834,7 @@ def main():
                              prices.loc[r.ticker].to_numpy(float), dates, p)
     if a.png_dir:
         t0 = time.time()
-        thumb_fit = f'{fit_date:%Y-%m-%d}' if a.intraday and dates[-1] > fit_date else ''
+        thumb_fit = f'{fit_date:%Y-%m-%d}'      # always: the nightly fit is also "today" (SM, 2026-11-06)
         write_thumbs(a.png_dir, results, prices, dates, p, int(dn[-1]), thumb_fit, a.workers)
         print(f'{len(results)} thumbnails -> {a.png_dir} in {time.time() - t0:.0f}s')
     print(data_loader.load_manifest_line())
