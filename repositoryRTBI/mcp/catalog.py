@@ -75,8 +75,6 @@ _MATRIX_DESCRIPTIONS: list[tuple[str, str]] = [
     (r"longi_regr(\d+)d$", "Trend gain % over {0} days from an OLS fit of log(price) on time."),
     (r"longi_trump$", "Price rebased to 1.0 at daynum 1863 (2 Apr 2025, tariff announcement); blank before."),
     (r"longi_iran$", "Price rebased to 1.0 at daynum 2094 (27 Feb 2026, before the Iran war); blank before."),
-    (r"longi_conf_(\w+)$", "Conformity: rolling leave-one-out correlation of the ticker's daily gain with its {0} group."),
-    (r"longi_sectorbeta_(\w+)$", "Beta of the ticker vs its {0} group."),
 ]
 
 # table name -> (relative path or glob for the newest daynum, description)

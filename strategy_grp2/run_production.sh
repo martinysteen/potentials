@@ -3,7 +3,7 @@
 # marked `P`, writing/Drive-publishing StrategicStocks_<daynum>.xlsx/.csv. Never touches `D`
 # rows, never writes compare_strategies_<date>.xlsx. See DesignVersion2.md's 2026-08-13
 # corrections for why P/D are independent and why only --production may ship this file.
-# Model: ~/potentials/longi/start_longi.sh / ~/potentials/group_conformity/run_conf.sh
+# Model: ~/potentials/longi/start_longi.sh
 
 LOGFILE=~/logs/run_production.log
 

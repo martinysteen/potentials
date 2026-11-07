@@ -2,7 +2,7 @@
 # Main entry point: build potrank2.csv -> upload -> (mirror refreshes on its own cron).
 # The ONE entry point for both cron (:25 hourly) and a manual refresh (potrank.cmd option 1)
 # -- deliberately the same script, so a button-triggered run and a scheduled one can never
-# drift apart. Model: ~/potentials/longi/start_longi.sh / ~/potentials/group_conformity/run_conf.sh
+# drift apart. Model: ~/potentials/longi/start_longi.sh
 #
 # Unlike those two, this script can now be fired by a human while cron is also about to fire
 # it (SM asked for an immediate-update button after the plan was otherwise settled) -- the

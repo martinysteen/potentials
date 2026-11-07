@@ -36,7 +36,7 @@ members carry more dispersion in forward gain.
 ssh -p 2222 sm@innovia.dk
 conda activate potsystem_env
 
-# Full pipeline (fetch -> produce -> publish), this is what's cron'ed (:45, see docs):
+# Full pipeline (fetch -> produce -> publish), this is what's cron'ed (:52, see docs):
 bash ~/potentials/group_conformity/run_conf.sh
 
 # Or step by step:

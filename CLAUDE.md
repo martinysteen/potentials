@@ -31,13 +31,12 @@ belongs in that project's own `CLAUDE.md`, which is always the authority for its
 |---|---|---|
 | [repositoryRTBI/](repositoryRTBI/) | **Mirror + API + MCP.** Pulls Drive → `data/`, serves it over REST and as an MCP server for LLM chats/agents (`mcp.innovia.dk/mcp`) | its `CLAUDE.md` |
 | [longi/](longi/) | **Producer.** Per-ticker factor matrices `longi_*.csv`, sector aggregates, forward-gain targets | its `CLAUDE.md` |
-| [group_conformity/](group_conformity/) | **Producer.** Conformity/sector-beta grades | its `README.md` |
 | [yf3/](yf3/) | **Producer.** yFinance fundamentals | its `CLAUDE.md` |
 | [potrank/](potrank/) | **Producer.** The PotRank wide snapshot, `potrank2.csv` — one row per ticker, replaces the PotRank Google Sheet's own calculations | its `CLAUDE.md` |
 | [tunnel/](tunnel/) | **Consumer + producer, diagnostic only.** Longest log-linear price tunnel ending today per ticker → PDF of plots + CSV. Nightly `run_tunnel.sh` (00:00) rebuilds every `app/output/<folder>/` selection from its recipe and publishes them together to `Tunnel/<folder>/` | its `CLAUDE.md` |
 | [strategy_grp2/](strategy_grp2/) | **The consumer — current work.** One Excel control board drives steps 0-4 | [DesignVersion2.md](strategy_grp2/DesignVersion2.md) |
 | [shared/](shared/) | `app/code/repository.py` — the one publish/fetch registry every family uses; `watchdog.py` — hourly health mail. Proposal only: [DESIGN_conductor.md](shared/DESIGN_conductor.md) (event-driven chain instead of cron minutes, not started) | the module docstring |
-| [_archive/](_archive/) | Retired projects (`strategy/`, `strategy_grp/`, `strategy_target/`), frozen | — |
+| [_archive/](_archive/) | Retired projects (`strategy/`, `strategy_grp/`, `strategy_target/`, `group_conformity/`), frozen | — |
 
 ## The daily chain
 
@@ -46,32 +45,35 @@ same call, so a consumer sees the output within about a second of publish — no
 `sync_rtbi.sh`'s own next cron tick. Cron on the server (`crontab -l`), hours 0-22:
 
 ```
-longi :15  →  publish ~:17 (Drive + mirror)  →  group_conformity :45     →  publish ~:47 (Drive + mirror)
-                                              →  potrank :25 and :55    →  publish ~:26 / ~:56 (Drive + mirror)
+upstream ~:27  →  sync :37  →  longi :40  →  publish by ~:50 (Drive + mirror)  →  potrank :25 and :55  →  publish ~:26 / ~:56 (Drive + mirror)
 ```
 
 `sync_rtbi.sh` still runs at `:07/:14/:37/:55`, now for a narrower job: pulling content that
 actually originates on Drive (`PotDat.csv` from the G Sheet, `yf3`'s `Yfinance/`, a manual Drive
-edit) rather than gating when a registered producer's output becomes visible. The `:14` tick
-(2026-10-21) is timed so longi's `:15` run reads the PotDat that upstream writes at ~`:11`.
+edit) rather than gating when a registered producer's output becomes visible. **Longi's `:40`
+(2026-11-06, was `:15`) is set from upstream's export minute, which is not ours to choose:** a
+GAS hourly trigger picks its own minute (seen at `:11`, `:44` and now `:27`). Longi must run just
+after the first sync that follows the export, so if the trigger's minute moves past `:37`, longi
+silently reads the previous hour's file again. The `:14` tick served the old `:15` run and
+no longer has a job of its own.
 
 **`potrank` is also user-triggerable**, on top of its `:25`/`:55` cron ticks: `potrank.cmd` on the
 Windows side runs the identical `run_potrank.sh` over SSH, guarded by a `flock` so a manual
 refresh landing near the cron tick is a no-op, not a race — see `potrank/CLAUDE.md`.
 
 **`strategy_grp2`'s production tick is also cron'd**, separately from the hourly chain above:
-`run_production.sh` at **`:16` and `:46`, hours 8-23** (twice an hour) runs
+`run_production.sh` at **`:16` and `:57`, hours 8-23** (twice an hour) runs
 `conductor.py --production` — `P`-marked board rows only, never `D` rows (see
 `strategy_grp2/DesignVersion2.md`'s 2026-08-13 corrections). It stops itself if
 `control_board.xlsx` is open in Excel, exactly as a run fired by hand does.
 
-**`tunnel` runs once a night**, at **00:00** (`tunnel/run_tunnel.sh`, also the manual entry point): every selection folder of `tunnel/app/output/` (all, all_GICS, FastStrategy, topGrowth, ZOP, personal/SM, … — each built from its own `tunnel/recipes/<name>.txt` recipe) is rebuilt together and published together to `Tunnel/<folder>/` (Drive + mirror). It reads longi_price as left by longi's 22:15 run, and StrategicStocks from strategy_grp2's last tick.
+**`tunnel` runs once a night**, at **00:00** (`tunnel/run_tunnel.sh`, also the manual entry point): every selection folder of `tunnel/app/output/` (all, all_GICS, FastStrategy, topGrowth, ZOP, personal/SM, … — each built from its own `tunnel/recipes/<name>.txt` recipe) is rebuilt together and published together to `Tunnel/<folder>/` (Drive + mirror). It reads longi_price as left by longi's 22:40 run, and StrategicStocks from strategy_grp2's last tick.
 
 **`shared/app/code/watchdog.py` runs at `:50`, hours 0-22** (2026-10-21) and emails on change —
 a new problem, or one that cleared — plus one "all OK" line a day (see its docstring for the
 checks), plus `watchdog.py --potdat` at **`:58`** (2026-10-24): only the mirror PotDat's
-`admit()`, right after the `:55` sync, so a stub or a `#ERROR!`-type cell is mailed, cells
-named, before longi's `:15` run refuses it. It also scans **every** `~/logs/*.log` (the folder is shared with non-Potentials jobs)
+`admit()`, right after the `:55` sync, so a stub or a `#ERROR!`-type cell that upstream wrote
+after the `:37` sync is mailed, cells named, before longi's `:40` run refuses it. It also scans **every** `~/logs/*.log` (the folder is shared with non-Potentials jobs)
 for new `ERROR`/`Traceback` lines, and (2026-10-24) measures the newest NAS snapshot against
 `~/potentials` (from today, >= 90 % of the files; the daily OK mail states it). Log: `~/logs/watchdog.log`. SMTP credentials (a Gmail *app* password) live in
 `~/.config/potentials/smtp.env`, deliberately outside the repo because the 03:40 job pushes it.

@@ -5,7 +5,7 @@ publishes, and where a family reads its input from.
 
 Three layers, and nothing crosses
 ---------------------------------
-  PRODUCERS   (longi, group_conformity, ...) compute, then publish THEIR OWN
+  PRODUCERS   (longi, potrank, ...) compute, then publish THEIR OWN
               namespace and nothing else, to Drive AND directly into the local
               mirror (target="both", the default - see publish()). They never
               pull, and they never call sync_rtbi.sh or trigger anything else
@@ -160,29 +160,6 @@ OWNERS: dict[str, Owner] = {
         ),
         needs=("PotDat.csv", "Stamdata.csv", "Cal.csv"),
         local_only=("*.txt",),
-    ),
-    "group_conformity": Owner(
-        name="group_conformity",
-        source=POTENTIALS / "group_conformity" / "app" / "output",
-        input_dir=POTENTIALS / "group_conformity" / "app" / "input",
-        subdir="Longi",
-        owns=(
-            "/longi_conf_*.csv",
-            "/longi_sectorbeta_*.csv",
-        ),
-        needs=(
-            "Stamdata.csv",
-            "Longi/longi_per1d.csv",
-            "Longi/longi_grp_GICS_per1d.csv",
-            "Longi/longi_grp_Sector2_per1d.csv",
-            "Longi/longi_vola100d.csv",
-            "Longi/longi_future_per20d.csv",
-            "Longi/longi_future_per50d.csv",
-        ),
-        # Analysis byproducts: wrong shape for a folder whose every consumer
-        # expects ticker x daynum, and cheaply reproducible by rerunning the
-        # analyzer. They stay local on purpose.
-        local_only=("conformity_*.csv", "conformity_*.xlsx", "*.xlsx.csv"),
     ),
     "potrank": Owner(
         name="potrank",

@@ -8,7 +8,7 @@ Mirrors `GoogleDrive:PotSystem/repositoryRTBI` to local `data/` on Ubuntu (`~/po
 
 | Layer | Who | Does |
 |-------|-----|------|
-| Producers | `longi`, `group_conformity`, … | compute, then publish **their own namespace** to Drive *and* directly into the local mirror, in one `repository.py::publish(..., target="both")` call. Never pull, never call `sync_rtbi.sh` or trigger anything else downstream. |
+| Producers | `longi`, `potrank`, … | compute, then publish **their own namespace** to Drive *and* directly into the local mirror, in one `repository.py::publish(..., target="both")` call. Never pull, never call `sync_rtbi.sh` or trigger anything else downstream. |
 | Mirror | this project (`sync_rtbi.sh`) | pulls Drive → `data/` **on its own cron**, for content that actually originates on Drive rather than from a registered producer |
 | Consumers | `strategy_grp2`, and every family's `fetch_input.sh` | read `data/`. **Never Google Drive directly.** |
 
@@ -51,15 +51,16 @@ stamp certifies the last Drive-originated pull, not "everything in `data/` is cu
 regardless of producer activity.
 
 ### Cron
-`:07`, `:14`, `:37`, `:55` — four ticks. `:14` (added 2026-10-21) exists so longi's `:15` run sees the
-`PotDat.csv` that upstream's Apps Script writes at ~`:11` (on Drive by ~`:13:50`); before it, longi
-always read the previous hour's file and one failed upstream run left US rows carried for 2 h.
+`:07`, `:14`, `:37`, `:55` — four ticks. `:37` is the one longi's `:40` run (2026-11-06, was `:15`)
+depends on: it brings the `PotDat.csv` that upstream's Apps Script writes at ~`:27` (the minute is
+set by the GAS hourly trigger, not by us). `:14` was added 2026-10-21 for the old `:15` run and an
+upstream write at ~`:11`; it has no job of its own now.
 The others are now a safety net rather than the path producer output takes
 to reach the mirror (that happens inline with each publish, in about a second). The ticks still
 matter: they catch a mirror-leg publish failure, a manual edit made directly on Drive, and
 `yf3`'s bespoke `rclone copy` (which never registers with `repository.py` and so never writes
-the mirror directly). Full producer chain: `longi :15 → publish ~:17 (Drive + mirror) →
-group_conformity :45 → publish ~:47 (Drive + mirror)`.
+the mirror directly). Full producer chain: `longi :40 → publish by ~:50 (Drive + mirror) →
+potrank :55 → publish ~:56 (Drive + mirror)`.
 
 ## Environment
 - Ubuntu server: `gandalf` (accessed via SSH on `innovia.dk:2222`)
@@ -89,7 +90,6 @@ bash ~/potentials/repositoryRTBI/sync_rtbi.sh
 # Ad-hoc publish / fetch for one family (see shared/app/code/repository.py)
 python3 ~/potentials/shared/app/code/repository.py check              # both guards, all owners
 python3 ~/potentials/shared/app/code/repository.py publish longi --dry-run
-python3 ~/potentials/shared/app/code/repository.py publish group_conformity
 python3 ~/potentials/shared/app/code/repository.py fetch longi        # --stale-ok to override
 # equivalent, from the family's own wrapper (activates conda first):
 bash ~/potentials/longi/upload_output.sh

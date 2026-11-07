@@ -11,8 +11,8 @@ Checks (all skipped outside their hours; see CHECK_HOURS)
   potdat       mirror PotDat.csv creation stamp (cell A1) no older than POTDAT_MAX_AGE_MIN
   potdat_admit mirror PotDat.csv passes the gatekeeper's admit() (not a stub, no `#ERROR!` or
                other non-numeric cell - the mail names the cells). All hours. Also run alone,
-               `--potdat` at :58, right after the :55 sync brings upstream's ~:44 file, so a bad
-               cell is mailed ~15 min after it appears, before longi's :15 run refuses it
+               `--potdat` at :58, right after the :55 sync, so a file upstream wrote after the
+               :37 sync is mailed before longi's :40 run refuses it
   longi_stamp  longi_price.csv stamp == PotDat.csv stamp (longi saw the newest upstream file)
   mirror       mirror_status.json exit_code 0 and finished recently
   stall        a pipeline process running longer than STALL_SECONDS
@@ -57,9 +57,9 @@ LOGS = HOME / "logs"
 SMTP_ENV = HOME / ".config" / "potentials" / "smtp.env"
 STATE = HOME / ".local" / "state" / "potentials" / "watchdog.json"
 
-POTDAT_MAX_AGE_MIN = 100      # upstream writes hourly at ~:11
+POTDAT_MAX_AGE_MIN = 100      # upstream's hourly GAS trigger, minute not ours to set (~:27 in 2026-11)
 MIRROR_MAX_AGE_MIN = 100      # sync ticks :07/:14/:37/:55
-STALL_SECONDS = 600           # longi's whole publish normally takes seconds
+STALL_SECONDS = 900           # a longi run takes 3-10 min and can still be going at this :50 check
 CHECK_HOURS = range(8, 23)    # upstream is quiet overnight (no PotDat 22:20 -> 07:11)
 DIGEST_HOUR = 8
 
@@ -67,13 +67,12 @@ DIGEST_HOUR = 8
 JOBS = [
     ("longi",            "start_longi.log",    75, range(0, 23)),
     ("potrank",          "run_potrank.log",    75, range(0, 23)),
-    ("group_conformity", "run_conf.log",       100, range(0, 23)),
     ("strategy_grp2",    "run_production.log", 75, range(9, 23)),
     ("tunnel",           "run_tunnel.log",     26 * 60, range(0, 24)),
     ("yf3",              "start_yf3.log",      26 * 60, range(0, 24)),
 ]
 STALL_PATTERNS = ("longi_upload.py", "rclone sync", "start_longi.sh", "run_potrank.sh",
-                  "run_conf.sh", "run_production.sh")
+                  "run_production.sh")
 
 STAMP_RE = re.compile(r"^(\d{2})-(\d{2})-(\d{4}) (\d{2})-(\d{2})")
 
@@ -121,8 +120,8 @@ def check_longi_stamp(now):
     lon, lraw = stamp_of(MIRROR / "Longi" / "longi_price.csv")
     if pot is None or lon is None:
         return {}  # reported by the potdat check / unreadable file shows in jobs
-    # One hour behind is normal (upstream sometimes finishes after the :14 sync, so longi's
-    # :15 run takes the previous file); two missed files is not.
+    # One hour behind is normal (longi's :40 run may not have published yet at this :50 check,
+    # or upstream finished after the :37 sync); two missed files is not.
     lag = (pot - lon).total_seconds() / 60
     if lag > 100:
         return {"longi_stamp": f"longi_price.csv is stamped {lraw} but PotDat.csv {praw} "
@@ -232,7 +231,7 @@ def check_jobs(now):
 ERR_RE = re.compile(r"Traceback \(most recent call last\)|\bERROR\b|\bCRITICAL\b|\bFATAL\b")
 # The chain jobs' own logs get the stricter last-run check above; these cron logs only repeat
 # the same output, so scanning them would mail every error twice.
-SCAN_SKIP = {j[1] for j in JOBS} | {"longi_cron.log", "run_potrank_cron.log", "run_conf_cron.log",
+SCAN_SKIP = {j[1] for j in JOBS} | {"longi_cron.log", "run_potrank_cron.log",
                                     "run_production_cron.log", "run_tunnel_cron.log", "watchdog.log"}
 MAX_SCAN_BYTES = 2_000_000
 

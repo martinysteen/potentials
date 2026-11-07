@@ -4,8 +4,7 @@ potrank_upload.py - publish potrank2.csv to repositoryRTBI.
 
 Thin on purpose: the ownership declaration (`/potrank2.csv`, subdir="" — repository root,
 beside Stamdata.csv/Cal.csv/PotDat.csv), the two guards, and the scoped rclone sync live in
-~/potentials/shared/app/code/repository.py. Modelled on
-group_conformity/app/code/conformity_upload.py.
+~/potentials/shared/app/code/repository.py.
 """
 import argparse
 import sys

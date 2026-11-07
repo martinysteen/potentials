@@ -8,7 +8,6 @@
       "Read(///Gandalf/sm-home/potentials/repositoryRTBI/**)",
       "Read(///Gandalf/sm-home/potentials/repositoryRTBI/data/**)",
       "Read(///Gandalf/sm-home/potentials/longi/**)",
-      "Read(///Gandalf/sm-home/potentials/group_conformity/**)",
       "Bash(ssh -p *)"
     ],
     "additionalDirectories": [

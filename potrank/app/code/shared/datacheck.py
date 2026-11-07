@@ -16,8 +16,7 @@ cron jobs that are closely timed but not synchronised:
     :07/:37/:55 repositoryRTBI/sync_rtbi.sh   `rclone sync` from Google Drive. A *sync*,
                                               so it DELETES a local file the moment the
                                               Drive side is itself mid-regeneration.
-    :15         longi/start_longi.sh          rebuilds the longi_* family
-    :45         group_conformity/run_conf.sh  rebuilds the longi_conf_* / sectorbeta_* family
+    :40         longi/start_longi.sh          rebuilds the longi_* family
 
 A run started at an unlucky minute therefore sees one of two bad states:
 

@@ -139,11 +139,11 @@ point that should be cron'ed, not `fetch_input.sh`/`upload_output.sh` individual
 
 **Cron placement used to matter more than it does now.** `fetch_input.sh` reads `longi_per1d`
 etc. from the local mirror rather than from Drive. Previously this run had to follow a
-`sync_rtbi.sh` tick that itself followed longi's publish, or it graded an hour-old vintage —
-that's why `run_conf` sits at `:45`, well after longi's `:15`. Since longi's publish now writes
-the mirror directly (`longi :15 → publish ~:17`, Drive + mirror in one call), that data is
-current within about a second of `:17`, not gated on `sync_rtbi.sh`'s own `:37` tick — the `:45`
-placement still leaves comfortable headroom, it's just no longer load-bearing the way it was.
+`sync_rtbi.sh` tick that itself followed longi's publish, or it graded an hour-old vintage.
+Since longi's publish now writes the mirror directly (Drive + mirror in one call), that data is
+current within about a second of the publish, not gated on `sync_rtbi.sh`. It still has to run
+after longi is done: `run_conf` sits at `:52` because longi's `:40` run (2026-11-06) takes up to
+10 minutes.
 
 ```bash
 bash ~/potentials/group_conformity/run_conf.sh

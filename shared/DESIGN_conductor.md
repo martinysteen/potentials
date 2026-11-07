@@ -53,9 +53,8 @@ poll Drive metadata of PotDat.csv  (one cheap call; modtime/size changed?)
 DAG for one generation (edges = "needs done-marker of"):
 
 ```
-fetch(g) → longi(g) ─┬→ group_conformity(g)
-                     ├→ potrank(g)
-                     └→ strategy_grp2 production(g)  (also needs potrank, conformity per its board)
+fetch(g) → longi(g) ─┬→ potrank(g)
+                     └→ strategy_grp2 production(g)  (also needs potrank per its board)
 yf3 (daily 22:25) and tunnel (00:00) stay clock jobs: they are time-of-day by nature.
 ```
 

@@ -80,9 +80,8 @@ renamed if wanted — that is a deliberate future decision, not an oversight.
 
 ## Refresh: cron + on-demand, same script
 
-Cron (`crontab -l`, server): `25 0-22 * * * /home/sm/potentials/potrank/run_potrank.sh`. Timed
-8 minutes after longi's ~:17 publish; potrank reads no `group_conformity` output, so it does not
-need to wait for that family's :45/:47 tick.
+Cron (`crontab -l`, server): `25,55 0-22 * * * /home/sm/potentials/potrank/run_potrank.sh` (two
+lines). The `:55` tick is the first after longi's `:40` run is done (by ~`:50`).
 
 **Also user-triggerable** (SM, 2026-08-25): `potrank.cmd` on the Windows side runs the *same*
 `run_potrank.sh` an "urgent refresh" would need, over SSH — never a separate code path, so a

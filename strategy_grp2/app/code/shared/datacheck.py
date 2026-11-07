@@ -10,8 +10,7 @@ independent cron jobs that are closely timed but not synchronised:
     :07/:37/:55 repositoryRTBI/sync_rtbi.sh   `rclone sync` from Google Drive. A *sync*,
                                               so it DELETES a local file the moment the
                                               Drive side is itself mid-regeneration.
-    :15         longi/start_longi.sh          rebuilds the longi_* family
-    :45         group_conformity/run_conf.sh  rebuilds the longi_conf_* / sectorbeta_* family
+    :40         longi/start_longi.sh          rebuilds the longi_* family
 
 A run started at an unlucky minute therefore sees one of two bad states:
 
@@ -301,8 +300,8 @@ def _diagnosis(verdict: Verdict, root: Path) -> str:
     lines += [f"  - {f}" for f in verdict.failures]
     lines += [
         "",
-        "repositoryRTBI is rewritten on a cron all day (rclone sync :07/:37, longi :15,",
-        "conformity :30), so this is usually transient — re-run a few minutes later, or:",
+        "repositoryRTBI is rewritten on a cron all day (rclone sync :07/:37, longi :40,",
+        "potrank :25/:55), so this is usually transient — re-run a few minutes later, or:",
         "  python preflight.py            # show this table without running anything",
         "  <entry point> --stale-ok       # run on the last good snapshot instead",
         "  <entry point> --live           # read the live repository unguarded (old behaviour)",
