@@ -575,7 +575,7 @@ def create_api_key() -> dict:
         "shown_once": "Save it now (a password manager or an environment variable). Do not share it: "
                       "every download made with it is logged under your name.",
         "use": "Send it with each download: header 'Authorization: Bearer <api_key>' (or 'X-API-Key: "
-               "<api_key>'), e.g.  curl -H 'Authorization: Bearer $POTENTIALS_KEY' -O <download_url>",
+               "<api_key>'), e.g.  curl -H \"Authorization: Bearer $POTENTIALS_KEY\" -O \"<download_url>\"",
         "replaces": "Any key you had before no longer works.",
     }
 
