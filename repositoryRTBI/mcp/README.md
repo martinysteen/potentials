@@ -12,9 +12,9 @@ Example prompt in any connected chat:
 |---|---|
 | `list_datasets` | Every dataset with a one-line meaning; `matrix` = time series, `table` = rows |
 | `search_tickers` | Company name / sector / GICS / country → ticker (from Stamdata) |
-| `get_series` | Time series for tickers, as dates oldest-first; `freq` D/W/M, `transform` level/pct_change; `tickers=["*"]` = every row. Up to 6000 values inline; more → newest dates inline + `download_url` for the complete CSV (`download=true` forces the link) |
+| `get_series` | Time series for tickers, as dates oldest-first; `freq` D/W/M, `transform` level/pct_change; `tickers=["*"]` = every row. Up to 6000 values inline; more → newest dates inline + `download_url` for the complete CSV. `download=true` = file only: the link, the totals and a 10-date × 10-ticker preview, not the data (scripts/agents) |
 | `plot_series` | Same as `get_series`, returns a PNG chart plus the numbers |
-| `get_table` | Rows from Stamdata, potrank2, Google, StrategicStocks, across, Yfinance, StockData2_stacked; up to `limit` (≤300) rows inline, the complete selection as `download_url` when there are more (or `download=true`) |
+| `get_table` | Rows from Stamdata, potrank2, Google, StrategicStocks, across, Yfinance, StockData2_stacked; up to `limit` (≤300) rows inline, the complete selection as `download_url` when there are more. `download=true` = file only, with a 10-row preview |
 | `create_api_key` | The member's personal download key, shown once; calling it again replaces the old one |
 | `tunnel_report` | Price-tunnel report for 1-200 tickers and an end date: CSV + PDF + PNG in a folder, returns links (valid 7 days) and the table |
 | `tunnel_history` | Search the full tunnel history (every trading day x every ticker, ~0.9M rows): filters across all tickers and dates, then up to 500 rows or a count+mean summary per date/month/ticker/status; always reports `rows_matched` |

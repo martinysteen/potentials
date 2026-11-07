@@ -47,6 +47,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 MAX_POINTS = 6000      # tickers x dates returned by get_series / plot_series
 MAX_ROWS = 300         # rows returned by get_table
+PREVIEW_ROWS = 10      # inline preview (dates / tickers / rows) when download=true: the file is the answer
 MAX_PLOT_SERIES = 8
 
 CONVENTIONS = """\
@@ -76,7 +77,7 @@ INSTRUCTIONS = ("Read-only access to the Potentials stock-analysis repository: d
                 "potentials://conventions before interpreting per/future_per tables.\n\n"
                 + "\n\nBig answers: get_series, get_table and tunnel_history return small results inline; "
                 "when the result is bigger than the inline limit (or download=true) they also return "
-                "download_url - the COMPLETE result as a CSV. Fetching it needs the member's personal API "
+                "download_url - the COMPLETE result as a CSV (download=true = file only, with a 10-row preview). Fetching it needs the member's personal API "
                 "key (create_api_key tool) as 'Authorization: Bearer <key>'.\n\n"
                 + CONVENTIONS)
 
@@ -292,7 +293,9 @@ def get_series(
                dates). Bigger results are cut to the NEWEST dates inline (truncated=true) and the
                COMPLETE result is offered as download_url - a CSV (dates oldest first, one column
                per ticker) for callers that can fetch files or run code; the fetch needs the
-               member's API key (create_api_key). true = always offer the CSV, e.g. for scripts.
+               member's API key (create_api_key). true = the file is the answer, for scripts and
+               agents: the reply carries download_url, the totals and only a PREVIEW (newest 10
+               dates, first 10 tickers), not the data itself.
     """
     try:
         sub, ds = _series_frame(dataset, tickers, start, end, freq, transform, limit=False)
@@ -300,7 +303,9 @@ def get_series(
         _fail(exc)
     full = sub
     truncated = sub.size > MAX_POINTS
-    if truncated:                       # whole dates, newest ones
+    if download:                        # file is the answer: only a small preview inline
+        sub = sub.iloc[-PREVIEW_ROWS:, :PREVIEW_ROWS]
+    elif truncated:                     # whole dates, newest ones
         sub = sub.tail(max(1, MAX_POINTS // max(1, len(sub.columns))))
     res = {
         "dataset": ds.name,
@@ -312,9 +317,15 @@ def get_series(
         "last_period_partial": full.attrs["partial_last"],   # True = latest W/M point is to-date, not complete
         # tickers whose newest value is a carried copy (market not traded yet / closed)
         "provisional_newest": catalog.carried_newest(ds, list(full.columns)),
-        "truncated": truncated,
+        "truncated": truncated or (download and sub.shape != full.shape),
+        "dates_total": len(full),
+        "tickers_total": len(full.columns),
     }
-    if truncated:
+    if download:
+        res["note"] = (f"download=true: the complete result ({len(full)} dates x {len(full.columns)} tickers) "
+                       f"is in download_url; only a preview is shown here (newest {len(sub)} dates, "
+                       f"first {len(sub.columns)} tickers).")
+    elif truncated:
         res["note"] = (f"Only the newest {len(sub)} of {len(full)} dates are shown ({full.size} values "
                        f"exceed the inline limit of {MAX_POINTS}). The complete result is in download_url.")
     if truncated or download:
@@ -405,7 +416,8 @@ def get_table(
     download: false (default) = rows beyond `limit` are not shown, but when there are any the
               reply carries download_url: the COMPLETE selection (your tickers/columns) as a
               CSV for callers that can fetch files or run code; the fetch needs the member's
-              API key (create_api_key). true = always offer the CSV, e.g. for scripts.
+              API key (create_api_key). true = the file is the answer, for scripts and agents:
+              download_url, rows_total and only a PREVIEW of the first 10 rows inline.
     """
     try:
         ds = catalog.get(dataset)
@@ -422,6 +434,8 @@ def get_table(
     except DataError as exc:
         _fail(exc)
     limit = max(1, min(limit, MAX_ROWS))
+    if download:
+        limit = min(limit, PREVIEW_ROWS)        # the file is the answer: preview only
     total = len(df)
     shown = df.head(limit)
     res = {
@@ -434,7 +448,8 @@ def get_table(
     }
     if total > len(shown) or download:
         if total > len(shown):
-            res["note"] = (f"Only the first {len(shown)} of {total} rows are shown. "
+            res["note"] = (f"Only the first {len(shown)} of {total} rows are shown"
+                           f"{' (download=true: preview only)' if download else ''}. "
                            "The complete selection is in download_url.")
         out = df.copy()
         out.index.name = "key"          # the file's own header cell can be a creation stamp

@@ -149,8 +149,21 @@ async def main():
               and abs(got[ten[0]].iloc[-1] - r["series"][ten[0]][-1]) < 1e-3, f"{len(got)} dates x {got.shape[1]}")
         r = (await c.call_tool("get_series", {"dataset": "longi_price", "tickers": ["MSFT"], "start": "2026-09",
                                               "download": True})).data
-        check("get_series download=true while small", r["truncated"] is False and "download_url" in r
-              and len(pd.read_csv(exp_path(r["download_url"]))) == len(r["dates"]), r["download_url"][-40:])
+        full = pd.read_csv(exp_path(r["download_url"]))
+        check("get_series download=true = file + 10-date preview only",
+              len(r["dates"]) == 10 and len(full) == r["dates_total"] > 10 and r["tickers_total"] == 1
+              and r["truncated"] is True and r["dates"] == list(full["date"].iloc[-10:])
+              and "note" in r and "download_url" in r, f"{len(r['dates'])} inline of {len(full)}")
+        r = (await c.call_tool("get_series", {"dataset": "PotDat", "tickers": ten, "download": True})).data
+        full = pd.read_csv(exp_path(r["download_url"]), index_col="date")
+        n_vals = len(r["dates"]) * len(r["series"])
+        check("get_series download=true caps tickers x dates in the reply",
+              len(r["series"]) == 10 and n_vals <= 100 and full.shape == (r["dates_total"], 10), f"{n_vals} values inline")
+        r = (await c.call_tool("get_series", {"dataset": "longi_price", "tickers": ["*"], "freq": "M",
+                                              "download": True})).data
+        n_vals = len(r["dates"]) * len(r["series"])
+        check("get_series ['*'] download=true stays small", n_vals <= 100 and r["tickers_total"] > 1000
+              and "download_url" in r, f"{n_vals} values inline, {r['tickers_total']} tickers in the file")
         r = (await c.call_tool("get_series", {"dataset": "longi_price", "tickers": ["MSFT"], "start": "2026-09"})).data
         check("get_series small = inline only", "download_url" not in r and r["truncated"] is False)
         r = (await c.call_tool("get_series", {"dataset": "longi_price", "tickers": ["*"], "freq": "M"})).data
@@ -166,6 +179,11 @@ async def main():
         got = pd.read_csv(exp_path(r["download_url"]))
         check("get_table download=true with selection", len(got) == 1 and list(got.columns) == ["key", "Name"]
               and "note" not in r, str(list(got.columns)))
+        r = (await c.call_tool("get_table", {"dataset": "Stamdata", "limit": 200, "download": True})).data
+        got = pd.read_csv(exp_path(r["download_url"]))
+        check("get_table download=true = 10-row preview + complete file",
+              r["rows_returned"] == 10 and len(r["rows"]) == 10 and len(got) == r["rows_total"] > 10
+              and "preview only" in r["note"], f"{r['rows_returned']} inline of {len(got)}")
 
         r = (await c.call_tool("tunnel_report", {"tickers": ["msft", "MU"], "end_date": "2026-09-30",
                                                  "name": "smoke"})).data
