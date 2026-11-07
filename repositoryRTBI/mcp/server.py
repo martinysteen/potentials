@@ -77,8 +77,9 @@ INSTRUCTIONS = ("Read-only access to the Potentials stock-analysis repository: d
                 "potentials://conventions before interpreting per/future_per tables.\n\n"
                 + "\n\nBig answers: get_series, get_table and tunnel_history return small results inline; "
                 "when the result is bigger than the inline limit (or download=true) they also return "
-                "download_url - the COMPLETE result as a CSV (download=true = file only, with a 10-row preview). Fetching it needs the member's personal API "
-                "key (create_api_key tool) as 'Authorization: Bearer <key>'.\n\n"
+                "download_url - the COMPLETE result as a CSV (download=true = file only, with a 10-row preview). The link is "
+                "tied to the member who asked: they can open it in a browser, no key needed. Scripts may also send "
+                "the member's personal API key (create_api_key tool) as 'Authorization: Bearer <key>'.\n\n"
                 + CONVENTIONS)
 
 
@@ -133,6 +134,13 @@ class AllowlistMiddleware(Middleware):
             log.info("call %s %s %s", email, context.message.name, context.message.arguments)
         return await call_next(context)
 
+
+def _caller_email() -> str | None:
+    token = get_access_token()
+    return (token.claims.get("email") or "").lower() or None if token else None
+
+
+exports.caller_email = lambda: _caller_email()     # late lookup: tests patch get_access_token
 
 _auth = _build_auth()
 mcp = FastMCP("Potentials", instructions=INSTRUCTIONS, auth=_auth,
@@ -292,8 +300,8 @@ def get_series(
     download:  false (default) = the data comes inline when it is at most 6000 values (tickers x
                dates). Bigger results are cut to the NEWEST dates inline (truncated=true) and the
                COMPLETE result is offered as download_url - a CSV (dates oldest first, one column
-               per ticker) for callers that can fetch files or run code; the fetch needs the
-               member's API key (create_api_key). true = the file is the answer, for scripts and
+               per ticker); the link is tied to the member and opens in a browser, no key
+               needed. true = the file is the answer, for scripts and
                agents: the reply carries download_url, the totals and only a PREVIEW (newest 10
                dates, first 10 tickers), not the data itself.
     """
@@ -415,8 +423,8 @@ def get_table(
     limit:   rows shown inline, 1-300.
     download: false (default) = rows beyond `limit` are not shown, but when there are any the
               reply carries download_url: the COMPLETE selection (your tickers/columns) as a
-              CSV for callers that can fetch files or run code; the fetch needs the member's
-              API key (create_api_key). true = the file is the answer, for scripts and agents:
+              CSV; the link is tied to the member and opens in a browser, no key needed.
+              true = the file is the answer, for scripts and agents:
               download_url, rows_total and only a PREVIEW of the first 10 rows inline.
     """
     try:
@@ -526,9 +534,8 @@ def tunnel_history(
     sort:      column name, "-" in front for descending (e.g. "-length_td"). Without it rows are
                in date order, and when there are more matches than `limit` the NEWEST ones are shown.
     limit:     rows to show, 1-500. When more rows match, the reply carries download_url: the
-               COMPLETE result as a CSV (standard comma/point) for callers that can fetch files or
-               run code - the fetch needs the member's API key (create_api_key); chat-only
-               callers should narrow the filter or use summarize.
+               COMPLETE result as a CSV (standard comma/point); the link is tied to the member and
+               opens in a browser, no key needed.
     summarize: instead of rows, count + mean per date / month / ticker / status (means of
                `columns`, default length_td, width_pct, slope20_pct, close_pos). Use this for
                "how many ... per month" style questions.
@@ -554,9 +561,10 @@ def tunnel_history(
 
 @mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": False})
 def create_api_key() -> dict:
-    """Create YOUR personal API key for downloading complete CSV results (download_url from
-    get_series, get_table, tunnel_history). Shown ONCE - it cannot be shown again, so save it
-    now. Calling this again replaces the old key, which stops working at once (use that if a key
+    """Create YOUR personal API key. Most members never need one: download_url links (from
+    get_series, get_table, tunnel_history) are tied to your account and open in a browser as they
+    are. The key is for scripts and agents that want to authenticate downloads themselves. Shown
+    ONCE - it cannot be shown again; the reply has one-line commands that store it. Calling this again replaces the old key, which stops working at once (use that if a key
     is lost or leaked). The key belongs to the Google account you signed in with; it stops working
     the moment that account is removed from the allowlist.
     """
@@ -572,11 +580,20 @@ def create_api_key() -> dict:
     return {
         "api_key": key,
         "belongs_to": email,
-        "shown_once": "Save it now (a password manager or an environment variable). Do not share it: "
+        "shown_once": "It cannot be shown again. Store it now with ONE of the commands in `store_it` "
+                      "(paste into a terminal), and keep a copy in your password manager. Do not share it: "
                       "every download made with it is logged under your name.",
-        "use": "Send it with each download: header 'Authorization: Bearer <api_key>' (or 'X-API-Key: "
-               "<api_key>'), e.g.  curl -H \"Authorization: Bearer $POTENTIALS_KEY\" -O \"<download_url>\"",
+        "store_it": {
+            "linux": f"echo 'export POTENTIALS_KEY={key}' >> ~/.bashrc",
+            "macos": f"echo 'export POTENTIALS_KEY={key}' >> ~/.zshrc",
+            "windows": f"setx POTENTIALS_KEY {key}",
+            "then": "Open a new terminal; scripts read it as $POTENTIALS_KEY (os.environ['POTENTIALS_KEY']).",
+        },
+        "use": "Download links open in a browser without the key. In scripts, send it with the download: "
+               "curl -H \"Authorization: Bearer $POTENTIALS_KEY\" -O \"<download_url>\"  "
+               "(header 'X-API-Key' works too).",
         "replaces": "Any key you had before no longer works.",
+        "show_user": "Show the user api_key and the store_it command for their system, verbatim.",
     }
 
 
@@ -591,27 +608,34 @@ def _client_ip(request: Request) -> str:
 
 @mcp.custom_route("/dl/{token}/{name}", methods=["GET"])
 async def download(request: Request):
-    """GET /dl/<token>/<name>.csv with the member's API key. The link alone is useless: the key
-    is checked against the allowlist as it stands now, on every fetch, and every fetch is logged
-    with the member's email."""
+    """GET /dl/<token>/<name>.csv. Without a key the link is served while the member who made it
+    is on the allowlist (a click in a browser). With a key (Authorization: Bearer / X-API-Key) the
+    KEY's owner must be on it, and a wrong key is refused, never ignored. The allowlist is read as
+    it stands now, on every fetch; every fetch is logged with the email it was served under."""
     auth = request.headers.get("authorization", "")
     key = auth[7:].strip() if auth.lower().startswith("bearer ") else request.headers.get("x-api-key", "").strip()
     ip = _client_ip(request)
-    try:
-        email = exports.owner_of(key)
-    except exports.ExportError:
-        return PlainTextResponse("Service error.", status_code=503)
-    if not email or email not in _allowed_now():
-        log.warning("download refused: %s key=%s ip=%s %s", email or "<no valid key>",
-                    "present" if key else "absent", ip, request.url.path)
-        return PlainTextResponse("API key missing, invalid or revoked. Get one with the create_api_key "
-                                 "tool, then send it as 'Authorization: Bearer <key>'.", status_code=401)
     path = exports.resolve(request.path_params["token"], request.path_params["name"])
     if path is None:
-        log.info("download not found: %s %s", email, request.url.path)
+        log.info("download not found: key=%s ip=%s %s", "present" if key else "absent", ip, request.url.path)
         return PlainTextResponse("Not found, or expired (links last "
                                  f"{exports.TTL_HOURS} hours). Ask for the result again.", status_code=404)
-    log.info("download %s %s %d bytes ip=%s", email, path.name, path.stat().st_size, ip)
+    if key:
+        try:
+            email = exports.owner_of(key)
+        except exports.ExportError:
+            return PlainTextResponse("Service error.", status_code=503)
+        via = "key"
+    else:
+        email, via = exports.link_owner(path), "link"
+    if not email or email not in _allowed_now():
+        log.warning("download refused: %s via=%s ip=%s %s", email or ("<no valid key>" if key else "<no owner>"), via, ip, request.url.path)
+        msg = ("API key invalid or revoked. Get a new one with the create_api_key tool, or open the link "
+               "without a key." if key else
+               "This link's owner no longer has access. Ask sm@innovia.dk." if email else
+               "This link needs an API key: send it as 'Authorization: Bearer <key>' (create_api_key tool).")
+        return PlainTextResponse(msg, status_code=401)
+    log.info("download %s via=%s %s %d bytes ip=%s", email, via, path.name, path.stat().st_size, ip)
     return FileResponse(path, media_type="text/csv", filename=path.name,
                         headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex"})
 

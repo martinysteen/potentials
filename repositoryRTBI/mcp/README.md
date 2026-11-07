@@ -15,7 +15,7 @@ Example prompt in any connected chat:
 | `get_series` | Time series for tickers, as dates oldest-first; `freq` D/W/M, `transform` level/pct_change; `tickers=["*"]` = every row. Up to 6000 values inline; more → newest dates inline + `download_url` for the complete CSV. `download=true` = file only: the link, the totals and a 10-date × 10-ticker preview, not the data (scripts/agents) |
 | `plot_series` | Same as `get_series`, returns a PNG chart plus the numbers |
 | `get_table` | Rows from Stamdata, potrank2, Google, StrategicStocks, across, Yfinance, StockData2_stacked; up to `limit` (≤300) rows inline, the complete selection as `download_url` when there are more. `download=true` = file only, with a 10-row preview |
-| `create_api_key` | The member's personal download key, shown once; calling it again replaces the old one |
+| `create_api_key` | Optional personal key for scripts (links open without it), shown once with copy-paste store commands; calling it again replaces the old one |
 | `tunnel_report` | Price-tunnel report for 1-200 tickers and an end date: CSV + PDF + PNG in a folder, returns links (valid 7 days) and the table |
 | `tunnel_history` | Search the full tunnel history (every trading day x every ticker, ~0.9M rows): filters across all tickers and dates, then up to 500 rows or a count+mean summary per date/month/ticker/status; always reports `rows_matched` |
 
@@ -44,15 +44,24 @@ Refused users and every tool call (with email) are logged: `sudo journalctl -u r
 ### Downloads and API keys (2026-11-07)
 `get_series`, `get_table` and `tunnel_history` hand over the COMPLETE result as a CSV
 (`https://mcp.innovia.dk/dl/<token>/<name>.csv`, standard comma/point, deleted after 24 h).
-The link alone is worthless: the fetch needs the member's personal key, `Authorization: Bearer
-<key>` (or `X-API-Key`), so scripts and agents can use it. The route (`server.py::download`)
-checks on **every** fetch that the key's owner is on the allowlist **as `.env` says right now**
-(no restart needed) and logs `download <email> <file> <bytes> ip=…`.
+Each link is **tied to the member whose tool call made it** (their email in the export folder's
+`.owner` file, never in the URL), and the route (`server.py::download`) serves it two ways
+(2026-11-07, links used to need a key):
+- **Link alone** (a click in a browser): served while the link's owner is on the allowlist.
+- **With a key** (`Authorization: Bearer <key>` or `X-API-Key`), for scripts and agents: served
+  while the key's owner is on the allowlist. A wrong key is refused, never ignored. A link with no
+  owner (made without a signed-in caller) needs a key.
 
-- **Member gets a key:** signs in to the connector, asks for `create_api_key`. Only the sha256 is
+The allowlist is read **as `.env` says right now** on every fetch (no restart needed); each fetch
+is logged `download <email> via=link|key <file> <bytes> ip=…`. Trade-off: a leaked link works for
+whoever holds it until it expires (24 h) or its owner is removed; the data is read-only.
+
+- **Member gets a key** (only for scripts; chat users never need one): asks for `create_api_key`.
+  The reply carries one-line `store_it` commands (Linux / macOS / Windows) that put it in
+  `$POTENTIALS_KEY`. Only the sha256 is
   stored (`~/.config/potentials/mcp_keys.json`, outside the repo); a lost key is replaced, not recovered.
-- **Member leaves:** delete their email from `RTBI_MCP_ALLOWED_EMAILS` in `.env` (their downloads die
-  at once, every link they ever made too), then `sudo systemctl restart rtbi-mcp` to end their MCP
+- **Member leaves:** delete their email from `RTBI_MCP_ALLOWED_EMAILS` in `.env` (every link they ever made
+  and their key die at once), then `sudo systemctl restart rtbi-mcp` to end their MCP
   access, and `python exports.py revoke <email>` to drop the key. `python exports.py list` shows who has one.
 - Not covered: data a member already downloaded; `tunnel_report` links (PDF/PNG folders under
   `innovia.dk/tunnel-reports`) are still public bearer links, 7 days.

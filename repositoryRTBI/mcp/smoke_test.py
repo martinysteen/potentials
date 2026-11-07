@@ -276,7 +276,11 @@ async def main():
     server.get_access_token = lambda: SimpleNamespace(claims={"email": "Allowed@Example.com"})
     async with Client(mcp) as c:
         key1 = (await c.call_tool("create_api_key", {})).data["api_key"]
-        key2 = (await c.call_tool("create_api_key", {})).data["api_key"]
+        made = (await c.call_tool("create_api_key", {})).data
+        key2 = made["api_key"]
+    check("create_api_key: copy-paste store commands carry the key",
+          all(key2 in made["store_it"][k] for k in ("linux", "macos", "windows"))
+          and "\"Authorization: Bearer $POTENTIALS_KEY\"" in made["use"])
     check("create_api_key: owner found, re-issue replaces",
           exports.owner_of(key2) == "allowed@example.com" and exports.owner_of(key1) is None and key1 != key2)
     stored = Path(os.environ["RTBI_MCP_KEYS"]).read_text()
@@ -289,8 +293,13 @@ async def main():
     server._allowed_now = lambda: {"allowed@example.com"}
     bearer = {"Authorization": f"Bearer {key2}"}
 
-    check("download: no key = 401", web.get(url).status_code == 401)
-    check("download: wrong key = 401", web.get(url, headers={"Authorization": "Bearer pk_nope"}).status_code == 401)
+    token_dir = exp_path(link).parent
+    check("export stamped with its owner", (token_dir / exports.OWNER_FILE).read_text() == "allowed@example.com")
+    r = web.get(url)
+    check("download: link alone, owner allowed = 200 + the file",
+          r.status_code == 200 and r.text.strip().splitlines() == ["a", "1.5", "2.5"], str(r.status_code))
+    check("download: .owner file is not served", web.get(url.rsplit("/", 1)[0] + "/.owner").status_code in (400, 404))
+    check("download: wrong key = 401 (not ignored)", web.get(url, headers={"Authorization": "Bearer pk_nope"}).status_code == 401)
     check("download: old (replaced) key = 401", web.get(url, headers={"Authorization": f"Bearer {key1}"}).status_code == 401)
     r = web.get(url, headers=bearer)
     check("download: member key = 200 + the file", r.status_code == 200 and r.text.strip().splitlines() == ["a", "1.5", "2.5"],
@@ -304,10 +313,23 @@ async def main():
     check("download: expired = 404", web.get(url, headers=bearer).status_code == 404)
     os.utime(exp_path(link), (old, old))
     server._allowed_now = lambda: set()
-    check("download: member removed from allowlist = 401 at once", web.get(url, headers=bearer).status_code == 401)
+    check("download: member removed from allowlist = 401 at once (key and link)",
+          web.get(url, headers=bearer).status_code == 401 and web.get(url).status_code == 401)
     server._allowed_now = lambda: {"allowed@example.com"}
-    check("download: back on the list = 200", web.get(url, headers=bearer).status_code == 200)
-    check("revoke", exports.revoke("allowed@example.com") and web.get(url, headers=bearer).status_code == 401)
+    check("download: back on the list = 200", web.get(url, headers=bearer).status_code == 200
+          and web.get(url).status_code == 200)
+    server._allowed_now = lambda: {"allowed@example.com", "other@example.com"}
+    server.get_access_token = lambda: SimpleNamespace(claims={"email": "other@example.com"})
+    other = exports.write_csv(pd.DataFrame({"b": [1]}), "other")["download_url"].replace("https://mcp.example.test", "")
+    server._allowed_now = lambda: {"allowed@example.com"}
+    check("download: link follows ITS owner (other removed = 401, allowed's key still works)",
+          web.get(other).status_code == 401 and web.get(other, headers=bearer).status_code == 200)
+    server.get_access_token = lambda: None
+    orphan = exports.write_csv(pd.DataFrame({"c": [1]}), "orphan")["download_url"].replace("https://mcp.example.test", "")
+    check("download: link without owner needs a key", web.get(orphan).status_code == 401
+          and web.get(orphan, headers=bearer).status_code == 200)
+    check("revoke", exports.revoke("allowed@example.com") and web.get(url, headers=bearer).status_code == 401
+          and web.get(url).status_code == 200)
     shutil.rmtree(os.environ["RTBI_MCP_EXPORT_DIR"], ignore_errors=True)
     Path(os.environ["RTBI_MCP_KEYS"]).unlink(missing_ok=True)
 

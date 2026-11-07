@@ -6,10 +6,14 @@ the COMPLETE result is written here as a CSV and the tool replies with a downloa
 
     https://mcp.innovia.dk/dl/<random token>/<name>.csv
 
-The link alone is worthless. The download route in server.py demands a personal API key
-(`Authorization: Bearer <key>` or `X-API-Key: <key>`) and checks, on EVERY fetch, that the key's
-owner is still on the allowlist. So a stranger holding a link gets nothing, and a member removed
-from the allowlist (or whose key is revoked) loses every link they ever made, at once.
+Each link belongs to the member whose tool call made it (their email sits in the export's
+folder as `.owner`, never in the URL). The download route in server.py serves it either way:
+  - the link alone (a click in a browser): allowed while the link's OWNER is on the allowlist;
+  - with a personal API key (`Authorization: Bearer <key>` or `X-API-Key: <key>`): allowed while
+    the KEY's owner is on the allowlist - for scripts and agents; a wrong key is refused.
+The allowlist is read as it stands now, on EVERY fetch, so a member removed from it loses every
+link they ever made, at once. A link with no owner (made without a signed-in caller) needs a key.
+A leaked link works for whoever holds it until it expires (TTL_HOURS) or its owner is removed.
 
 Where things live (both outside the repo: ~/git_pot.sh at 03:40 pushes uncommitted repo files):
     keys      ~/.config/potentials/mcp_keys.json   {email: {"hash": sha256, "created": iso}}
@@ -39,6 +43,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 import pandas as pd
 
@@ -46,6 +51,11 @@ TTL_HOURS = 24
 MAX_CELLS = 20_000_000          # rows x columns of one export (the full tunnel history is ~6M)
 _TOKEN = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 _NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,120}$")
+OWNER_FILE = ".owner"
+
+# Who is calling right now (the signed-in member's email, lower case) - server.py sets this to
+# read the OAuth token. Every export is stamped with it; None = no identity, the link needs a key.
+caller_email: Callable[[], str | None] = lambda: None
 
 
 class ExportError(Exception):
@@ -92,11 +102,15 @@ def write_csv(frame: pd.DataFrame, basename: str, index: bool = False, index_lab
     folder.mkdir()
     name = re.sub(r"[^A-Za-z0-9_.-]", "_", basename) + ".csv"
     frame.to_csv(folder / name, index=index, index_label=index_label)
+    owner = (caller_email() or "").strip().lower()
+    if owner:
+        (folder / OWNER_FILE).write_text(owner, encoding="utf-8")
     return {"download_url": f"{base_url()}/dl/{token}/{name}",
             "download_note": f"{what} ({len(frame)} rows x {len(frame.columns) + bool(index)} columns) "
-                             "as a standard CSV (comma, decimal point). Fetching it needs your personal API key as "
-                             "'Authorization: Bearer <key>' (or header 'X-API-Key'); get one with the "
-                             f"create_api_key tool. The link expires after {TTL_HOURS} hours."}
+                             "as a standard CSV (comma, decimal point). Give the link to the user to open in a "
+                             "browser - no key needed, it is tied to their account. Scripts and agents fetching "
+                             "it can also send the member's API key as 'Authorization: Bearer <key>' "
+                             f"(create_api_key tool). The link expires after {TTL_HOURS} hours."}
 
 
 def resolve(token: str, name: str) -> Path | None:
@@ -110,6 +124,14 @@ def resolve(token: str, name: str) -> Path | None:
     except OSError:
         return None
     return p
+
+
+def link_owner(path: Path) -> str | None:
+    """The email of the member who made the export at `path` (a resolve() result), or None."""
+    try:
+        return (path.parent / OWNER_FILE).read_text(encoding="utf-8").strip().lower() or None
+    except OSError:
+        return None
 
 
 # --------------------------------------------------------------------------- #

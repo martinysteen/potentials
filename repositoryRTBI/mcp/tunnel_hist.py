@@ -197,8 +197,8 @@ def _present(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _export(frame: pd.DataFrame, n: int) -> dict:
-    """The COMPLETE result as a CSV behind the authenticated /dl/ route (exports.py): the link
-    needs a member's API key. Standard CSV: comma, decimal point."""
+    """The COMPLETE result as a CSV behind the /dl/ route (exports.py): the link is tied to the
+    member who asked, re-checked against the allowlist on every fetch. Standard CSV: comma, decimal point."""
     try:
         return exports.write_csv(frame, f"tunnel_history_{n}rows",
                                  what=f"All {n} matching rows, columns as above, same order as the rows here")
