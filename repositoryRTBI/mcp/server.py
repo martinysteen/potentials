@@ -25,14 +25,17 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd  # noqa: E402
-from dotenv import load_dotenv  # noqa: E402
+from dotenv import dotenv_values, load_dotenv  # noqa: E402
 from fastmcp import FastMCP  # noqa: E402
 from fastmcp.exceptions import ToolError  # noqa: E402
 from fastmcp.server.dependencies import get_access_token  # noqa: E402
 from fastmcp.server.middleware import Middleware, MiddlewareContext  # noqa: E402
 from fastmcp.utilities.types import Image  # noqa: E402
+from starlette.requests import Request  # noqa: E402
+from starlette.responses import FileResponse, PlainTextResponse  # noqa: E402
 
 import catalog  # noqa: E402
+import exports  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tunnel" / "app" / "code"))
 import tunnel_ondemand  # noqa: E402  (stdlib + pandas only; runs tunnel_diag.py as a subprocess)
 import tunnel_hist  # noqa: E402
@@ -71,6 +74,10 @@ INSTRUCTIONS = ("Read-only access to the Potentials stock-analysis repository: d
                 "(Stamdata), rankings (potrank2), today's strategy picks (StrategicStocks) and "
                 "yFinance fundamentals. Start with list_datasets; read resource "
                 "potentials://conventions before interpreting per/future_per tables.\n\n"
+                + "\n\nBig answers: get_series, get_table and tunnel_history return small results inline; "
+                "when the result is bigger than the inline limit (or download=true) they also return "
+                "download_url - the COMPLETE result as a CSV. Fetching it needs the member's personal API "
+                "key (create_api_key tool) as 'Authorization: Bearer <key>'.\n\n"
                 + CONVENTIONS)
 
 
@@ -92,7 +99,23 @@ def _build_auth():
     )
 
 
-ALLOWED = {e.strip().lower() for e in os.environ.get("RTBI_MCP_ALLOWED_EMAILS", "").split(",") if e.strip()}
+def _parse_emails(text: str) -> set[str]:
+    return {e.strip().lower() for e in (text or "").split(",") if e.strip()}
+
+
+ALLOWED = _parse_emails(os.environ.get("RTBI_MCP_ALLOWED_EMAILS", ""))
+
+
+def _allowed_now() -> set[str]:
+    """The allowlist as .env says RIGHT NOW (downloads must not wait for a restart: removing a
+    member from .env kills their downloads at once). Falls back to the startup list."""
+    env = Path(__file__).parent / ".env"
+    try:
+        if env.exists():
+            return _parse_emails(dotenv_values(env).get("RTBI_MCP_ALLOWED_EMAILS", ""))
+    except OSError:
+        pass
+    return ALLOWED
 
 
 class AllowlistMiddleware(Middleware):
@@ -136,15 +159,17 @@ def _parse_date(value: Optional[str], end: bool) -> Optional[pd.Timestamp]:
 
 
 def _series_frame(dataset: str, tickers: list[str], start: Optional[str], end: Optional[str],
-                  freq: str, transform: str) -> tuple[pd.DataFrame, catalog.Dataset]:
-    """Long-history frame: index = dates oldest-first, one column per ticker."""
+                  freq: str, transform: str, limit: bool = True) -> tuple[pd.DataFrame, catalog.Dataset]:
+    """Long-history frame: index = dates oldest-first, one column per ticker.
+    limit=False (get_series) skips the MAX_POINTS cap - the caller then truncates the inline
+    part and offers the whole frame as a download."""
     ds = catalog.get(dataset)
     if ds.kind != "matrix":
         raise DataError(f"'{ds.name}' is a table, not a time series - use get_table.")
     if not tickers:
         raise DataError("Give at least one ticker.")
     df = catalog.load(ds)
-    rows = catalog.resolve_rows(df, tickers)
+    rows = list(df.index) if [t.strip() for t in tickers] == ["*"] else catalog.resolve_rows(df, tickers)
     cal = catalog.calendar()
     sub = df.loc[rows].T
     sub.index = [cal.get(int(d), pd.NaT) for d in sub.index]
@@ -180,7 +205,7 @@ def _series_frame(dataset: str, tickers: list[str], start: Optional[str], end: O
     sub = sub.dropna(how="all")
     if sub.empty:
         raise DataError("No data in that date range.")
-    if sub.size > MAX_POINTS:
+    if limit and sub.size > MAX_POINTS:
         raise DataError(f"{sub.size} values requested (limit {MAX_POINTS}). Narrow the date range, "
                         "use fewer tickers, or resample with freq='W' or 'M'.")
     sub.attrs["partial_last"] = partial_label is not None and sub.index[-1] == partial_label
@@ -252,31 +277,58 @@ def get_series(
     end: Optional[str] = None,
     freq: Literal["D", "W", "M"] = "D",
     transform: Literal["level", "pct_change"] = "level",
+    download: bool = False,
 ) -> dict:
     """Time series for one or more tickers from a matrix dataset, oldest date first.
 
     dataset:   e.g. "longi_price" (closing prices), "longi_rsi", "longi_per20d" - see list_datasets.
     tickers:   e.g. ["MSFT", "MU"]; for longi_grp_* datasets these are sector names.
+               ["*"] = every row of the dataset (use with download).
     start/end: "YYYY-MM-DD" or "YYYY-MM" (inclusive). Default: full history (~2.7 years).
     freq:      D = every trading day, W = last value of each week, M = last value of each month.
     transform: level = the values as stored; pct_change = % change from the previous point
                (with freq="M" on a price dataset this is the monthly gain in %).
+    download:  false (default) = the data comes inline when it is at most 6000 values (tickers x
+               dates). Bigger results are cut to the NEWEST dates inline (truncated=true) and the
+               COMPLETE result is offered as download_url - a CSV (dates oldest first, one column
+               per ticker) for callers that can fetch files or run code; the fetch needs the
+               member's API key (create_api_key). true = always offer the CSV, e.g. for scripts.
     """
     try:
-        sub, ds = _series_frame(dataset, tickers, start, end, freq, transform)
+        sub, ds = _series_frame(dataset, tickers, start, end, freq, transform, limit=False)
     except DataError as exc:
         _fail(exc)
-    return {
+    full = sub
+    truncated = sub.size > MAX_POINTS
+    if truncated:                       # whole dates, newest ones
+        sub = sub.tail(max(1, MAX_POINTS // max(1, len(sub.columns))))
+    res = {
         "dataset": ds.name,
         "description": ds.description,
         "freq": freq,
         "transform": transform,
         "dates": [d.strftime("%Y-%m-%d") for d in sub.index],
         "series": {t: [_round(v) for v in sub[t].tolist()] for t in sub.columns},
-        "last_period_partial": sub.attrs["partial_last"],   # True = latest W/M point is to-date, not complete
+        "last_period_partial": full.attrs["partial_last"],   # True = latest W/M point is to-date, not complete
         # tickers whose newest value is a carried copy (market not traded yet / closed)
-        "provisional_newest": catalog.carried_newest(ds, list(sub.columns)),
+        "provisional_newest": catalog.carried_newest(ds, list(full.columns)),
+        "truncated": truncated,
     }
+    if truncated:
+        res["note"] = (f"Only the newest {len(sub)} of {len(full)} dates are shown ({full.size} values "
+                       f"exceed the inline limit of {MAX_POINTS}). The complete result is in download_url.")
+    if truncated or download:
+        out = full.copy()
+        out.index = out.index.strftime("%Y-%m-%d")
+        label = "_".join([ds.name, freq, transform])
+        if all(pd.api.types.is_numeric_dtype(t) for t in out.dtypes):
+            out = out.round(4)
+        try:
+            res.update(exports.write_csv(out, label, index=True, index_label="date",
+                                         what="The COMPLETE result, one row per date, one column per ticker"))
+        except exports.ExportError as exc:
+            raise ToolError(str(exc)) from exc
+    return res
 
 
 @mcp.tool(annotations={"readOnlyHint": True}, output_schema=None)  # image + text, not JSON
@@ -342,12 +394,18 @@ def get_table(
     tickers: Optional[list[str]] = None,
     columns: Optional[list[str]] = None,
     limit: int = 100,
+    download: bool = False,
 ) -> dict:
     """Rows from a table dataset: Stamdata, potrank2, Google, StrategicStocks, across,
     Yfinance, StockData2_stacked (see list_datasets).
 
     tickers: only these rows (first column of the file). Omit for all rows, capped at `limit`.
     columns: only these columns (call once without it to see which exist).
+    limit:   rows shown inline, 1-300.
+    download: false (default) = rows beyond `limit` are not shown, but when there are any the
+              reply carries download_url: the COMPLETE selection (your tickers/columns) as a
+              CSV for callers that can fetch files or run code; the fetch needs the member's
+              API key (create_api_key). true = always offer the CSV, e.g. for scripts.
     """
     try:
         ds = catalog.get(dataset)
@@ -365,15 +423,28 @@ def get_table(
         _fail(exc)
     limit = max(1, min(limit, MAX_ROWS))
     total = len(df)
-    df = df.head(limit)
-    return {
+    shown = df.head(limit)
+    res = {
         "dataset": ds.name,
         "description": ds.description,
         "key_column": str(catalog.load(ds).index.name),
         "rows_total": total,
-        "rows_returned": len(df),
-        "rows": [{"key": k, **{c: _round(v) for c, v in row.items()}} for k, row in df.iterrows()],
+        "rows_returned": len(shown),
+        "rows": [{"key": k, **{c: _round(v) for c, v in row.items()}} for k, row in shown.iterrows()],
     }
+    if total > len(shown) or download:
+        if total > len(shown):
+            res["note"] = (f"Only the first {len(shown)} of {total} rows are shown. "
+                           "The complete selection is in download_url.")
+        out = df.copy()
+        out.index.name = "key"          # the file's own header cell can be a creation stamp
+        out = out.apply(lambda s: s.round(4) if pd.api.types.is_float_dtype(s) else s)
+        try:
+            res.update(exports.write_csv(out, ds.name, index=True,
+                                         what="The COMPLETE selection, one row per key"))
+        except exports.ExportError as exc:
+            raise ToolError(str(exc)) from exc
+    return res
 
 
 @mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": False})
@@ -441,7 +512,8 @@ def tunnel_history(
                in date order, and when there are more matches than `limit` the NEWEST ones are shown.
     limit:     rows to show, 1-500. When more rows match, the reply carries download_url: the
                COMPLETE result as a CSV (standard comma/point) for callers that can fetch files or
-               run code; chat-only callers should narrow the filter or use summarize.
+               run code - the fetch needs the member's API key (create_api_key); chat-only
+               callers should narrow the filter or use summarize.
     summarize: instead of rows, count + mean per date / month / ticker / status (means of
                `columns`, default length_td, width_pct, slope20_pct, close_pos). Use this for
                "how many ... per month" style questions.
@@ -463,6 +535,70 @@ def tunnel_history(
         return tunnel_hist.query(tickers, start, end, where, columns, sort, limit, summarize, extended)
     except DataError as exc:
         _fail(exc)
+
+
+@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": False})
+def create_api_key() -> dict:
+    """Create YOUR personal API key for downloading complete CSV results (download_url from
+    get_series, get_table, tunnel_history). Shown ONCE - it cannot be shown again, so save it
+    now. Calling this again replaces the old key, which stops working at once (use that if a key
+    is lost or leaked). The key belongs to the Google account you signed in with; it stops working
+    the moment that account is removed from the allowlist.
+    """
+    token = get_access_token()
+    email = (token.claims.get("email") or "").lower() if token else ""
+    if not email:
+        raise ToolError("An API key can only be created over the signed-in connection.")
+    try:
+        key = exports.create_key(email)
+    except exports.ExportError as exc:
+        raise ToolError(str(exc)) from exc
+    log.info("api key created for %s", email)
+    return {
+        "api_key": key,
+        "belongs_to": email,
+        "shown_once": "Save it now (a password manager or an environment variable). Do not share it: "
+                      "every download made with it is logged under your name.",
+        "use": "Send it with each download: header 'Authorization: Bearer <api_key>' (or 'X-API-Key: "
+               "<api_key>'), e.g.  curl -H 'Authorization: Bearer $POTENTIALS_KEY' -O <download_url>",
+        "replaces": "Any key you had before no longer works.",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# authenticated download of complete results                                  #
+# --------------------------------------------------------------------------- #
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    return fwd.split(",")[0].strip() or (request.client.host if request.client else "?")
+
+
+@mcp.custom_route("/dl/{token}/{name}", methods=["GET"])
+async def download(request: Request):
+    """GET /dl/<token>/<name>.csv with the member's API key. The link alone is useless: the key
+    is checked against the allowlist as it stands now, on every fetch, and every fetch is logged
+    with the member's email."""
+    auth = request.headers.get("authorization", "")
+    key = auth[7:].strip() if auth.lower().startswith("bearer ") else request.headers.get("x-api-key", "").strip()
+    ip = _client_ip(request)
+    try:
+        email = exports.owner_of(key)
+    except exports.ExportError:
+        return PlainTextResponse("Service error.", status_code=503)
+    if not email or email not in _allowed_now():
+        log.warning("download refused: %s key=%s ip=%s %s", email or "<no valid key>",
+                    "present" if key else "absent", ip, request.url.path)
+        return PlainTextResponse("API key missing, invalid or revoked. Get one with the create_api_key "
+                                 "tool, then send it as 'Authorization: Bearer <key>'.", status_code=401)
+    path = exports.resolve(request.path_params["token"], request.path_params["name"])
+    if path is None:
+        log.info("download not found: %s %s", email, request.url.path)
+        return PlainTextResponse("Not found, or expired (links last "
+                                 f"{exports.TTL_HOURS} hours). Ask for the result again.", status_code=404)
+    log.info("download %s %s %d bytes ip=%s", email, path.name, path.stat().st_size, ip)
+    return FileResponse(path, media_type="text/csv", filename=path.name,
+                        headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex"})
 
 
 # --------------------------------------------------------------------------- #

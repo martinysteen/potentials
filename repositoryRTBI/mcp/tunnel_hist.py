@@ -18,6 +18,7 @@ import re
 
 import pandas as pd
 
+import exports
 from catalog import DATA, DataError, gatekeeper
 
 MAX_ROWS = 500
@@ -196,17 +197,10 @@ def _present(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _export(frame: pd.DataFrame, n: int) -> dict:
-    """The COMPLETE result as a CSV in a folder of its own, served read-only like tunnel_report's
-    (random token in the link, deleted after 7 days). Standard CSV: comma, decimal point."""
-    import secrets
-    import tunnel_ondemand as ondemand        # shares the served root, URL and the 7-day cleanup
-    ondemand.ROOT.mkdir(parents=True, exist_ok=True)
-    ondemand._cleanup(ondemand.ROOT)
-    folder = ondemand.ROOT / f"tunnel_history_{secrets.token_urlsafe(9)}"
-    folder.mkdir()
-    name = f"tunnel_history_{n}rows.csv"
-    frame.to_csv(folder / name, index=False)
-    return {"download_url": f"{ondemand.URL}/{folder.name}/{name}",
-            "download_note": f"All {n} matching rows, columns as above, standard CSV (comma, decimal "
-                             "point), same order as the rows here. The link works for anyone holding "
-                             "it and expires after 7 days."}
+    """The COMPLETE result as a CSV behind the authenticated /dl/ route (exports.py): the link
+    needs a member's API key. Standard CSV: comma, decimal point."""
+    try:
+        return exports.write_csv(frame, f"tunnel_history_{n}rows",
+                                 what=f"All {n} matching rows, columns as above, same order as the rows here")
+    except exports.ExportError as exc:
+        raise DataError(str(exc))

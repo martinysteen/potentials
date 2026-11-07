@@ -12,12 +12,24 @@ from pathlib import Path
 # load_dotenv() never overrides an existing variable, but would re-add a popped one from .env.
 os.environ["GOOGLE_CLIENT_ID"] = ""
 os.environ["TUNNEL_ONDEMAND_ROOT"] = "/tmp/tunnel_ondemand_smoke"   # never the served folder
+os.environ["RTBI_MCP_EXPORT_DIR"] = "/tmp/rtbi_mcp_smoke_exports"    # never the real exports / keys
+os.environ["RTBI_MCP_KEYS"] = "/tmp/rtbi_mcp_smoke_keys.json"
+os.environ["RTBI_MCP_BASE_URL"] = "https://mcp.example.test"
 
 import pandas as pd
 from fastmcp import Client
 
 import catalog
+import exports
+import server
 from server import mcp
+
+
+def exp_path(url: str) -> Path:
+    """Where a download_url's file sits on disk (the smoke exports dir)."""
+    assert url.startswith("https://mcp.example.test/dl/"), url
+    token, name = url.rsplit("/", 2)[-2:]
+    return Path(os.environ["RTBI_MCP_EXPORT_DIR"]) / token / name
 
 
 def hand_monthly_gain(ticker: str) -> pd.Series:
@@ -43,7 +55,7 @@ async def main():
         tools = {t.name for t in await c.list_tools()}
         check("tools registered", tools == {"list_datasets", "search_tickers", "get_series",
                                             "plot_series", "get_table", "tunnel_report",
-                                            "tunnel_history"}, str(sorted(tools)))
+                                            "tunnel_history", "create_api_key"}, str(sorted(tools)))
 
         r = (await c.call_tool("list_datasets", {})).data
         names = {d["name"] for d in r}
@@ -120,11 +132,40 @@ async def main():
         for args, why, expect in [
                 ({"dataset": "nope", "tickers": ["MSFT"]}, "unknown dataset", "Unknown dataset"),
                 ({"dataset": "PotDat", "tickers": ["NOTATICKER"]}, "unknown ticker", "Not found"),
-                ({"dataset": "Stamdata", "tickers": ["MSFT"]}, "table via get_series", "is a table"),
-                ({"dataset": "PotDat", "tickers": ten}, "row cap", "values requested")]:
+                ({"dataset": "Stamdata", "tickers": ["MSFT"]}, "table via get_series", "is a table")]:
             r = await c.call_tool("get_series", args, raise_on_error=False)
             text = r.content[0].text if r.content else ""
             check(f"error: {why}", r.is_error and expect in text, text[:110])
+
+        # over the inline limit: newest dates inline + the COMPLETE frame as a download (no error)
+        r = (await c.call_tool("get_series", {"dataset": "PotDat", "tickers": ten})).data
+        n_in = len(r["dates"])
+        check("get_series over limit = truncated + download",
+              r["truncated"] is True and n_in * 10 <= server.MAX_POINTS and "download_url" in r
+              and r["download_url"].startswith("https://mcp.example.test/dl/"), f"{n_in} dates inline")
+        got = pd.read_csv(exp_path(r["download_url"]), index_col="date")
+        check("get_series export is the complete frame",
+              len(got) > n_in and list(got.columns) == list(r["series"]) and list(got.index[-n_in:]) == r["dates"]
+              and abs(got[ten[0]].iloc[-1] - r["series"][ten[0]][-1]) < 1e-3, f"{len(got)} dates x {got.shape[1]}")
+        r = (await c.call_tool("get_series", {"dataset": "longi_price", "tickers": ["MSFT"], "start": "2026-09",
+                                              "download": True})).data
+        check("get_series download=true while small", r["truncated"] is False and "download_url" in r
+              and len(pd.read_csv(exp_path(r["download_url"]))) == len(r["dates"]), r["download_url"][-40:])
+        r = (await c.call_tool("get_series", {"dataset": "longi_price", "tickers": ["MSFT"], "start": "2026-09"})).data
+        check("get_series small = inline only", "download_url" not in r and r["truncated"] is False)
+        r = (await c.call_tool("get_series", {"dataset": "longi_price", "tickers": ["*"], "freq": "M"})).data
+        got = pd.read_csv(exp_path(r["download_url"]), index_col="date")
+        check("get_series tickers=['*'] = every row",
+              got.shape[1] == len(catalog.load(catalog.get("longi_price")).index), f"{got.shape[1]} tickers")
+        r = (await c.call_tool("get_table", {"dataset": "Stamdata", "limit": 5})).data
+        got = pd.read_csv(exp_path(r["download_url"]))
+        check("get_table over limit = first rows + complete download",
+              r["rows_returned"] == 5 and len(got) == r["rows_total"] > 5, f"{len(got)} rows")
+        r = (await c.call_tool("get_table", {"dataset": "Stamdata", "tickers": ["MSFT"], "columns": ["Name"],
+                                             "download": True})).data
+        got = pd.read_csv(exp_path(r["download_url"]))
+        check("get_table download=true with selection", len(got) == 1 and list(got.columns) == ["key", "Name"]
+              and "note" not in r, str(list(got.columns)))
 
         r = (await c.call_tool("tunnel_report", {"tickers": ["msft", "MU"], "end_date": "2026-09-30",
                                                  "name": "smoke"})).data
@@ -151,7 +192,7 @@ async def main():
         check("tunnel_history truncated = newest rows + full export",
               r["rows"][-1][0] == sel.end_date.max() and r["rows"][0][0] <= r["rows"][-1][0]
               and r["download_url"].endswith(f"tunnel_history_{want}rows.csv"), r["download_url"][-60:])
-        exp = Path(os.environ["TUNNEL_ONDEMAND_ROOT"]) / r["download_url"].rsplit("/", 2)[-2] / r["download_url"].rsplit("/", 1)[-1]
+        exp = exp_path(r["download_url"])
         full = pd.read_csv(exp)
         check("tunnel_history export is the complete match", len(full) == want and list(full.columns) == r["columns"]
               and (full.close_pos >= 0.9).all(), f"{len(full)} rows in {exp.name}")
@@ -185,7 +226,6 @@ async def main():
         check("conventions resource", "seven-pack" in res[0].text)
 
     # Allowlist: fake the identity Google would have proven, then call through the middleware.
-    import server
     from types import SimpleNamespace
     server.ALLOWED.clear()
     server.ALLOWED.add("allowed@example.com")
@@ -200,6 +240,58 @@ async def main():
         except Exception:
             passed = False
         check(f"allowlist {email}", passed == should_pass, "let in" if passed else "refused")
+
+    # API keys + the authenticated /dl/ route (members and strangers; revoked / removed members)
+    import shutil
+    from starlette.testclient import TestClient
+    shutil.rmtree(os.environ["RTBI_MCP_EXPORT_DIR"], ignore_errors=True)
+    Path(os.environ["RTBI_MCP_KEYS"]).unlink(missing_ok=True)
+
+    server.get_access_token = lambda: None          # the tool itself (the middleware would refuse earlier)
+    try:
+        getattr(server.create_api_key, "fn", server.create_api_key)()
+        refused = False
+    except Exception as exc:
+        refused = "signed-in" in str(exc)
+    check("create_api_key refused without identity", refused and not Path(os.environ["RTBI_MCP_KEYS"]).exists())
+
+    server.get_access_token = lambda: SimpleNamespace(claims={"email": "Allowed@Example.com"})
+    async with Client(mcp) as c:
+        key1 = (await c.call_tool("create_api_key", {})).data["api_key"]
+        key2 = (await c.call_tool("create_api_key", {})).data["api_key"]
+    check("create_api_key: owner found, re-issue replaces",
+          exports.owner_of(key2) == "allowed@example.com" and exports.owner_of(key1) is None and key1 != key2)
+    stored = Path(os.environ["RTBI_MCP_KEYS"]).read_text()
+    check("key store holds a hash, not the key", key2 not in stored
+          and oct(Path(os.environ["RTBI_MCP_KEYS"]).stat().st_mode & 0o777) == "0o600", "mode 600")
+
+    link = exports.write_csv(pd.DataFrame({"a": [1.5, 2.5]}), "probe")["download_url"]
+    url = link.replace("https://mcp.example.test", "")
+    web = TestClient(mcp.http_app(path="/mcp"))
+    server._allowed_now = lambda: {"allowed@example.com"}
+    bearer = {"Authorization": f"Bearer {key2}"}
+
+    check("download: no key = 401", web.get(url).status_code == 401)
+    check("download: wrong key = 401", web.get(url, headers={"Authorization": "Bearer pk_nope"}).status_code == 401)
+    check("download: old (replaced) key = 401", web.get(url, headers={"Authorization": f"Bearer {key1}"}).status_code == 401)
+    r = web.get(url, headers=bearer)
+    check("download: member key = 200 + the file", r.status_code == 200 and r.text.strip().splitlines() == ["a", "1.5", "2.5"],
+          str(r.status_code))
+    check("download: X-API-Key header works too", web.get(url, headers={"X-API-Key": key2}).status_code == 200)
+    check("download: unknown token = 404", web.get("/dl/AAAAAAAAAAAAAAAA/probe.csv", headers=bearer).status_code == 404)
+    check("download: path tricks = 404/400", all(web.get(p, headers=bearer).status_code in (400, 404)
+          for p in (url.rsplit("/", 1)[0] + "/..%2Fprobe.csv", url.rsplit("/", 2)[0] + "/../../etc/passwd")))
+    old = os.stat(exp_path(link)).st_mtime
+    os.utime(exp_path(link), (old - 25 * 3600, old - 25 * 3600))
+    check("download: expired = 404", web.get(url, headers=bearer).status_code == 404)
+    os.utime(exp_path(link), (old, old))
+    server._allowed_now = lambda: set()
+    check("download: member removed from allowlist = 401 at once", web.get(url, headers=bearer).status_code == 401)
+    server._allowed_now = lambda: {"allowed@example.com"}
+    check("download: back on the list = 200", web.get(url, headers=bearer).status_code == 200)
+    check("revoke", exports.revoke("allowed@example.com") and web.get(url, headers=bearer).status_code == 401)
+    shutil.rmtree(os.environ["RTBI_MCP_EXPORT_DIR"], ignore_errors=True)
+    Path(os.environ["RTBI_MCP_KEYS"]).unlink(missing_ok=True)
 
     print(f"\n{'ALL PASS' if not failures else f'{failures} FAILED'}")
     return failures
