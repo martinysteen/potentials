@@ -6,7 +6,8 @@ PotRank users are commenters, so the sheet cannot run a script for them; instead
 column in PotRank > ALL opens this page in a browser tab:
     =HYPERLINK("https://innovia.dk/rtbi-api/plot/tunnel/"&ENCODEURL(A5); "plot")
 
-Access: Google sign-in + the SAME email allowlist as the MCP server (RTBI_MCP_ALLOWED_EMAILS),
+Access: Google sign-in + the SAME email allowlist as the MCP server (RTBI_MCP_ALLOWED_EMAILS in
+mcp/.env, plus the members of the Google Group in mcp/allowed_group.txt - see mcp/sync_allowlist.py),
 so there is one list of who may see Potentials data. The Google OAuth client is the MCP's
 (GOOGLE_CLIENT_ID/SECRET from ../mcp/.env); its "Authorized redirect URIs" must include
 REDIRECT_URI below. After sign-in a signed cookie (RTBI_PLOT_SESSION_KEY, api/.env) keeps the
@@ -43,7 +44,7 @@ TICKER_RE = re.compile(r"^[A-Za-z0-9.^=&\-]{1,24}$")    # also keeps glob charac
 _mcp_env = dotenv_values(Path(__file__).resolve().parent.parent / "mcp" / ".env")
 CLIENT_ID = _mcp_env.get("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = _mcp_env.get("GOOGLE_CLIENT_SECRET")
-ALLOWED = {e.strip().lower() for e in (_mcp_env.get("RTBI_MCP_ALLOWED_EMAILS") or "").split(",") if e.strip()}
+MCP_DIR = Path(__file__).resolve().parent.parent / "mcp"
 SESSION_KEY = (os.environ.get("RTBI_PLOT_SESSION_KEY") or "").encode()
 
 router = APIRouter(prefix="/plot")
@@ -72,15 +73,33 @@ def _unsign(value: str | None) -> dict | None:
     return payload if payload.get("exp", 0) > time.time() else None
 
 
+def _allowed_now() -> set[str]:
+    """The allowlist as it stands RIGHT NOW, read on every request (no restart needed): manual
+    entries in mcp/.env PLUS the Google Group's members from mcp/allowed_group.txt (written by
+    mcp/sync_allowlist.py). Same logic as mcp/server.py::_allowed_now - keep the two in step.
+    On a read error the answer is the entries that could be read, never 'everyone'."""
+    emails: set[str] = set()
+    try:
+        raw = dotenv_values(MCP_DIR / ".env").get("RTBI_MCP_ALLOWED_EMAILS") or ""
+        emails |= {e.strip().lower() for e in raw.split(",") if e.strip()}
+    except OSError:
+        pass
+    try:
+        emails |= {e.strip().lower() for e in (MCP_DIR / "allowed_group.txt").read_text().split() if e.strip()}
+    except OSError:
+        pass
+    return emails
+
+
 def _configured():
-    if not (CLIENT_ID and CLIENT_SECRET and SESSION_KEY and ALLOWED):
+    if not (CLIENT_ID and CLIENT_SECRET and SESSION_KEY and _allowed_now()):
         raise HTTPException(503, "plot pages are not configured on this server")
 
 
 def _user(request: Request) -> str | None:
     s = _unsign(request.cookies.get("plot_session"))
     email = (s or {}).get("email", "")
-    return email if email in ALLOWED else None
+    return email if email in _allowed_now() else None
 
 
 def _login_redirect(request: Request) -> RedirectResponse:
@@ -143,7 +162,7 @@ def auth(request: Request, code: str = "", state: str = ""):
     # read without verifying the signature (Google's own guidance for this flow).
     claims = json.loads(base64.urlsafe_b64decode(tok.json()["id_token"].split(".")[1] + "=="))
     email = (claims.get("email") or "").lower()
-    if not claims.get("email_verified") or email not in ALLOWED:
+    if not claims.get("email_verified") or email not in _allowed_now():
         return HTMLResponse(f"<p>Access denied for {html.escape(email or 'unknown user')}. "
                             f"Ask sm@innovia.dk to be added.</p>", 403)
     nxt = st.get("next", "")

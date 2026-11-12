@@ -109,15 +109,23 @@ ALLOWED = _parse_emails(os.environ.get("RTBI_MCP_ALLOWED_EMAILS", ""))
 
 
 def _allowed_now() -> set[str]:
-    """The allowlist as .env says RIGHT NOW (downloads must not wait for a restart: removing a
-    member from .env kills their downloads at once). Falls back to the startup list."""
-    env = Path(__file__).parent / ".env"
+    """The allowlist as it stands RIGHT NOW (no restart needed: removing a member kills their
+    access at once): manual entries in .env PLUS the Google Group's members, which
+    sync_allowlist.py writes to allowed_group.txt. Falls back to the startup list if .env is
+    unreadable. api/plot.py has a copy of this logic - keep the two in step."""
+    here = Path(__file__).parent
     try:
-        if env.exists():
-            return _parse_emails(dotenv_values(env).get("RTBI_MCP_ALLOWED_EMAILS", ""))
+        if (here / ".env").exists():
+            emails = _parse_emails(dotenv_values(here / ".env").get("RTBI_MCP_ALLOWED_EMAILS", ""))
+        else:
+            emails = set(ALLOWED)
     except OSError:
-        pass
-    return ALLOWED
+        return ALLOWED
+    try:
+        emails |= {e.strip().lower() for e in (here / "allowed_group.txt").read_text().split() if e.strip()}
+    except OSError:
+        pass                                    # no group file (yet) = manual entries only
+    return emails
 
 
 class AllowlistMiddleware(Middleware):
@@ -127,7 +135,7 @@ class AllowlistMiddleware(Middleware):
     async def on_request(self, context: MiddlewareContext, call_next):
         token = get_access_token()
         email = (token.claims.get("email") or "").lower() if token else ""
-        if email not in ALLOWED:
+        if email not in _allowed_now():
             log.warning("refused %s (%s)", email or "<no email>", context.method)
             raise ToolError(f"Access denied for {email or 'unknown user'}. Ask sm@innovia.dk to be added.")
         if context.method == "tools/call":

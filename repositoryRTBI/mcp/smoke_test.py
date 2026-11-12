@@ -245,8 +245,7 @@ async def main():
 
     # Allowlist: fake the identity Google would have proven, then call through the middleware.
     from types import SimpleNamespace
-    server.ALLOWED.clear()
-    server.ALLOWED.add("allowed@example.com")
+    server._allowed_now = lambda: {"allowed@example.com"}      # the middleware asks _allowed_now() per call
     mcp.add_middleware(server.AllowlistMiddleware())
     for email, should_pass in [("allowed@example.com", True), ("ALLOWED@example.com", True),
                                ("stranger@example.com", False), (None, False)]:

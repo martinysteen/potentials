@@ -127,8 +127,16 @@ All endpoints require header `X-API-Key: <key>`. Key is stored in `api/.env` on 
 **Exception — browser pages, `api/plot.py` (2026-11-02):** `/rtbi-api/plot/tunnel/{ticker}` (page),
 `/plot/tunnel-img/{ticker}` (PNG), `/plot/auth` (Google OAuth callback). Opened from a HYPERLINK in
 PotRank > ALL; Google sign-in, then a 30-day signed cookie (`RTBI_PLOT_SESSION_KEY` in `api/.env`).
-Reuses the MCP's Google OAuth client and **its allowlist** (`mcp/.env` `RTBI_MCP_ALLOWED_EMAILS`, one
-list for both; re-checked per request). The OAuth client's redirect URIs must include
+Reuses the MCP's Google OAuth client and **its allowlist** (one list for both; re-checked per request,
+no restart needed). The list = manual emails in `mcp/.env` `RTBI_MCP_ALLOWED_EMAILS` **plus the members of
+the Google Group `rtbi-selectstock@innovia.dk`**, written to `mcp/allowed_group.txt` (generated, git-ignored)
+by `mcp/sync_allowlist.py --write` (cron `5 0-23 * * *`, log `~/logs/sync_allowlist.log`; dry run without
+`--write`). **Onboard = add to the group; offboard = remove from the group (and from `.env` if listed
+there) - effective within the hour.** The sync reads the Admin SDK Directory API with a service account
+(`~/.config/potentials/allowlist_sa.json`, outside the repo) holding domain-wide delegation for the single
+read-only scope `admin.directory.group.member.readonly`, impersonating sm@innovia.dk; nested groups are
+expanded; an API error or an empty group leaves the file untouched (never locks everyone out, never wipes).
+`_allowed_now()` exists in BOTH `api/plot.py` and `mcp/server.py` - keep them in step. The OAuth client's redirect URIs must include
 `https://innovia.dk/rtbi-api/plot/auth`. Serves `tunnel/app/data/thumbs/all/` (see tunnel/CLAUDE.md).
 
 ## MCP server (`mcp/`)

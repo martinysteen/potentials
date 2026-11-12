@@ -59,3 +59,6 @@ tunnel/handoff/*.pdf
 
 # --- Mirror copy of tunnel's nightly publish (PDF/PNG, ~10 MB, replaced every night) ---
 repositoryRTBI/data/Tunnel/
+
+# --- Generated allowlist (Google Group members, written by repositoryRTBI/mcp/sync_allowlist.py) ---
+repositoryRTBI/mcp/allowed_group.txt
